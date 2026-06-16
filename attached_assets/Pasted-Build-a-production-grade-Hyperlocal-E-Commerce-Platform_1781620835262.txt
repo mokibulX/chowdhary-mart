@@ -1,0 +1,418 @@
+Build a production-grade Hyperlocal E-Commerce Platform similar to Flipkart combined with Rapido and Blinkit.
+
+Platform Name:
+"Chowdhary Mart"
+
+Tech Stack:
+Frontend:
+- React 19
+- TypeScript
+- Tailwind CSS
+- Shadcn UI
+
+Backend:
+- Node.js
+- Express.js
+- PostgreSQL
+- Prisma ORM
+
+Authentication:
+- Firebase Authentication
+- Email Login
+- Mobile OTP Login
+- Google Login
+
+Realtime:
+- Socket.io
+- Firebase Cloud Messaging
+
+Maps:
+- Google Maps API
+- OpenStreetMap fallback
+
+Payments:
+- Razorpay
+- Stripe
+- Cash on Delivery
+
+Storage:
+- Firebase Storage
+
+-------------------------------------------------
+
+USER FEATURES
+
+Home page similar to Flipkart.
+
+Categories:
+- Grocery
+- Electronics
+- Fashion
+- Mobile
+- Home Appliances
+- Furniture
+- Beauty
+- Pharmacy
+- Fresh Vegetables
+- Stationery
+
+Search:
+- Smart search
+- Voice search
+- Image search
+
+Product Page:
+- Multiple images
+- Zoom
+- Reviews
+- Ratings
+- Variants
+- Offers
+- Specifications
+- Related products
+
+Wishlist
+
+Shopping Cart
+
+Buy Now
+
+Coupon System
+
+Wallet
+
+Saved Address
+
+Multiple Addresses
+
+Order Placement
+
+COD
+
+Online Payment
+
+UPI
+
+Order History
+
+Invoice Download
+
+Returns
+
+Refunds
+
+Cancel Order
+
+Notifications
+
+Dark Mode
+
+Multi Language
+
+Referral System
+
+Loyalty Points
+
+Gift Cards
+
+-------------------------------------------------
+
+HYPERLOCAL DELIVERY SYSTEM
+
+Only stores inside 5 KM radius from customer location can deliver.
+
+Detect user GPS location.
+
+Find nearest stores.
+
+Products are fetched only from nearby stores.
+
+Auto distance calculation.
+
+Estimated delivery time.
+
+Store-wise inventory.
+
+Multi-vendor support.
+
+-------------------------------------------------
+
+REAL TIME TRACKING
+
+After order placement:
+
+Show Google Map.
+
+Customer sees:
+
+Store Location.
+
+Delivery Rider Location.
+
+Current Speed.
+
+Distance Remaining.
+
+Estimated Arrival Time.
+
+Rider Photo.
+
+Vehicle Type.
+
+Live movement every 2 seconds.
+
+Socket.io realtime tracking.
+
+Status:
+
+Order Received
+
+Preparing
+
+Packed
+
+Picked Up
+
+On The Way
+
+Arriving
+
+Delivered
+
+-------------------------------------------------
+
+DELIVERY PARTNER APP
+
+Partner Registration.
+
+Document Verification.
+
+Vehicle Verification.
+
+Online/Offline Mode.
+
+Accept/Reject Orders.
+
+Navigation.
+
+Earnings Dashboard.
+
+Daily Earnings.
+
+Weekly Earnings.
+
+Wallet.
+
+Withdraw Money.
+
+Delivery History.
+
+Ratings.
+
+-------------------------------------------------
+
+VENDOR PANEL
+
+Vendor Registration.
+
+KYC Verification.
+
+Store Setup.
+
+Product Management.
+
+Category Management.
+
+Inventory.
+
+Stock Alerts.
+
+Order Management.
+
+Analytics.
+
+Coupons.
+
+Customers.
+
+Reports.
+
+Settlement History.
+
+Payout Request.
+
+Store Timing.
+
+Delivery Radius.
+
+Holiday Mode.
+
+-------------------------------------------------
+
+SUPER ADMIN PANEL
+
+Dashboard
+
+Users Management
+
+Vendor Management
+
+Delivery Partners
+
+Product Approval
+
+Categories
+
+Brands
+
+Orders
+
+Refund Requests
+
+Coupons
+
+Offers
+
+Banners
+
+Advertisements
+
+CMS
+
+Notifications
+
+Reports
+
+Analytics
+
+Revenue
+
+Commission System
+
+Payouts
+
+Wallet System
+
+Subscriptions
+
+Roles & Permissions
+
+SEO
+
+Site Settings
+
+Taxes
+
+Invoice Settings
+
+Chat Support
+
+Support Tickets
+
+Logs
+
+Backup
+
+AI Recommendation Engine
+
+Fraud Detection
+
+-------------------------------------------------
+
+AI FEATURES
+
+AI Product Recommendation.
+
+Frequently Bought Together.
+
+Smart Search.
+
+Voice Search.
+
+Chatbot.
+
+Personalized Suggestions.
+
+-------------------------------------------------
+
+SECURITY
+
+JWT Authentication
+
+Refresh Tokens
+
+Role Based Access
+
+Rate Limiting
+
+CSRF Protection
+
+Input Validation
+
+Audit Logs
+
+Encryption
+
+-------------------------------------------------
+
+DATABASE
+
+Users
+
+Roles
+
+Stores
+
+Products
+
+Categories
+
+Brands
+
+Orders
+
+Order Items
+
+Payments
+
+Addresses
+
+Reviews
+
+Coupons
+
+Wallet
+
+Transactions
+
+Notifications
+
+Chats
+
+Delivery Partners
+
+Live Locations
+
+Analytics
+
+Reports
+
+Invoices
+
+Refunds
+
+Returns
+
+-------------------------------------------------
+
+Create a fully responsive web application.
+
+Desktop UI should be premium like Flipkart.
+
+Mobile UI should be similar to Blinkit.
+
+Use clean architecture and scalable folder structure.
+
+Generate all pages, routes, APIs, database schema, reusable components, dashboards and real-time functionalities.
+
+Build production-ready code with enterprise-level quality.

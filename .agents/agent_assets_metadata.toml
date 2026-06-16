@@ -1,0 +1,20 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "byR75kXZcFJULlSkHgdkB"
+uri = "file://artifacts/mockup-sandbox/public/images/chowdhary-banner.png"
+type = "image"
+title = "Indian grocery market banner"
+
+[[generated]]
+id = "x557mrT7RodpaMXw5Z4dV"
+uri = "file://artifacts/mockup-sandbox/public/images/smartphone.png"
+type = "image"
+title = "Smartphone on white background"
+
+[[generated]]
+id = "p4lWipbviohE88PlKGBOc"
+uri = "file://artifacts/mockup-sandbox/public/images/vegetables.png"
+type = "image"
+title = "Fresh vegetables basket"
