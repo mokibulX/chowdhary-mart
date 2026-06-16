@@ -1,8 +1,40 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import authRouter from "./auth";
+import categoriesRouter from "./categories";
+import storesRouter from "./stores";
+import productsRouter from "./products";
+import addressesRouter from "./addresses";
+import cartRouter from "./cart";
+import wishlistRouter from "./wishlist";
+import ordersRouter from "./orders";
+import trackingRouter from "./tracking";
+import couponsRouter from "./coupons";
+import walletRouter from "./wallet";
+import notificationsRouter from "./notifications";
+import vendorRouter from "./vendor";
+import adminRouter from "./admin";
+import deliveryRouter from "./delivery";
+import bannersRouter from "./banners";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use("/auth", authRouter);
+router.use("/categories", categoriesRouter);
+router.use("/stores", storesRouter);
+router.use("/products", productsRouter);
+router.use("/addresses", addressesRouter);
+router.use("/cart", cartRouter);
+router.use("/wishlist", wishlistRouter);
+router.use("/orders", ordersRouter);
+router.use("/tracking", trackingRouter);
+router.use("/coupons", couponsRouter);
+router.use("/wallet", walletRouter);
+router.use("/notifications", notificationsRouter);
+router.use("/vendor", vendorRouter);
+router.use("/admin", adminRouter);
+router.use("/delivery", deliveryRouter);
+router.use("/banners", bannersRouter);
 
 export default router;

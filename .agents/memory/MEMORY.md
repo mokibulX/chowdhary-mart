@@ -1,0 +1,5 @@
+- [Auth token import fix](auth-token-import.md) — import setAuthTokenGetter from @workspace/api-client-react, NOT the deep /src/custom-fetch path (Vite package exports reject it).
+- [API client deep imports](auth-token-import.md) — api-client-react package.json only exports ".": "./src/index.ts"; all consumers must import from the package root only.
+- [Money as strings](money-strings.md) — all price/fee columns are DB numeric, returned as strings by Drizzle; always wrap in Number() before math or display.
+- [Enum status casts](enum-casts.md) — comparing order status enums in route handlers requires "as typeof ordersTable.$inferSelect['status']" cast to satisfy TS without runtime cost.
+- [Products list shape](products-list-shape.md) — useListProducts returns { items, total } not a plain array; access via productsData?.items.

@@ -1,0 +1,40 @@
+Now convert the entire application into a fully functional production-ready platform.
+
+Do not leave any placeholders, mock data, fake APIs, dummy buttons, or incomplete sections.
+
+Make every feature currently present in the UI actually work end-to-end with proper backend integration, database operations, and real-time updates.
+
+Requirements:
+
+- All pages, routes, and navigation must work.
+- Every button, modal, dropdown, and form should be functional.
+- Connect all APIs with the database.
+- Replace all dummy data with real database data.
+- Implement authentication and authorization completely.
+- User registration, login, logout, password reset, OTP verification, and profile management must work.
+- Product management should support CRUD operations.
+- Categories, brands, inventory, stock updates, and search must work.
+- Cart, wishlist, checkout, coupons, wallet, and order placement must work.
+- Online payment, Cash on Delivery, and order history must work.
+- Real-time order status updates should work.
+- Delivery partner location tracking should work using maps and sockets.
+- Notifications should work.
+- Reviews and ratings should work.
+- Returns and refunds should work.
+- Admin panel must have full control over users, vendors, products, orders, reports, coupons, settings, and analytics.
+- Vendor panel should be fully operational.
+- Delivery partner panel should be fully operational.
+- Use proper database schema and relationships.
+- Add validation, error handling, loading states, and success messages.
+- Remove all bugs and TypeScript errors.
+- Ensure the project builds successfully without warnings.
+- Optimize performance and responsiveness.
+- Make the application production-grade and enterprise-level.
+
+Very important:
+
+Do not redesign or remove existing features.
+
+Keep everything that already exists and make all existing functionalities work exactly as intended.
+
+Continue implementing until every visible feature in the application is fully operational.

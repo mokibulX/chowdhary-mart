@@ -1,0 +1,198 @@
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod/v4";
+import { useListAdminCoupons, useCreateCoupon, getListAdminCouponsQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Plus, Tag, Clock } from "lucide-react";
+
+const schema = z.object({
+  code: z.string().min(3, "Min 3 characters").max(20, "Max 20 characters"),
+  description: z.string().min(5, "Description required"),
+  discountType: z.enum(["flat", "percent"]),
+  discountValue: z.coerce.number().min(1),
+  minOrderValue: z.coerce.number().min(0).optional(),
+  maxDiscount: z.coerce.number().min(0).optional(),
+  usageLimit: z.coerce.number().min(1).optional(),
+  perUserLimit: z.coerce.number().min(1).optional(),
+  expiresAt: z.string().optional().or(z.literal("")),
+});
+type FormData = z.infer<typeof schema>;
+
+export default function AdminCoupons() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const { data: coupons, isLoading } = useListAdminCoupons({
+    query: { enabled: !!user, queryKey: getListAdminCouponsQueryKey() },
+  });
+  const create = useCreateCoupon();
+
+  const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: { discountType: "flat" },
+  });
+  const discountType = watch("discountType");
+
+  const onSubmit = (data: FormData) => {
+    create.mutate(
+      {
+        data: {
+          code: data.code.toUpperCase(),
+          description: data.description,
+          discountType: data.discountType,
+          discountValue: String(data.discountValue),
+          minOrderValue: data.minOrderValue ? String(data.minOrderValue) : undefined,
+          maxDiscount: data.maxDiscount ? String(data.maxDiscount) : undefined,
+          usageLimit: data.usageLimit,
+          perUserLimit: data.perUserLimit,
+          expiresAt: data.expiresAt || undefined,
+        } as any
+      },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getListAdminCouponsQueryKey() });
+          setDialogOpen(false);
+          reset();
+          toast({ title: "Coupon created" });
+        },
+        onError: (err: unknown) => {
+          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Failed to create coupon";
+          toast({ title: "Error", description: msg, variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Coupons ({coupons?.length ?? 0})</h1>
+        <Button onClick={() => { reset(); setDialogOpen(true); }} data-testid="btn-create">
+          <Plus className="w-4 h-4 mr-2" />Create Coupon
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
+      ) : !coupons?.length ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <Tag className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <p>No coupons yet</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {(coupons as any[]).map((coupon: any) => {
+            const isExpired = coupon.expiresAt && new Date(coupon.expiresAt) < new Date();
+            return (
+              <div key={coupon.id} className={`bg-white border rounded-xl p-4 flex items-start gap-4 ${isExpired ? "opacity-60" : ""}`} data-testid={`coupon-${coupon.id}`}>
+                <div className="bg-primary/10 rounded-xl p-3 flex-shrink-0">
+                  <Tag className="w-5 h-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <code className="font-bold tracking-wider text-primary">{coupon.code}</code>
+                    <Badge variant={coupon.isActive && !isExpired ? "default" : "secondary"} className="text-xs">
+                      {isExpired ? "Expired" : coupon.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{coupon.description}</p>
+                  <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      {coupon.discountType === "flat" ? `₹${Number(coupon.discountValue).toFixed(0)} off` : `${Number(coupon.discountValue).toFixed(0)}% off`}
+                      {coupon.maxDiscount ? ` (max ₹${Number(coupon.maxDiscount).toFixed(0)})` : ""}
+                    </span>
+                    {coupon.minOrderValue && <span>Min ₹{Number(coupon.minOrderValue).toFixed(0)}</span>}
+                    <span>Used {coupon.usedCount ?? 0}{coupon.usageLimit ? `/${coupon.usageLimit}` : ""} times</span>
+                    {coupon.expiresAt && (
+                      <span className="flex items-center gap-0.5">
+                        <Clock className="w-3 h-3" />
+                        {new Date(coupon.expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Create Coupon</DialogTitle></DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Code *</Label>
+                <Input placeholder="e.g. SAVE20" {...register("code")} data-testid="input-code" />
+                {errors.code && <p className="text-xs text-red-500">{errors.code.message}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label>Type *</Label>
+                <Select defaultValue="flat" onValueChange={v => setValue("discountType", v as "flat" | "percent")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="flat">Flat (₹)</SelectItem>
+                    <SelectItem value="percent">Percent (%)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Description *</Label>
+              <Input {...register("description")} data-testid="input-description" />
+              {errors.description && <p className="text-xs text-red-500">{errors.description.message}</p>}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>{discountType === "flat" ? "Amount (₹)" : "Percent (%)"} *</Label>
+                <Input type="number" {...register("discountValue")} data-testid="input-value" />
+                {errors.discountValue && <p className="text-xs text-red-500">{errors.discountValue.message}</p>}
+              </div>
+              {discountType === "percent" && (
+                <div className="space-y-1">
+                  <Label>Max Discount (₹)</Label>
+                  <Input type="number" {...register("maxDiscount")} data-testid="input-max" />
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label>Min Order (₹)</Label>
+                <Input type="number" {...register("minOrderValue")} data-testid="input-min-order" />
+              </div>
+              <div className="space-y-1">
+                <Label>Usage Limit</Label>
+                <Input type="number" {...register("usageLimit")} data-testid="input-usage" />
+              </div>
+              <div className="space-y-1">
+                <Label>Per User Limit</Label>
+                <Input type="number" {...register("perUserLimit")} data-testid="input-per-user" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Expires At</Label>
+              <Input type="date" {...register("expiresAt")} data-testid="input-expires" />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={create.isPending} data-testid="btn-save">
+                {create.isPending ? "Creating..." : "Create Coupon"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
