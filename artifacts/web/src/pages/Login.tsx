@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useLogin } from "@workspace/api-client-react";
@@ -27,7 +27,7 @@ export default function Login() {
   const loginMutation = useLogin();
 
   const form = useForm<z.infer<typeof loginSchema>>({
-    resolver: zodResolver(loginSchema),
+    resolver: zodResolver(loginSchema as any),
     defaultValues: {
       email: "",
       phone: "",
@@ -50,6 +50,8 @@ export default function Login() {
             setLocation("/admin");
           } else if (res.user.role === 'vendor') {
             setLocation("/vendor");
+          } else if (res.user.role === 'delivery_partner') {
+            setLocation("/delivery");
           } else {
             setLocation("/");
           }

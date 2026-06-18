@@ -1,4 +1,5 @@
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
+import type { ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -33,6 +34,7 @@ import AdminUsers from "@/pages/admin/AdminUsers";
 import AdminOrders from "@/pages/admin/AdminOrders";
 import AdminStores from "@/pages/admin/AdminStores";
 import AdminCoupons from "@/pages/admin/AdminCoupons";
+import DeliveryDashboard from "@/pages/delivery/DeliveryDashboard";
 
 import { CustomerLayout } from "@/components/layout/CustomerLayout";
 import { VendorLayout } from "@/components/layout/VendorLayout";
@@ -72,7 +74,7 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: s
   return <>{children}</>;
 }
 
-function CustomerRoute({ component: Component }: { component: () => JSX.Element }) {
+function CustomerRoute({ component: Component }: { component: () => ReactElement }) {
   return (
     <CustomerLayout>
       <Component />
@@ -80,7 +82,7 @@ function CustomerRoute({ component: Component }: { component: () => JSX.Element 
   );
 }
 
-function ProtectedCustomerRoute({ component: Component }: { component: () => JSX.Element }) {
+function ProtectedCustomerRoute({ component: Component }: { component: () => ReactElement }) {
   return (
     <RequireAuth>
       <CustomerLayout>
@@ -90,7 +92,7 @@ function ProtectedCustomerRoute({ component: Component }: { component: () => JSX
   );
 }
 
-function VendorRoute({ component: Component }: { component: () => JSX.Element }) {
+function VendorRoute({ component: Component }: { component: () => ReactElement }) {
   return (
     <RequireAuth roles={["vendor", "admin"]}>
       <VendorLayout>
@@ -100,12 +102,20 @@ function VendorRoute({ component: Component }: { component: () => JSX.Element })
   );
 }
 
-function AdminRoute({ component: Component }: { component: () => JSX.Element }) {
+function AdminRoute({ component: Component }: { component: () => ReactElement }) {
   return (
     <RequireAuth roles={["admin"]}>
       <AdminLayout>
         <Component />
       </AdminLayout>
+    </RequireAuth>
+  );
+}
+
+function DeliveryRoute({ component: Component }: { component: () => ReactElement }) {
+  return (
+    <RequireAuth roles={["delivery_partner", "admin"]}>
+      <Component />
     </RequireAuth>
   );
 }
@@ -129,6 +139,9 @@ function Router() {
       <Route path="/vendor/orders">{() => <VendorRoute component={VendorOrders} />}</Route>
       <Route path="/vendor/products">{() => <VendorRoute component={VendorProducts} />}</Route>
       <Route path="/vendor/store">{() => <VendorRoute component={VendorStore} />}</Route>
+
+      {/* Delivery partner panel */}
+      <Route path="/delivery">{() => <DeliveryRoute component={DeliveryDashboard} />}</Route>
 
       {/* Protected customer routes */}
       <Route path="/cart">{() => <ProtectedCustomerRoute component={Cart} />}</Route>

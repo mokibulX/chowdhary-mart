@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
@@ -51,7 +51,7 @@ export default function VendorProducts() {
   const del = useDeleteProduct();
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema as any),
     defaultValues: { isAvailable: true, isFeatured: false, stock: 0 },
   });
   const isAvailable = watch("isAvailable");
@@ -155,9 +155,9 @@ export default function VendorProducts() {
               <div className="p-3">
                 <p className="font-medium text-sm line-clamp-2 mb-1">{p.name}</p>
                 <div className="flex items-baseline gap-1 mb-2">
-                  <span className="font-bold text-sm">₹{Number(p.price).toFixed(0)}</span>
+                  <span className="font-bold text-sm">â‚¹{Number(p.price).toFixed(0)}</span>
                   {p.mrp && Number(p.mrp) > Number(p.price) && (
-                    <span className="text-xs text-muted-foreground line-through">₹{Number(p.mrp).toFixed(0)}</span>
+                    <span className="text-xs text-muted-foreground line-through">â‚¹{Number(p.mrp).toFixed(0)}</span>
                   )}
                 </div>
                 <div className="flex gap-1.5">
@@ -201,12 +201,12 @@ export default function VendorProducts() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Selling Price (₹) *</Label>
+                <Label>Selling Price (â‚¹) *</Label>
                 <Input type="number" step="0.01" {...register("price")} data-testid="input-price" />
                 {errors.price && <p className="text-xs text-red-500">{errors.price.message}</p>}
               </div>
               <div className="space-y-1">
-                <Label>MRP (₹) *</Label>
+                <Label>MRP (â‚¹) *</Label>
                 <Input type="number" step="0.01" {...register("mrp")} data-testid="input-mrp" />
                 {errors.mrp && <p className="text-xs text-red-500">{errors.mrp.message}</p>}
               </div>

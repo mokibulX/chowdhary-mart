@@ -19,20 +19,19 @@ export default function Notifications() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data: notifData, isLoading } = useListNotifications(
-    { limit: 50 },
-    { query: { enabled: !!user, queryKey: getListNotificationsQueryKey({ limit: 50 }) } }
-  );
+  const { data: notifData, isLoading } = useListNotifications({
+    query: { enabled: !!user, queryKey: getListNotificationsQueryKey() },
+  });
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
 
-  const notifications = notifData?.notifications ?? [];
+  const notifications = notifData?.items ?? [];
   const unreadCount = notifData?.unreadCount ?? 0;
 
   const handleMarkAll = () => {
     markAll.mutate(undefined, {
       onSuccess: () => {
-        qc.invalidateQueries({ queryKey: getListNotificationsQueryKey({ limit: 50 }) });
+        qc.invalidateQueries({ queryKey: getListNotificationsQueryKey() });
         toast({ title: "All notifications marked as read" });
       },
     });
@@ -40,7 +39,7 @@ export default function Notifications() {
 
   const handleMark = (id: number) => {
     markRead.mutate({ notificationId: id }, {
-      onSuccess: () => qc.invalidateQueries({ queryKey: getListNotificationsQueryKey({ limit: 50 }) }),
+      onSuccess: () => qc.invalidateQueries({ queryKey: getListNotificationsQueryKey() }),
     });
   };
 

@@ -171,6 +171,667 @@ function buildErrorMessage(response: Response, data: unknown): string {
   return prefix;
 }
 
+type MockRecord = Record<string, any>;
+
+const MOCK_STORAGE_KEY = "local-commerce-hub.mock.v3";
+
+const seedProducts = [
+  ["Samsung Galaxy M35 5G", 1, 1, 14999, 21999, "128 GB", "unit", "https://images.unsplash.com/photo-1598327105666-5b89351aff97?auto=format&fit=crop&w=700&q=80"],
+  ["boAt Airdopes 141 ANC", 1, 1, 1299, 4490, "42 hr", "playback", "https://images.unsplash.com/photo-1606220588913-b3aacb4d2f46?auto=format&fit=crop&w=700&q=80"],
+  ["HP 15s Ryzen Laptop", 1, 1, 39990, 52990, "8 GB", "RAM", "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=700&q=80"],
+  ["Apple iPhone 15", 1, 1, 65999, 79900, "128 GB", "unit", "https://images.unsplash.com/photo-1695048133142-1a20484d2569?auto=format&fit=crop&w=700&q=80"],
+  ["Sony WH-CH720N Headphones", 1, 1, 7990, 14990, "ANC", "unit", "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=700&q=80"],
+  ["Amul Taaza Milk", 2, 2, 28, 30, "500", "ml", "https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=700&q=80"],
+  ["Fresh Tomato", 2, 2, 36, 48, "1", "kg", "https://images.unsplash.com/photo-1546470427-e26264be0b0d?auto=format&fit=crop&w=700&q=80"],
+  ["India Gate Basmati Rice", 2, 2, 349, 425, "5", "kg", "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=700&q=80"],
+  ["Aashirvaad Atta", 2, 2, 279, 340, "5", "kg", "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=700&q=80"],
+  ["Fortune Sunflower Oil", 2, 2, 145, 180, "1", "L", "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=700&q=80"],
+  ["Nike Running Shoes", 3, 3, 2599, 4995, "UK 8", "pair", "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=700&q=80"],
+  ["Roadster Denim Jacket", 3, 3, 1199, 2999, "M", "size", "https://images.unsplash.com/photo-1543076447-215ad9ba6923?auto=format&fit=crop&w=700&q=80"],
+  ["Men Cotton T-Shirt", 3, 3, 399, 999, "L", "size", "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=700&q=80"],
+  ["Women Kurta Set", 3, 3, 899, 2199, "M", "size", "https://images.unsplash.com/photo-1583391733956-6c78276477e2?auto=format&fit=crop&w=700&q=80"],
+  ["Prestige Mixer Grinder", 4, 4, 2299, 3895, "750", "W", "https://images.unsplash.com/photo-1585515320310-259814833e62?auto=format&fit=crop&w=700&q=80"],
+  ["Milton Water Bottle", 4, 4, 299, 499, "1", "L", "https://images.unsplash.com/photo-1602143407151-7111542de6e8?auto=format&fit=crop&w=700&q=80"],
+  ["Wakefit Memory Foam Pillow", 4, 4, 599, 1199, "1", "pc", "https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=700&q=80"],
+  ["LED Study Lamp", 4, 4, 699, 1499, "12", "W", "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=700&q=80"],
+  ["Mamaearth Onion Shampoo", 5, 5, 329, 399, "250", "ml", "https://images.unsplash.com/photo-1608248597279-f99d160bfcbc?auto=format&fit=crop&w=700&q=80"],
+  ["Lakme Matte Lipstick", 5, 5, 249, 499, "4.2", "g", "https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&w=700&q=80"],
+  ["Maybelline Fit Me Foundation", 5, 5, 429, 649, "30", "ml", "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=700&q=80"],
+  ["Nivea Body Lotion", 5, 5, 225, 349, "400", "ml", "https://images.unsplash.com/photo-1556228578-8c89e6adf883?auto=format&fit=crop&w=700&q=80"],
+  ["Tata Tea Gold", 6, 2, 245, 310, "1", "kg", "https://images.unsplash.com/photo-1564890369478-c89ca6d9cde9?auto=format&fit=crop&w=700&q=80"],
+  ["Cadbury Celebration Pack", 7, 2, 199, 250, "180", "g", "https://images.unsplash.com/photo-1511381939415-e44015466834?auto=format&fit=crop&w=700&q=80"],
+  ["Cricket Tennis Ball Pack", 8, 4, 299, 499, "6", "pcs", "https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=700&q=80"],
+  ["Classmate Notebook Combo", 9, 4, 169, 240, "6", "pcs", "https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=700&q=80"],
+  ["Pedigree Adult Dog Food", 10, 2, 549, 699, "3", "kg", "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?auto=format&fit=crop&w=700&q=80"],
+];
+
+function mockNow() {
+  return new Date().toISOString();
+}
+
+function makeUser(overrides: MockRecord = {}) {
+  return {
+    id: overrides.id ?? Date.now(),
+    email: overrides.email ?? null,
+    phone: overrides.phone ?? null,
+    name: overrides.name ?? "Demo Customer",
+    avatarUrl: overrides.avatarUrl ?? null,
+    role: overrides.role ?? "customer",
+    walletBalance: overrides.walletBalance ?? "750.00",
+    loyaltyPoints: overrides.loyaltyPoints ?? 320,
+    referralCode: overrides.referralCode ?? "LOCAL500",
+    isVerified: true,
+    isActive: true,
+    password: overrides.password ?? "123456",
+    createdAt: overrides.createdAt ?? mockNow(),
+  };
+}
+
+function initialMockState() {
+  const categories = [
+    { id: 1, name: "Mobiles & Electronics", iconEmoji: "M", colorClass: "bg-blue-50", imageUrl: null },
+    { id: 2, name: "Grocery", iconEmoji: "G", colorClass: "bg-green-50", imageUrl: null },
+    { id: 3, name: "Fashion", iconEmoji: "F", colorClass: "bg-pink-50", imageUrl: null },
+    { id: 4, name: "Home & Kitchen", iconEmoji: "H", colorClass: "bg-amber-50", imageUrl: null },
+    { id: 5, name: "Beauty", iconEmoji: "B", colorClass: "bg-rose-50", imageUrl: null },
+    { id: 6, name: "Tea & Beverages", iconEmoji: "T", colorClass: "bg-orange-50", imageUrl: null },
+    { id: 7, name: "Snacks & Chocolates", iconEmoji: "S", colorClass: "bg-yellow-50", imageUrl: null },
+    { id: 8, name: "Sports", iconEmoji: "P", colorClass: "bg-cyan-50", imageUrl: null },
+    { id: 9, name: "Books & Stationery", iconEmoji: "N", colorClass: "bg-violet-50", imageUrl: null },
+    { id: 10, name: "Pet Supplies", iconEmoji: "D", colorClass: "bg-lime-50", imageUrl: null },
+  ];
+  const stores = [
+    { id: 1, name: "Local Digital Hub", address: "Salt Lake Sector V", logoUrl: "https://images.unsplash.com/photo-1498049794561-7780e7231661?auto=format&fit=crop&w=400&q=80", rating: "4.6", estimatedDeliveryMins: 35, deliveryFee: "39.00", freeDeliveryAbove: "999.00", isOpen: true, ownerId: 2 },
+    { id: 2, name: "Chowdhary Mart Fresh", address: "New Town Market", logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80", rating: "4.8", estimatedDeliveryMins: 18, deliveryFee: "29.00", freeDeliveryAbove: "299.00", isOpen: true, ownerId: 2 },
+    { id: 3, name: "Style Street", address: "City Centre", logoUrl: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=400&q=80", rating: "4.4", estimatedDeliveryMins: 45, deliveryFee: "49.00", freeDeliveryAbove: "799.00", isOpen: true, ownerId: 2 },
+    { id: 4, name: "Home Needs Bazaar", address: "Biswa Bangla Gate", logoUrl: "https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=400&q=80", rating: "4.5", estimatedDeliveryMins: 40, deliveryFee: "45.00", freeDeliveryAbove: "699.00", isOpen: true, ownerId: 2 },
+    { id: 5, name: "Glow Beauty Store", address: "Park Street", logoUrl: "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=400&q=80", rating: "4.7", estimatedDeliveryMins: 30, deliveryFee: "35.00", freeDeliveryAbove: "499.00", isOpen: true, ownerId: 2 },
+  ];
+  const products = seedProducts.map((item, index) => {
+    const [name, categoryId, storeId, price, mrp, weight, unit, image] = item as any[];
+    return {
+      id: index + 1,
+      name,
+      categoryId,
+      storeId,
+      price: Number(price).toFixed(2),
+      mrp: Number(mrp).toFixed(2),
+      discountPercent: Math.round(((Number(mrp) - Number(price)) / Number(mrp)) * 100),
+      images: [image],
+      weight,
+      unit,
+      description: `${name} with fast local delivery, easy returns, verified seller support and assured quality.`,
+      specifications: { Warranty: "Assured", Delivery: "Same day available", Return: "7 days" },
+      rating: (4.2 + (index % 6) / 10).toFixed(1),
+      reviewCount: 25 + index * 7,
+      stock: 20 + (index % 8) * 6,
+      stockQty: 20 + (index % 8) * 6,
+      isAvailable: true,
+      isFeatured: index < 8,
+      createdAt: mockNow(),
+    };
+  });
+  const customer = makeUser({ id: 1, email: "customer@local.test", name: "Demo Customer", role: "customer", password: "123456" });
+  const vendor = makeUser({ id: 2, email: "vendor@local.test", name: "Demo Vendor", role: "vendor", password: "123456", walletBalance: "1200.00" });
+  const admin = makeUser({ id: 3, email: "admin@local.test", name: "Admin User", role: "admin", password: "123456", walletBalance: "5000.00" });
+  const delivery = makeUser({ id: 4, email: "delivery@local.test", name: "Delivery Partner", role: "delivery_partner", password: "123456", walletBalance: "900.00" });
+  return {
+    users: [customer, vendor, admin, delivery],
+    categories,
+    stores,
+    products,
+    carts: {} as Record<string, MockRecord[]>,
+    wishlist: {} as Record<string, number[]>,
+    addresses: {
+      "1": [{ id: 1, userId: 1, name: "Demo Customer", phone: "9876543210", label: "Home", line1: "Action Area I, New Town", line2: "Near community market", city: "Kolkata", state: "West Bengal", pincode: "700156", isDefault: true }],
+    } as Record<string, MockRecord[]>,
+    orders: [] as MockRecord[],
+    reviews: [
+      { id: 1, productId: 1, userId: 1, rating: 5, title: "Great value", body: "Fast delivery and solid quality.", isVerifiedPurchase: true, user: { name: "Demo Customer" }, createdAt: mockNow() },
+    ],
+    notifications: {
+      "1": [{ id: 1, title: "Welcome offer unlocked", body: "Use LOCAL20 on your next cart.", isRead: false, createdAt: mockNow() }],
+    } as Record<string, MockRecord[]>,
+    walletTransactions: {
+      "1": [{ id: 1, type: "credit", amount: "750.00", balance: "750.00", description: "Welcome wallet bonus", createdAt: mockNow() }],
+    } as Record<string, MockRecord[]>,
+    coupons: [
+      { id: 1, code: "LOCAL20", title: "20% off", description: "Save 20% up to Rs 150", discountType: "percent", discountValue: "20.00", maxDiscount: "150.00", minOrderValue: "199.00", isActive: true, usedCount: 0 },
+      { id: 2, code: "FREESHIP", title: "Free delivery", description: "Flat Rs 49 off delivery", discountType: "fixed", discountValue: "49.00", maxDiscount: "49.00", minOrderValue: "299.00", isActive: true, usedCount: 0 },
+    ],
+    banners: [
+      { id: 1, title: "Mega Savings Festival", subtitle: "Mobiles, fashion, home and grocery deals", imageUrl: "https://images.unsplash.com/photo-1607083206968-13611e3d76db?auto=format&fit=crop&w=1200&q=80", href: "/search" },
+      { id: 2, title: "Fresh groceries in minutes", subtitle: "Daily essentials from nearby stores", imageUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=80", href: "/search?categoryId=2" },
+      { id: 3, title: "Seller specials live now", subtitle: "New products, limited stock and fast dispatch", imageUrl: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=1200&q=80", href: "/search?sort=rating" },
+    ],
+    nextIds: { user: 4, address: 2, order: 1, cartItem: 1, product: products.length + 1, coupon: 3, review: 2 },
+  };
+}
+
+function getMockState() {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  const raw = window.localStorage.getItem(MOCK_STORAGE_KEY);
+  if (!raw) {
+    const seeded = initialMockState();
+    window.localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(seeded));
+    return seeded;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const seeded = initialMockState();
+    window.localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(seeded));
+    return seeded;
+  }
+}
+
+function saveMockState(state: MockRecord) {
+  window.localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(state));
+}
+
+function publicUser(user: MockRecord) {
+  const { password: _password, isActive: _isActive, ...safeUser } = user;
+  return safeUser;
+}
+
+function parseMockBody(options: CustomFetchOptions) {
+  if (!options.body || typeof options.body !== "string") return {};
+  try {
+    return JSON.parse(options.body);
+  } catch {
+    return {};
+  }
+}
+
+function makeMockError(status: number, error: string, method: string, url: string): never {
+  const response = new Response(JSON.stringify({ error }), {
+    status,
+    statusText: error,
+    headers: { "content-type": "application/json" },
+  });
+  throw new ApiError(response, { error }, { method, url });
+}
+
+function getTokenUser(state: MockRecord, token: string | null) {
+  const id = token?.startsWith("mock-token-") ? Number(token.replace("mock-token-", "")) : NaN;
+  return state.users.find((user: MockRecord) => user.id === id) ?? null;
+}
+
+function productWithStore(state: MockRecord, product: MockRecord) {
+  return {
+    ...product,
+    category: state.categories.find((category: MockRecord) => category.id === product.categoryId) ?? null,
+    store: state.stores.find((store: MockRecord) => store.id === product.storeId) ?? null,
+  };
+}
+
+function buildCart(state: MockRecord, userId: number) {
+  const items = (state.carts[String(userId)] ?? []).map((item: MockRecord) => ({
+    ...item,
+    product: state.products.find((product: MockRecord) => product.id === item.productId) ?? null,
+  })).filter((item: MockRecord) => item.product);
+  const storeId = items[0]?.product?.storeId ?? null;
+  const store = storeId ? state.stores.find((item: MockRecord) => item.id === storeId) ?? null : null;
+  const subtotal = items.reduce((sum: number, item: MockRecord) => sum + Number(item.price) * item.qty, 0);
+  const deliveryFee = store && subtotal > 0 && subtotal < Number(store.freeDeliveryAbove ?? 299) ? Number(store.deliveryFee ?? 49) : 0;
+  return {
+    storeId,
+    store,
+    items,
+    subtotal: subtotal.toFixed(2),
+    deliveryFee: deliveryFee.toFixed(2),
+    discount: "0.00",
+    total: (subtotal + deliveryFee).toFixed(2),
+    itemCount: items.reduce((sum: number, item: MockRecord) => sum + item.qty, 0),
+  };
+}
+
+function couponDiscount(coupon: MockRecord, amount: number) {
+  if (!coupon || amount < Number(coupon.minOrderValue ?? 0)) return 0;
+  const raw = coupon.discountType === "percent" ? amount * Number(coupon.discountValue) / 100 : Number(coupon.discountValue);
+  return Math.min(raw, Number(coupon.maxDiscount ?? raw), amount);
+}
+
+async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOptions, method: string): Promise<T | undefined> {
+  const state = getMockState();
+  if (!state) return undefined;
+  const urlText = resolveUrl(input);
+  const url = new URL(urlText, "http://local-commerce.test");
+  const path = url.pathname;
+  if (!path.startsWith("/api/")) return undefined;
+
+  const token = _authTokenGetter ? await _authTokenGetter() : null;
+  const currentUser = getTokenUser(state, token);
+  const body = parseMockBody(options);
+  const requireUser = () => currentUser ?? makeMockError(401, "Please login first", method, path);
+  const ok = (data: unknown) => data as T;
+
+  if (path === "/api/healthz") return ok({ ok: true, status: "ok" });
+  if (path === "/api/auth/register" && method === "POST") {
+    if (!body.name || !body.password || (!body.email && !body.phone)) makeMockError(400, "Name, password and email or phone are required", method, path);
+    const existing = state.users.find((user: MockRecord) => (body.email && user.email === body.email) || (body.phone && user.phone === body.phone));
+    if (existing) makeMockError(400, "User with this email or phone already exists", method, path);
+    const user = makeUser({ ...body, id: state.nextIds.user++, role: ["customer", "vendor", "delivery_partner"].includes(body.role) ? body.role : "customer" });
+    state.users.push(user);
+    state.addresses[String(user.id)] = [];
+    saveMockState(state);
+    return ok({ token: `mock-token-${user.id}`, user: publicUser(user) });
+  }
+  if (path === "/api/auth/login" && method === "POST") {
+    const user = state.users.find((item: MockRecord) => (body.email && item.email === body.email) || (body.phone && item.phone === body.phone));
+    if (!user || user.password !== body.password) makeMockError(401, "Invalid credentials. Try customer@local.test / 123456", method, path);
+    return ok({ token: `mock-token-${user.id}`, user: publicUser(user) });
+  }
+  if (path === "/api/auth/logout" && method === "POST") return ok({ message: "Logged out successfully" });
+  if (path === "/api/auth/me") {
+    const user = requireUser();
+    if (method === "PATCH") {
+      Object.assign(user, body, { updatedAt: mockNow() });
+      saveMockState(state);
+    }
+    return ok(publicUser(user));
+  }
+
+  if (path === "/api/categories") return ok(state.categories);
+  if (path === "/api/stores") {
+    const limit = Number(url.searchParams.get("limit") ?? state.stores.length);
+    return ok(state.stores.slice(0, limit));
+  }
+  const storeMatch = path.match(/^\/api\/stores\/(\d+)$/);
+  if (storeMatch) {
+    const store = state.stores.find((item: MockRecord) => item.id === Number(storeMatch[1]));
+    if (!store) makeMockError(404, "Store not found", method, path);
+    return ok({ ...store, products: state.products.filter((item: MockRecord) => item.storeId === store.id) });
+  }
+
+  if (path === "/api/products") {
+    let items = [...state.products];
+    const q = url.searchParams.get("q")?.toLowerCase();
+    const categoryId = Number(url.searchParams.get("categoryId") || 0);
+    const storeId = Number(url.searchParams.get("storeId") || 0);
+    const featured = url.searchParams.get("featured");
+    const sort = url.searchParams.get("sort") ?? url.searchParams.get("sortBy") ?? "popular";
+    if (q) items = items.filter((item: MockRecord) => item.name.toLowerCase().includes(q) || item.description.toLowerCase().includes(q));
+    if (categoryId) items = items.filter((item: MockRecord) => item.categoryId === categoryId);
+    if (storeId) items = items.filter((item: MockRecord) => item.storeId === storeId);
+    if (featured === "true") items = items.filter((item: MockRecord) => item.isFeatured);
+    if (sort === "price_asc") items.sort((a: MockRecord, b: MockRecord) => Number(a.price) - Number(b.price));
+    if (sort === "price_desc") items.sort((a: MockRecord, b: MockRecord) => Number(b.price) - Number(a.price));
+    if (sort === "rating" || sort === "popular") items.sort((a: MockRecord, b: MockRecord) => Number(b.rating) - Number(a.rating));
+    const total = items.length;
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? 40);
+    return ok({ items: items.slice(offset, offset + limit), total, hasMore: offset + limit < total });
+  }
+  const productReviewMatch = path.match(/^\/api\/products\/(\d+)\/reviews$/);
+  if (productReviewMatch) return ok(state.reviews.filter((item: MockRecord) => item.productId === Number(productReviewMatch[1])));
+  const productMatch = path.match(/^\/api\/products\/(\d+)$/);
+  if (productMatch) {
+    const product = state.products.find((item: MockRecord) => item.id === Number(productMatch[1]));
+    if (!product) makeMockError(404, "Product not found", method, path);
+    return ok(productWithStore(state, product));
+  }
+
+  if (path === "/api/cart") {
+    const user = requireUser();
+    if (method === "DELETE") {
+      state.carts[String(user.id)] = [];
+      saveMockState(state);
+      return ok({ message: "Cart cleared" });
+    }
+    return ok(buildCart(state, user.id));
+  }
+  if (path === "/api/cart/items" && method === "POST") {
+    const user = requireUser();
+    const product = state.products.find((item: MockRecord) => item.id === Number(body.productId));
+    if (!product) makeMockError(404, "Product not found", method, path);
+    const key = String(user.id);
+    const current = state.carts[key] ?? [];
+    const sameStore = current.filter((item: MockRecord) => state.products.find((productItem: MockRecord) => productItem.id === item.productId)?.storeId === product.storeId);
+    const existing = sameStore.find((item: MockRecord) => item.productId === product.id);
+    const requestedQty = Number(body.qty ?? 1);
+    if (existing) {
+      existing.qty = Math.max(0, requestedQty);
+      if (existing.qty === 0) sameStore.splice(sameStore.indexOf(existing), 1);
+    } else if (requestedQty > 0) {
+      sameStore.push({ id: state.nextIds.cartItem++, productId: product.id, qty: requestedQty, price: product.price });
+    }
+    state.carts[key] = sameStore;
+    saveMockState(state);
+    return ok(buildCart(state, user.id));
+  }
+  const cartItemMatch = path.match(/^\/api\/cart\/items\/(\d+)$/);
+  if (cartItemMatch) {
+    const user = requireUser();
+    const key = String(user.id);
+    const itemId = Number(cartItemMatch[1]);
+    const items = state.carts[key] ?? [];
+    if (method === "DELETE") state.carts[key] = items.filter((item: MockRecord) => item.id !== itemId);
+    if (method === "PATCH") {
+      const item = items.find((entry: MockRecord) => entry.id === itemId);
+      if (item) item.qty = Number(body.qty ?? item.qty);
+      state.carts[key] = items.filter((entry: MockRecord) => entry.qty > 0);
+    }
+    saveMockState(state);
+    return ok(buildCart(state, user.id));
+  }
+
+  if (path === "/api/wishlist") {
+    const user = requireUser();
+    const key = String(user.id);
+    if (method === "POST") {
+      state.wishlist[key] = Array.from(new Set([...(state.wishlist[key] ?? []), Number(body.productId)]));
+      saveMockState(state);
+      return ok({ message: "Added to wishlist" });
+    }
+    return ok((state.wishlist[key] ?? []).map((productId: number, index: number) => ({ id: index + 1, userId: user.id, productId, product: state.products.find((item: MockRecord) => item.id === productId) })));
+  }
+  const wishlistMatch = path.match(/^\/api\/wishlist\/(\d+)$/);
+  if (wishlistMatch) {
+    const user = requireUser();
+    const key = String(user.id);
+    state.wishlist[key] = (state.wishlist[key] ?? []).filter((id: number) => id !== Number(wishlistMatch[1]));
+    saveMockState(state);
+    return ok({ message: "Removed from wishlist" });
+  }
+
+  if (path === "/api/addresses") {
+    const user = requireUser();
+    const key = String(user.id);
+    if (method === "POST") {
+      const address = { id: state.nextIds.address++, userId: user.id, isDefault: !(state.addresses[key] ?? []).length, ...body };
+      state.addresses[key] = [...(state.addresses[key] ?? []), address];
+      saveMockState(state);
+      return ok(address);
+    }
+    return ok(state.addresses[key] ?? []);
+  }
+  const addressMatch = path.match(/^\/api\/addresses\/(\d+)$/);
+  if (addressMatch) {
+    const user = requireUser();
+    const key = String(user.id);
+    const list = state.addresses[key] ?? [];
+    const id = Number(addressMatch[1]);
+    if (method === "DELETE") {
+      state.addresses[key] = list.filter((item: MockRecord) => item.id !== id);
+      saveMockState(state);
+      return ok({ message: "Address deleted" });
+    }
+    const address = list.find((item: MockRecord) => item.id === id);
+    if (!address) makeMockError(404, "Address not found", method, path);
+    Object.assign(address, body);
+    saveMockState(state);
+    return ok(address);
+  }
+
+  if (path === "/api/orders") {
+    const user = requireUser();
+    if (method === "POST") {
+      const cart = buildCart(state, user.id);
+      if (!cart.items.length) makeMockError(400, "Cart is empty", method, path);
+      const address = (state.addresses[String(user.id)] ?? []).find((item: MockRecord) => item.id === Number(body.addressId));
+      if (!address) makeMockError(400, "Address not found", method, path);
+      const coupon = state.coupons.find((item: MockRecord) => item.code === String(body.couponCode ?? "").toUpperCase());
+      const subtotal = Number(cart.subtotal);
+      const deliveryFee = Number(cart.deliveryFee);
+      const discount = couponDiscount(coupon, subtotal);
+      const walletUsed = body.useWallet ? Math.min(Number(user.walletBalance ?? 0), subtotal + deliveryFee - discount) : 0;
+      user.walletBalance = (Number(user.walletBalance ?? 0) - walletUsed).toFixed(2);
+      const order = {
+        id: state.nextIds.order++,
+        orderNumber: `LCH${Date.now().toString().slice(-7)}`,
+        userId: user.id,
+        storeId: cart.storeId,
+        store: cart.store,
+        addressId: address.id,
+        address,
+        addressSnapshot: address,
+        items: cart.items.map((item: MockRecord) => ({ id: item.id, productId: item.productId, name: item.product.name, imageUrl: item.product.images?.[0], price: item.price, mrp: item.product.mrp, qty: item.qty, total: (Number(item.price) * item.qty).toFixed(2) })),
+        status: "pending",
+        paymentMethod: body.paymentMethod,
+        paymentStatus: body.paymentMethod === "cod" ? "pending" : "paid",
+        subtotal: subtotal.toFixed(2),
+        deliveryFee: deliveryFee.toFixed(2),
+        couponCode: coupon?.code ?? null,
+        couponDiscount: discount.toFixed(2),
+        walletUsed: walletUsed.toFixed(2),
+        total: Math.max(0, subtotal + deliveryFee - discount - walletUsed).toFixed(2),
+        loyaltyPointsEarned: Math.floor(subtotal / 10),
+        estimatedDeliveryMins: cart.store?.estimatedDeliveryMins ?? 30,
+        createdAt: mockNow(),
+        tracking: {
+          orderId: 0,
+          status: "pending",
+          estimatedMins: cart.store?.estimatedDeliveryMins ?? 30,
+          deliveryPartner: {
+            id: 4,
+            name: "Delivery Partner",
+            phone: "9000000000",
+            vehicleType: "bike",
+            vehicleNumber: "WB 20 LC 1024",
+            rating: "4.8",
+            location: { lat: 22.5726, lng: 88.3639 },
+          },
+          timeline: [{ status: "pending", message: "Order placed and waiting for seller confirmation", updatedAt: mockNow() }],
+        },
+      };
+      order.tracking.orderId = order.id;
+      state.orders.unshift(order);
+      state.carts[String(user.id)] = [];
+      state.notifications[String(user.id)] = [{ id: Date.now(), title: "Order confirmed", body: `Order #${order.orderNumber} is confirmed.`, isRead: false, createdAt: mockNow() }, ...(state.notifications[String(user.id)] ?? [])];
+      saveMockState(state);
+      return ok(order);
+    }
+    return ok(state.orders.filter((order: MockRecord) => currentUser?.role === "admin" || order.userId === user.id));
+  }
+  const orderCancelMatch = path.match(/^\/api\/orders\/(\d+)\/cancel$/);
+  if (orderCancelMatch) {
+    requireUser();
+    const order = state.orders.find((item: MockRecord) => item.id === Number(orderCancelMatch[1]));
+    if (!order) makeMockError(404, "Order not found", method, path);
+    order.status = "cancelled";
+    order.cancellationReason = body.reason ?? "Cancelled by customer";
+    order.tracking.timeline.unshift({ status: "cancelled", message: order.cancellationReason, updatedAt: mockNow() });
+    saveMockState(state);
+    return ok(order);
+  }
+  const orderReviewMatch = path.match(/^\/api\/orders\/(\d+)\/review$/);
+  if (orderReviewMatch) {
+    const user = requireUser();
+    const review = { id: state.nextIds.review++, userId: user.id, orderId: Number(orderReviewMatch[1]), isVerifiedPurchase: true, createdAt: mockNow(), user: { name: user.name }, ...body };
+    state.reviews.unshift(review);
+    saveMockState(state);
+    return ok(review);
+  }
+  const orderTrackingMatch = path.match(/^\/api\/orders\/(\d+)\/tracking$/) ?? path.match(/^\/api\/tracking\/orders\/(\d+)$/);
+  if (orderTrackingMatch) {
+    requireUser();
+    const order = state.orders.find((item: MockRecord) => item.id === Number(orderTrackingMatch[1]));
+    if (!order) makeMockError(404, "Order not found", method, path);
+    return ok(order.tracking);
+  }
+  const orderMatch = path.match(/^\/api\/orders\/(\d+)$/);
+  if (orderMatch) {
+    requireUser();
+    const order = state.orders.find((item: MockRecord) => item.id === Number(orderMatch[1]));
+    if (!order) makeMockError(404, "Order not found", method, path);
+    return ok(order);
+  }
+
+  if (path === "/api/coupons" || path === "/api/admin/coupons") return ok(state.coupons);
+  if (path === "/api/coupons/validate" && method === "POST") {
+    const coupon = state.coupons.find((item: MockRecord) => item.code === String(body.code ?? "").toUpperCase() && item.isActive);
+    if (!coupon) makeMockError(400, "Invalid coupon", method, path);
+    const discount = couponDiscount(coupon, Number(body.orderValue ?? body.orderTotal ?? 0));
+    if (discount <= 0) makeMockError(400, `Minimum order value is Rs ${coupon.minOrderValue}`, method, path);
+    return ok({ valid: true, code: coupon.code, discount: discount.toFixed(2), message: "Coupon applied" });
+  }
+  if (path === "/api/admin/coupons" && method === "POST") {
+    const coupon = { id: state.nextIds.coupon++, usedCount: 0, isActive: true, ...body };
+    state.coupons.unshift(coupon);
+    saveMockState(state);
+    return ok(coupon);
+  }
+
+  if (path === "/api/wallet") {
+    const user = requireUser();
+    return ok({ balance: user.walletBalance, loyaltyPoints: user.loyaltyPoints, referralCode: user.referralCode });
+  }
+  if (path === "/api/wallet/transactions") {
+    const user = requireUser();
+    return ok(state.walletTransactions[String(user.id)] ?? []);
+  }
+  if (path === "/api/notifications") {
+    const user = requireUser();
+    const items = state.notifications[String(user.id)] ?? [];
+    return ok({ items, unreadCount: items.filter((item: MockRecord) => !item.isRead).length });
+  }
+  if (path.match(/^\/api\/notifications\/\d+\/read$/)) {
+    const user = requireUser();
+    const id = Number(path.match(/\d+/)?.[0]);
+    const item = (state.notifications[String(user.id)] ?? []).find((entry: MockRecord) => entry.id === id);
+    if (item) item.isRead = true;
+    saveMockState(state);
+    return ok({ message: "Marked read" });
+  }
+  if (path === "/api/notifications/read-all") {
+    const user = requireUser();
+    (state.notifications[String(user.id)] ?? []).forEach((item: MockRecord) => { item.isRead = true; });
+    saveMockState(state);
+    return ok({ message: "Marked all read" });
+  }
+
+  if (path === "/api/vendor/store") {
+    const user = requireUser();
+    const store = state.stores.find((item: MockRecord) => item.ownerId === user.id) ?? state.stores[0];
+    if (method === "PATCH") {
+      Object.assign(store, body);
+      saveMockState(state);
+    }
+    return ok({ ...store, products: state.products.filter((item: MockRecord) => item.storeId === store.id) });
+  }
+  if (path === "/api/vendor/products") {
+    const user = requireUser();
+    const store = state.stores.find((item: MockRecord) => item.ownerId === user.id) ?? state.stores[0];
+    if (method === "POST") {
+      const product = {
+        id: state.nextIds.product++,
+        storeId: store.id,
+        rating: "4.1",
+        reviewCount: 0,
+        discountPercent: body.mrp && body.price ? Math.max(0, Math.round(((Number(body.mrp) - Number(body.price)) / Number(body.mrp)) * 100)) : 0,
+        stock: Number(body.stock ?? body.stockQty ?? 0),
+        stockQty: Number(body.stock ?? body.stockQty ?? 0),
+        isAvailable: body.isAvailable ?? true,
+        isFeatured: body.isFeatured ?? false,
+        createdAt: mockNow(),
+        ...body,
+      };
+      state.products.unshift(product);
+      saveMockState(state);
+      return ok(product);
+    }
+    return ok(state.products.filter((item: MockRecord) => item.storeId === store.id));
+  }
+  const vendorProductMatch = path.match(/^\/api\/vendor\/products\/(\d+)$/);
+  if (vendorProductMatch) {
+    const user = requireUser();
+    const store = state.stores.find((item: MockRecord) => item.ownerId === user.id) ?? state.stores[0];
+    const productId = Number(vendorProductMatch[1]);
+    const product = state.products.find((item: MockRecord) => item.id === productId && item.storeId === store.id);
+    if (!product) makeMockError(404, "Product not found in your store", method, path);
+    if (method === "DELETE") {
+      state.products = state.products.filter((item: MockRecord) => item.id !== productId);
+      saveMockState(state);
+      return ok({ message: "Product deleted" });
+    }
+    Object.assign(product, body, {
+      stock: Number(body.stock ?? body.stockQty ?? product.stock ?? 0),
+      stockQty: Number(body.stock ?? body.stockQty ?? product.stockQty ?? 0),
+      discountPercent: body.mrp && body.price ? Math.max(0, Math.round(((Number(body.mrp) - Number(body.price)) / Number(body.mrp)) * 100)) : product.discountPercent,
+      updatedAt: mockNow(),
+    });
+    saveMockState(state);
+    return ok(product);
+  }
+  if (path === "/api/vendor/orders") {
+    const user = requireUser();
+    const store = state.stores.find((item: MockRecord) => item.ownerId === user.id) ?? state.stores[0];
+    const status = url.searchParams.get("status");
+    let orders = state.orders.filter((order: MockRecord) => order.storeId === store.id);
+    if (status) orders = orders.filter((order: MockRecord) => order.status === status);
+    return ok(orders);
+  }
+  const vendorOrderStatusMatch = path.match(/^\/api\/vendor\/orders\/(\d+)\/status$/);
+  if (vendorOrderStatusMatch) {
+    requireUser();
+    const order = state.orders.find((item: MockRecord) => item.id === Number(vendorOrderStatusMatch[1]));
+    if (!order) makeMockError(404, "Order not found", method, path);
+    order.status = body.status ?? order.status;
+    order.tracking.status = order.status;
+    if (["picked_up", "on_the_way", "delivered"].includes(order.status)) {
+      order.tracking.deliveryPartner = order.tracking.deliveryPartner ?? {
+        id: 4,
+        name: "Delivery Partner",
+        phone: "9000000000",
+        vehicleType: "bike",
+        vehicleNumber: "WB 20 LC 1024",
+        rating: "4.8",
+        location: { lat: 22.5726, lng: 88.3639 },
+      };
+    }
+    order.tracking.timeline.unshift({ status: order.status, message: `Order ${order.status}`, updatedAt: mockNow() });
+    saveMockState(state);
+    return ok(order);
+  }
+  if (path === "/api/vendor/dashboard") {
+    const user = requireUser();
+    const store = state.stores.find((item: MockRecord) => item.ownerId === user.id) ?? state.stores[0];
+    const orders = state.orders.filter((order: MockRecord) => order.storeId === store.id);
+    const products = state.products.filter((item: MockRecord) => item.storeId === store.id);
+    const revenue = orders.reduce((sum: number, order: MockRecord) => sum + Number(order.total), 0);
+    return ok({
+      todayOrders: orders.length,
+      todayRevenue: revenue.toFixed(2),
+      weekRevenue: (revenue * 1.8).toFixed(2),
+      monthRevenue: (revenue * 4.3).toFixed(2),
+      pendingOrders: orders.filter((order: MockRecord) => !["delivered", "cancelled"].includes(order.status)).length,
+      lowStockProducts: products.filter((product: MockRecord) => Number(product.stock ?? product.stockQty ?? 0) <= 5).length,
+      totalProducts: products.length,
+      recentOrders: orders.slice(0, 5),
+    });
+  }
+
+  if (path === "/api/admin/dashboard") {
+    return ok({ totalUsers: state.users.length, totalStores: state.stores.length, totalOrders: state.orders.length, totalRevenue: state.orders.reduce((sum: number, order: MockRecord) => sum + Number(order.total), 0).toFixed(2), pendingStores: 0 });
+  }
+  if (path === "/api/admin/users") return ok(state.users.map(publicUser));
+  if (path === "/api/admin/orders") return ok(state.orders);
+  if (path === "/api/admin/stores") return ok(state.stores);
+  if (path === "/api/admin/banners") return ok(state.banners);
+  if (path === "/api/delivery/orders") {
+    requireUser();
+    return ok(state.orders.filter((order: MockRecord) => !["cancelled", "delivered"].includes(order.status)));
+  }
+  if (path === "/api/delivery/location") {
+    requireUser();
+    const location = { lat: Number(body.lat ?? 22.5726), lng: Number(body.lng ?? 88.3639), updatedAt: mockNow() };
+    state.orders.forEach((order: MockRecord) => {
+      if (order.tracking?.deliveryPartner) order.tracking.deliveryPartner.location = location;
+    });
+    saveMockState(state);
+    return ok({ message: "Location updated" });
+  }
+  if (path === "/api/delivery/toggle-online") {
+    const user = requireUser();
+    user.isOnline = !user.isOnline;
+    saveMockState(state);
+    return ok({ message: user.isOnline ? "You are online" : "You are offline" });
+  }
+
+  return undefined;
+}
+
 export class ApiError<T = unknown> extends Error {
   readonly name = "ApiError";
   readonly status: number;
@@ -359,6 +1020,11 @@ export async function customFetch<T = unknown>(
   }
 
   const requestInfo = { method, url: resolveUrl(input) };
+
+  const mockData = await tryMockFetch<T>(input, { ...options, headers }, method);
+  if (mockData !== undefined) {
+    return mockData;
+  }
 
   const response = await fetch(input, { ...init, method, headers });
 

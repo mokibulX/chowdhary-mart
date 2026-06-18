@@ -1,4 +1,4 @@
-import { useForm } from "react-hook-form";
+﻿import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
 import { useAuth } from "@/hooks/use-auth";
@@ -27,7 +27,7 @@ export default function Profile() {
   const updateMe = useUpdateMe();
 
   const { register, handleSubmit, formState: { errors, isDirty } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema as any),
     defaultValues: { name: user?.name ?? "", phone: user?.phone ?? "" },
   });
 
@@ -84,7 +84,7 @@ export default function Profile() {
             <Link href="/wallet">
               <div className="bg-orange-50 rounded-xl p-3 text-center cursor-pointer hover:bg-orange-100 transition-colors">
                 <Wallet className="w-5 h-5 text-primary mx-auto mb-1" />
-                <p className="font-bold text-lg">₹{Number(user.walletBalance ?? 0).toFixed(0)}</p>
+                <p className="font-bold text-lg">â‚¹{Number(user.walletBalance ?? 0).toFixed(0)}</p>
                 <p className="text-xs text-muted-foreground">Wallet Balance</p>
               </div>
             </Link>
@@ -115,7 +115,7 @@ export default function Profile() {
             </div>
             <div className="space-y-1">
               <Label>Email</Label>
-              <Input value={user.email} disabled className="bg-muted/50" />
+              <Input value={user.email ?? ""} disabled className="bg-muted/50" />
             </div>
             <Button type="submit" className="w-full" disabled={!isDirty || updateMe.isPending} data-testid="btn-save">
               {updateMe.isPending ? "Saving..." : "Save Changes"}
@@ -139,7 +139,7 @@ export default function Profile() {
               <Link href={href}>
                 <div className="flex items-center justify-between px-5 py-3.5 hover:bg-muted/40 cursor-pointer transition-colors text-sm font-medium" data-testid={`link-${href.replace("/", "")}`}>
                   {label}
-                  <span className="text-muted-foreground">›</span>
+                  <span className="text-muted-foreground">â€º</span>
                 </div>
               </Link>
               {i < arr.length - 1 && <Separator />}

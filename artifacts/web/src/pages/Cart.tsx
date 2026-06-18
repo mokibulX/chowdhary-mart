@@ -45,7 +45,7 @@ export default function Cart() {
   const handleApplyCoupon = () => {
     if (!couponCode.trim()) return;
     validateCoupon.mutate(
-      { data: { code: couponCode.toUpperCase(), orderTotal: Number(cart?.subtotal ?? 0) } },
+      { data: { code: couponCode.toUpperCase(), orderValue: String(cart?.subtotal ?? 0) } },
       {
         onSuccess: (data) => {
           setAppliedCoupon({ code: couponCode.toUpperCase(), discount: data.discount });

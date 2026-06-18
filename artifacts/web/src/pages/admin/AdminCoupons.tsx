@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
@@ -40,7 +40,7 @@ export default function AdminCoupons() {
   const create = useCreateCoupon();
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema as any),
     defaultValues: { discountType: "flat" },
   });
   const discountType = watch("discountType");
@@ -110,10 +110,10 @@ export default function AdminCoupons() {
                   <p className="text-sm text-muted-foreground">{coupon.description}</p>
                   <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">
-                      {coupon.discountType === "flat" ? `₹${Number(coupon.discountValue).toFixed(0)} off` : `${Number(coupon.discountValue).toFixed(0)}% off`}
-                      {coupon.maxDiscount ? ` (max ₹${Number(coupon.maxDiscount).toFixed(0)})` : ""}
+                      {coupon.discountType === "flat" ? `â‚¹${Number(coupon.discountValue).toFixed(0)} off` : `${Number(coupon.discountValue).toFixed(0)}% off`}
+                      {coupon.maxDiscount ? ` (max â‚¹${Number(coupon.maxDiscount).toFixed(0)})` : ""}
                     </span>
-                    {coupon.minOrderValue && <span>Min ₹{Number(coupon.minOrderValue).toFixed(0)}</span>}
+                    {coupon.minOrderValue && <span>Min â‚¹{Number(coupon.minOrderValue).toFixed(0)}</span>}
                     <span>Used {coupon.usedCount ?? 0}{coupon.usageLimit ? `/${coupon.usageLimit}` : ""} times</span>
                     {coupon.expiresAt && (
                       <span className="flex items-center gap-0.5">
@@ -144,7 +144,7 @@ export default function AdminCoupons() {
                 <Select defaultValue="flat" onValueChange={v => setValue("discountType", v as "flat" | "percent")}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="flat">Flat (₹)</SelectItem>
+                    <SelectItem value="flat">Flat (â‚¹)</SelectItem>
                     <SelectItem value="percent">Percent (%)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -157,18 +157,18 @@ export default function AdminCoupons() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>{discountType === "flat" ? "Amount (₹)" : "Percent (%)"} *</Label>
+                <Label>{discountType === "flat" ? "Amount (â‚¹)" : "Percent (%)"} *</Label>
                 <Input type="number" {...register("discountValue")} data-testid="input-value" />
                 {errors.discountValue && <p className="text-xs text-red-500">{errors.discountValue.message}</p>}
               </div>
               {discountType === "percent" && (
                 <div className="space-y-1">
-                  <Label>Max Discount (₹)</Label>
+                  <Label>Max Discount (â‚¹)</Label>
                   <Input type="number" {...register("maxDiscount")} data-testid="input-max" />
                 </div>
               )}
               <div className="space-y-1">
-                <Label>Min Order (₹)</Label>
+                <Label>Min Order (â‚¹)</Label>
                 <Input type="number" {...register("minOrderValue")} data-testid="input-min-order" />
               </div>
               <div className="space-y-1">

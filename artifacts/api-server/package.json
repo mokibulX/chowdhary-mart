@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
+    "dev": "node -e \"process.env.NODE_ENV='development'; const {spawnSync}=require('child_process'); const pnpm = (process.env.APPDATA || '') + '\\\\npm\\\\pnpm.cmd'; for (const args of [['run','build'], ['run','start']]) { const r = spawnSync(pnpm, args, {stdio:'inherit', shell:true}); if (r.status) process.exit(r.status || 1); }\"",
     "build": "node ./build.mjs",
-    "start": "node --enable-source-maps ./dist/index.mjs",
+    "start": "run dev",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

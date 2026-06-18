@@ -1,4 +1,4 @@
-import { useForm } from "react-hook-form";
+﻿import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
 import { useGetVendorStore, useUpdateVendorStore, getGetVendorStoreQueryKey } from "@workspace/api-client-react";
@@ -41,7 +41,7 @@ export default function VendorStore() {
   const update = useUpdateVendorStore();
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors, isDirty } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema as any),
     defaultValues: { isOpen: true, deliveryFee: 49, freeDeliveryAbove: 299, minOrderValue: 99, estimatedDeliveryMins: 30 },
   });
   const isOpen = watch("isOpen");
@@ -139,15 +139,15 @@ export default function VendorStore() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <Label>Delivery Fee (₹)</Label>
+                <Label>Delivery Fee (â‚¹)</Label>
                 <Input type="number" {...register("deliveryFee")} data-testid="input-delivery-fee" />
               </div>
               <div className="space-y-1">
-                <Label>Free Delivery Above (₹)</Label>
+                <Label>Free Delivery Above (â‚¹)</Label>
                 <Input type="number" {...register("freeDeliveryAbove")} data-testid="input-free-delivery" />
               </div>
               <div className="space-y-1">
-                <Label>Min Order Value (₹)</Label>
+                <Label>Min Order Value (â‚¹)</Label>
                 <Input type="number" {...register("minOrderValue")} data-testid="input-min-order" />
               </div>
               <div className="space-y-1">

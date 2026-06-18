@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
@@ -47,7 +47,7 @@ export default function Addresses() {
   const del = useDeleteAddress();
 
   const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema as any),
     defaultValues: { label: "home", state: "Delhi", isDefault: false },
   });
 
@@ -68,7 +68,7 @@ export default function Addresses() {
   };
 
   const onSubmit = (data: FormData) => {
-    const payload = { ...data, isDefault: data.isDefault ?? false };
+    const payload = { ...data, label: data.label || "home", isDefault: data.isDefault ?? false };
     const onSuccess = () => {
       qc.invalidateQueries({ queryKey: getListAddressesQueryKey() });
       setDialogOpen(false);

@@ -138,7 +138,7 @@ export default function OrderDetail() {
         <Separator />
         <div className="flex justify-between font-bold text-base"><span>Total Paid</span><span>₹{Number(order.total).toFixed(0)}</span></div>
         <div className="flex justify-between text-xs text-muted-foreground"><span>Payment</span><span className="capitalize">{order.paymentMethod?.replace(/_/g, " ")} · {order.paymentStatus}</span></div>
-        {order.loyaltyPointsEarned > 0 && (
+        {Number(order.loyaltyPointsEarned ?? 0) > 0 && (
           <div className="flex items-center gap-1 text-xs text-amber-600 font-medium mt-1">
             <Star className="w-3 h-3" />{order.loyaltyPointsEarned} loyalty points earned
           </div>
