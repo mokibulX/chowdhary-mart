@@ -18,7 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, Package, AlertTriangle } from "lucide-react";
+import { ImagePlus, Plus, Pencil, Trash2, Package, AlertTriangle, X } from "lucide-react";
 
 const schema = z.object({
   name: z.string().min(2, "Name required"),
@@ -41,6 +41,7 @@ export default function VendorProducts() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
 
   const { data: products, isLoading } = useListVendorProducts({
     query: { enabled: !!user, queryKey: getListVendorProductsQueryKey() },
@@ -59,12 +60,14 @@ export default function VendorProducts() {
 
   const openCreate = () => {
     setEditId(null);
+    setImageUrls([]);
     reset({ isAvailable: true, isFeatured: false, stock: 0 });
     setDialogOpen(true);
   };
 
   const openEdit = (p: any) => {
     setEditId(p.id);
+    setImageUrls(Array.isArray(p.images) ? p.images : []);
     reset({
       name: p.name, description: p.description ?? "",
       categoryId: p.categoryId, price: Number(p.price), mrp: Number(p.mrp),
@@ -75,6 +78,7 @@ export default function VendorProducts() {
   };
 
   const onSubmit = (data: FormData) => {
+    const cleanImages = imageUrls.map(url => url.trim()).filter(Boolean);
     const payload = {
       name: data.name,
       description: data.description,
@@ -84,7 +88,7 @@ export default function VendorProducts() {
       stock: data.stock,
       weight: data.weight,
       unit: data.unit,
-      images: data.imageUrl ? [data.imageUrl] : [],
+      images: cleanImages,
       isAvailable: data.isAvailable,
       isFeatured: data.isFeatured,
     };
@@ -108,6 +112,27 @@ export default function VendorProducts() {
         qc.invalidateQueries({ queryKey: getListVendorProductsQueryKey() });
         toast({ title: "Product deleted" });
       },
+    });
+  };
+
+  const addImageField = () => setImageUrls(prev => [...prev, ""]);
+  const updateImageField = (index: number, value: string) => {
+    setImageUrls(prev => prev.map((url, i) => i === index ? value : url));
+  };
+  const removeImageField = (index: number) => {
+    setImageUrls(prev => prev.filter((_, i) => i !== index));
+  };
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []).filter(file => file.type.startsWith("image/"));
+    if (!files.length) return;
+
+    Promise.all(files.map(file => new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.readAsDataURL(file);
+    }))).then(urls => {
+      setImageUrls(prev => [...prev, ...urls.filter(Boolean)]);
+      toast({ title: `${urls.length} photo added` });
     });
   };
 
@@ -225,10 +250,44 @@ export default function VendorProducts() {
                 <Input placeholder="g, ml, pcs" {...register("unit")} data-testid="input-unit" />
               </div>
             </div>
-            <div className="space-y-1">
-              <Label>Image URL</Label>
-              <Input type="url" placeholder="https://..." {...register("imageUrl")} data-testid="input-image" />
-              {errors.imageUrl && <p className="text-xs text-red-500">{errors.imageUrl.message}</p>}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Product Photos</Label>
+                <div className="flex gap-2">
+                  <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs font-medium hover:bg-muted">
+                    <ImagePlus className="mr-1 h-3.5 w-3.5" />
+                    Upload
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} data-testid="input-product-images" />
+                  </label>
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addImageField}>
+                    <Plus className="mr-1 h-3 w-3" />URL
+                  </Button>
+                </div>
+              </div>
+              {!imageUrls.length ? (
+                <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+                  Add one or more product photos.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {imageUrls.map((url, index) => (
+                    <div key={`${index}-${url.slice(0, 12)}`} className="flex items-center gap-2">
+                      <div className="h-12 w-12 overflow-hidden rounded-md border bg-gray-50">
+                        {url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
+                      </div>
+                      <Input
+                        value={url}
+                        onChange={(event) => updateImageField(index, event.target.value)}
+                        placeholder="https://... or uploaded image"
+                        data-testid={`input-image-${index}`}
+                      />
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => removeImageField(index)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

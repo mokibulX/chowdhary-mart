@@ -16,8 +16,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MapPin, Plus, Pencil, Trash2 } from "lucide-react";
+import { LocateFixed, MapPin, Plus, Pencil, Trash2 } from "lucide-react";
 import { Link } from "wouter";
+import { getSavedDeliveryLocation, lookupPincode } from "@/lib/pincode";
 
 const schema = z.object({
   label: z.string().optional().or(z.literal("")),
@@ -28,6 +29,8 @@ const schema = z.object({
   city: z.string().min(2, "City required"),
   state: z.string().min(2, "State required"),
   pincode: z.string().length(6, "Valid 6-digit pincode"),
+  lat: z.coerce.number().optional(),
+  lng: z.coerce.number().optional(),
   isDefault: z.boolean().optional(),
 });
 type FormData = z.infer<typeof schema>;
@@ -46,14 +49,31 @@ export default function Addresses() {
   const update = useUpdateAddress();
   const del = useDeleteAddress();
 
-  const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, reset, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema as any),
-    defaultValues: { label: "home", state: "Delhi", isDefault: false },
+    defaultValues: { label: "home", state: "West Bengal", isDefault: false },
   });
+  const pincodeValue = watch("pincode");
+
+  const fillFromPincode = (value = pincodeValue) => {
+    const found = lookupPincode(value ?? "");
+    if (!found) {
+      toast({ title: "Pincode not serviceable", description: "Demo pincode: 700156, 110001, 400001, 560001", variant: "destructive" });
+      return;
+    }
+    setValue("city", found.city, { shouldValidate: true });
+    setValue("state", found.state, { shouldValidate: true });
+    setValue("pincode", found.pincode, { shouldValidate: true });
+    setValue("line2", found.area, { shouldValidate: true });
+    setValue("lat", found.lat);
+    setValue("lng", found.lng);
+    toast({ title: "Location selected", description: `${found.area}, ${found.city} - ${found.pincode}` });
+  };
 
   const openCreate = () => {
     setEditId(null);
-    reset({ label: "home", state: "Delhi", isDefault: false });
+    const saved = getSavedDeliveryLocation();
+    reset({ label: "home", state: saved.state, city: saved.city, pincode: saved.pincode, line2: saved.area, lat: saved.lat, lng: saved.lng, isDefault: false });
     setDialogOpen(true);
   };
 
@@ -62,7 +82,7 @@ export default function Addresses() {
     reset({
       label: addr.label ?? "", name: addr.name, phone: addr.phone,
       line1: addr.line1, line2: addr.line2 ?? "", city: addr.city,
-      state: addr.state, pincode: addr.pincode, isDefault: !!addr.isDefault,
+      state: addr.state, pincode: addr.pincode, lat: addr.lat ?? undefined, lng: addr.lng ?? undefined, isDefault: !!addr.isDefault,
     });
     setDialogOpen(true);
   };
@@ -186,7 +206,12 @@ export default function Addresses() {
               </div>
               <div className="space-y-1">
                 <Label>Pincode *</Label>
-                <Input {...register("pincode")} maxLength={6} data-testid="input-addr-pincode" />
+                <div className="flex gap-2">
+                  <Input {...register("pincode")} inputMode="numeric" maxLength={6} data-testid="input-addr-pincode" />
+                  <Button type="button" variant="outline" className="px-3" onClick={() => fillFromPincode()}>
+                    <LocateFixed className="h-4 w-4" />
+                  </Button>
+                </div>
                 {errors.pincode && <p className="text-xs text-red-500">{errors.pincode.message}</p>}
               </div>
             </div>
@@ -194,6 +219,8 @@ export default function Addresses() {
               <Label>State *</Label>
               <Input {...register("state")} data-testid="input-addr-state" />
             </div>
+            <input type="hidden" {...register("lat")} />
+            <input type="hidden" {...register("lng")} />
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" {...register("isDefault")} className="accent-primary" data-testid="checkbox-default" />
               <span className="text-sm">Set as default address</span>

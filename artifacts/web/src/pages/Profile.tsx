@@ -1,18 +1,37 @@
-﻿import { useForm } from "react-hook-form";
+import { useState } from "react";
+import type { ElementType } from "react";
+import { Link } from "wouter";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
-import { useAuth } from "@/hooks/use-auth";
-import { useUpdateMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { getGetMeQueryKey, useUpdateMe } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { User, Star, Wallet, Copy, LogOut } from "lucide-react";
-import { Link } from "wouter";
+import {
+  AlertTriangle,
+  Bell,
+  Camera,
+  ChevronRight,
+  CreditCard,
+  Globe2,
+  Heart,
+  HelpCircle,
+  Info,
+  Lock,
+  LogOut,
+  MapPin,
+  Package,
+  RotateCcw,
+  ShieldCheck,
+  Sparkles,
+  User,
+  WalletCards,
+} from "lucide-react";
 
 const schema = z.object({
   name: z.string().min(2, "Name is required"),
@@ -20,11 +39,23 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
+type RowAction = {
+  label: string;
+  desc: string;
+  icon: ElementType;
+  color: string;
+  href?: string;
+  value?: string;
+  action?: () => void;
+};
+
 export default function Profile() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const updateMe = useUpdateMe();
+  const [manageOpen, setManageOpen] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatarUrl ?? null);
 
   const { register, handleSubmit, formState: { errors, isDirty } } = useForm<FormData>({
     resolver: zodResolver(schema as any),
@@ -33,77 +64,144 @@ export default function Profile() {
 
   if (!user) {
     return (
-      <div className="text-center py-16">
+      <div className="py-16 text-center">
         <p>Please <Link href="/login" className="text-primary underline">sign in</Link></p>
       </div>
     );
   }
 
-  const onSubmit = (data: FormData) => {
+  const showSoon = (title: string) => toast({ title, description: "This option is ready in demo mode and will connect to a full backend setting later." });
+
+  const sections: { title: string; rows: RowAction[] }[] = [
+    {
+      title: "My Orders & Activity",
+      rows: [
+        { label: "My Orders", desc: "View and track your orders", icon: Package, color: "text-[#0757ee]", href: "/orders" },
+        { label: "My Returns", desc: "View your return requests", icon: RotateCcw, color: "text-green-600", href: "/returns" },
+        { label: "My Wishlist", desc: "Your saved products", icon: Heart, color: "text-pink-500", href: "/wishlist" },
+        { label: "Recently Viewed", desc: "Products you viewed recently", icon: User, color: "text-[#0757ee]", href: "/search" },
+      ],
+    },
+    {
+      title: "Account Settings",
+      rows: [
+        { label: "Personal Information", desc: "Manage your name, email, phone number", icon: User, color: "text-purple-600", action: () => setManageOpen(true) },
+        { label: "Chowdhary Plus", desc: "View Plus benefits and membership", icon: Sparkles, color: "text-yellow-500", href: "/coupons" },
+        { label: "Saved Addresses", desc: "Manage delivery addresses", icon: MapPin, color: "text-orange-500", href: "/addresses" },
+        { label: "Payment Methods", desc: "Cash on Delivery and UPI options", icon: CreditCard, color: "text-[#0757ee]", href: "/wallet" },
+        { label: "Change Password", desc: "Update your account password", icon: Lock, color: "text-green-600", href: "/login" },
+        { label: "Notification Preferences", desc: "Manage your notification settings", icon: Bell, color: "text-yellow-500", href: "/notifications" },
+        { label: "Privacy Settings", desc: "Manage privacy and data settings", icon: ShieldCheck, color: "text-[#0757ee]", action: () => showSoon("Privacy settings") },
+        { label: "Language", desc: "Change app language", icon: Globe2, color: "text-purple-600", value: localStorage.getItem("ekart_language") || "English", href: "/language" },
+      ],
+    },
+    {
+      title: "Support",
+      rows: [
+        { label: "Help Center", desc: "Get help and support", icon: HelpCircle, color: "text-[#0757ee]", href: "/help" },
+        { label: "Report a Problem", desc: "Report an issue or share feedback", icon: AlertTriangle, color: "text-orange-600", href: "/help" },
+        { label: "About Chowdhary Mart", desc: "App info, terms and policies", icon: Info, color: "text-[#0757ee]", href: "/help" },
+      ],
+    },
+  ];
+
+  const saveProfile = (data: FormData) => {
     updateMe.mutate(
-      { data: { name: data.name, phone: data.phone || undefined } },
+      { data: { name: data.name, phone: data.phone || undefined, avatarUrl: avatarPreview || undefined } },
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
+          setManageOpen(false);
           toast({ title: "Profile updated" });
         },
         onError: () => toast({ title: "Update failed", variant: "destructive" }),
-      }
+      },
     );
   };
 
-  const copyReferral = () => {
-    if (user.referralCode) {
-      navigator.clipboard.writeText(user.referralCode);
-      toast({ title: "Copied!", description: `Referral code ${user.referralCode} copied` });
+  const handleAvatarUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Please choose an image file", variant: "destructive" });
+      return;
     }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      setAvatarPreview(reader.result);
+      updateMe.mutate(
+        { data: { avatarUrl: reader.result } },
+        {
+          onSuccess: () => {
+            qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
+            toast({ title: "Profile photo updated" });
+          },
+          onError: () => toast({ title: "Photo update failed", variant: "destructive" }),
+        },
+      );
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
-    <div className="max-w-lg mx-auto space-y-5">
-      <h1 className="text-xl font-bold">My Account</h1>
-
-      {/* Avatar + quick stats */}
-      <Card>
-        <CardContent className="p-5">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
-              {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt={user.name} className="w-full h-full rounded-full object-cover" />
-              ) : (
-                <User className="w-8 h-8 text-primary" />
-              )}
+    <div className="mx-auto w-full max-w-3xl space-y-5 overflow-x-hidden pb-6">
+      <section className="rounded-[22px] border bg-white p-5 shadow-sm">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="relative h-20 w-20 flex-shrink-0">
+            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-[#0757ee] text-white">
+              {avatarPreview ? <img src={avatarPreview} alt={user.name} className="h-full w-full object-cover" /> : <User className="h-10 w-10" />}
             </div>
-            <div>
-              <h2 className="text-lg font-bold">{user.name}</h2>
-              <p className="text-sm text-muted-foreground">{user.email}</p>
-              <Badge variant="outline" className="text-xs mt-1 capitalize">{user.role?.replace("_", " ")}</Badge>
-            </div>
+            <label className="absolute -bottom-1 -right-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-white text-[#0757ee] shadow-md ring-1 ring-gray-200">
+              <Camera className="h-4 w-4" />
+              <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} data-testid="input-avatar" />
+            </label>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Link href="/wallet">
-              <div className="bg-orange-50 rounded-xl p-3 text-center cursor-pointer hover:bg-orange-100 transition-colors">
-                <Wallet className="w-5 h-5 text-primary mx-auto mb-1" />
-                <p className="font-bold text-lg">â‚¹{Number(user.walletBalance ?? 0).toFixed(0)}</p>
-                <p className="text-xs text-muted-foreground">Wallet Balance</p>
-              </div>
-            </Link>
-            <div className="bg-amber-50 rounded-xl p-3 text-center">
-              <Star className="w-5 h-5 text-amber-500 mx-auto mb-1" />
-              <p className="font-bold text-lg">{user.loyaltyPoints ?? 0}</p>
-              <p className="text-xs text-muted-foreground">Loyalty Points</p>
-            </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-xl font-bold">{user.name}</h1>
+            <p className="text-sm text-muted-foreground">{user.phone || "+91 98765 43210"}</p>
+            <p className="truncate text-sm text-muted-foreground">{user.email}</p>
           </div>
-        </CardContent>
-      </Card>
+          <Button variant="outline" className="hidden shrink-0 border-[#0757ee] text-[#0757ee] sm:flex" onClick={() => setManageOpen(true)}>
+            Manage Account <ChevronRight className="ml-1 h-4 w-4" />
+          </Button>
+        </div>
+        <Button variant="outline" className="mt-4 w-full border-[#0757ee] text-[#0757ee] sm:hidden" onClick={() => setManageOpen(true)}>
+          Manage Account <ChevronRight className="ml-1 h-4 w-4" />
+        </Button>
+      </section>
 
-      {/* Edit profile */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Edit Profile</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      {sections.map((section) => (
+        <section key={section.title} className="space-y-2">
+          <h2 className="px-1 text-sm font-bold uppercase tracking-wide text-muted-foreground">{section.title}</h2>
+          <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
+            {section.rows.map((row, index) => (
+              <ActionRow key={row.label} row={row} last={index === section.rows.length - 1} />
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <button
+        type="button"
+        onClick={logout}
+        className="flex w-full items-center gap-4 rounded-lg border bg-white p-4 text-left shadow-sm transition-colors hover:bg-red-50"
+        data-testid="btn-logout"
+      >
+        <LogOut className="h-7 w-7 text-red-500" />
+        <span className="flex-1">
+          <span className="block font-bold text-red-500">Log Out</span>
+          <span className="text-sm text-muted-foreground">Securely log out from your account</span>
+        </span>
+        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+      </button>
+
+      <Dialog open={manageOpen} onOpenChange={setManageOpen}>
+        <DialogContent className="w-[calc(100vw-24px)] max-w-md rounded-xl">
+          <DialogHeader>
+            <DialogTitle>Manage Account</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(saveProfile)} className="space-y-4">
             <div className="space-y-1">
               <Label htmlFor="name">Full name</Label>
               <Input id="name" {...register("name")} data-testid="input-name" />
@@ -117,56 +215,34 @@ export default function Profile() {
               <Label>Email</Label>
               <Input value={user.email ?? ""} disabled className="bg-muted/50" />
             </div>
-            <Button type="submit" className="w-full" disabled={!isDirty || updateMe.isPending} data-testid="btn-save">
+            <div className="grid grid-cols-2 gap-3 rounded-lg bg-blue-50 p-3 text-sm">
+              <div><WalletCards className="mb-1 h-5 w-5 text-[#0757ee]" />Rs.{Number(user.walletBalance ?? 0).toFixed(0)} wallet</div>
+              <div><Sparkles className="mb-1 h-5 w-5 text-yellow-500" />{user.loyaltyPoints ?? 0} points</div>
+            </div>
+            <Button type="submit" className="w-full" disabled={(!isDirty && avatarPreview === user.avatarUrl) || updateMe.isPending} data-testid="btn-save">
               {updateMe.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </form>
-        </CardContent>
-      </Card>
-
-      {/* Quick links */}
-      <Card>
-        <CardContent className="p-0">
-          {[
-            { href: "/orders", label: "My Orders" },
-            { href: "/addresses", label: "Saved Addresses" },
-            { href: "/wallet", label: "Wallet & Transactions" },
-            { href: "/coupons", label: "Offers & Coupons" },
-            { href: "/notifications", label: "Notifications" },
-            { href: "/wishlist", label: "Wishlist" },
-          ].map(({ href, label }, i, arr) => (
-            <div key={href}>
-              <Link href={href}>
-                <div className="flex items-center justify-between px-5 py-3.5 hover:bg-muted/40 cursor-pointer transition-colors text-sm font-medium" data-testid={`link-${href.replace("/", "")}`}>
-                  {label}
-                  <span className="text-muted-foreground">â€º</span>
-                </div>
-              </Link>
-              {i < arr.length - 1 && <Separator />}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* Referral */}
-      {user.referralCode && (
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm font-semibold mb-2">Your Referral Code</p>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm font-mono font-bold tracking-widest">{user.referralCode}</div>
-              <Button variant="outline" size="sm" onClick={copyReferral} data-testid="btn-copy-referral">
-                <Copy className="w-3 h-3 mr-1" />Copy
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">Share to earn rewards when friends join</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Button variant="destructive" className="w-full" onClick={logout} data-testid="btn-logout">
-        <LogOut className="w-4 h-4 mr-2" />Sign Out
-      </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+function ActionRow({ row, last }: { row: RowAction; last: boolean }) {
+  const Icon = row.icon;
+  const content = (
+    <div className={`flex min-w-0 items-center gap-4 bg-white p-4 text-left transition-colors hover:bg-gray-50 ${last ? "" : "border-b"}`}>
+      <Icon className={`h-7 w-7 flex-shrink-0 ${row.color}`} />
+      <span className="min-w-0 flex-1">
+        <span className="block font-bold leading-tight">{row.label}</span>
+        <span className="line-clamp-1 text-sm text-muted-foreground">{row.desc}</span>
+      </span>
+      {row.value && <span className="text-sm text-muted-foreground">{row.value}</span>}
+      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+    </div>
+  );
+
+  if (row.href) return <Link href={row.href}>{content}</Link>;
+  return <button type="button" onClick={row.action} className="block w-full">{content}</button>;
 }

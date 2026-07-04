@@ -6,6 +6,23 @@ import { signToken, hashPassword, comparePassword, generateReferralCode } from "
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 
 const router = Router();
+const DEMO_OTP = "123456";
+
+function publicAuthUser(user: typeof usersTable.$inferSelect) {
+  return {
+    id: user.id,
+    email: user.email,
+    phone: user.phone,
+    name: user.name,
+    avatarUrl: user.avatarUrl,
+    role: user.role,
+    walletBalance: user.walletBalance,
+    loyaltyPoints: user.loyaltyPoints,
+    referralCode: user.referralCode,
+    isVerified: user.isVerified,
+    createdAt: user.createdAt,
+  };
+}
 
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
@@ -57,19 +74,7 @@ router.post("/register", async (req, res) => {
 
     res.status(201).json({
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        phone: user.phone,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-        role: user.role,
-        walletBalance: user.walletBalance,
-        loyaltyPoints: user.loyaltyPoints,
-        referralCode: user.referralCode,
-        isVerified: user.isVerified,
-        createdAt: user.createdAt,
-      },
+      user: publicAuthUser(user),
     });
   } catch (err) {
     req.log.error(err);
@@ -113,20 +118,68 @@ router.post("/login", async (req, res) => {
 
     res.json({
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        phone: user.phone,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-        role: user.role,
-        walletBalance: user.walletBalance,
-        loyaltyPoints: user.loyaltyPoints,
-        referralCode: user.referralCode,
-        isVerified: user.isVerified,
-        createdAt: user.createdAt,
-      },
+      user: publicAuthUser(user),
     });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/auth/otp-login
+router.post("/otp-login", async (req, res) => {
+  try {
+    const { email, phone, otp } = req.body as { email?: string; phone?: string; otp?: string };
+
+    if (otp !== DEMO_OTP || (!email && !phone)) {
+      res.status(400).json({ error: "Valid email/phone and OTP are required" });
+      return;
+    }
+
+    const conditions = [];
+    if (email) conditions.push(eq(usersTable.email, email));
+    if (phone) conditions.push(eq(usersTable.phone, phone));
+
+    const [user] = await db.select().from(usersTable).where(or(...conditions)).limit(1);
+    if (!user || !user.isActive) {
+      res.status(401).json({ error: "Account not found or disabled" });
+      return;
+    }
+
+    const token = signToken({ userId: user.id, role: user.role });
+    res.json({ token, user: publicAuthUser(user) });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/auth/forgot-password
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email, phone, otp, password } = req.body as { email?: string; phone?: string; otp?: string; password?: string };
+
+    if (otp !== DEMO_OTP || !password || password.length < 6 || (!email && !phone)) {
+      res.status(400).json({ error: "Valid OTP, new password and email/phone are required" });
+      return;
+    }
+
+    const conditions = [];
+    if (email) conditions.push(eq(usersTable.email, email));
+    if (phone) conditions.push(eq(usersTable.phone, phone));
+
+    const [existing] = await db.select().from(usersTable).where(or(...conditions)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Account not found" });
+      return;
+    }
+
+    const [user] = await db.update(usersTable)
+      .set({ passwordHash: await hashPassword(password), updatedAt: new Date() })
+      .where(eq(usersTable.id, existing.id))
+      .returning();
+
+    res.json({ message: "Password updated successfully", user: publicAuthUser(user) });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

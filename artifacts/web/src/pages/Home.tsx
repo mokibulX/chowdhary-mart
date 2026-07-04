@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import {
   useListBanners,
   useListCategories,
@@ -8,12 +9,13 @@ import {
   getListStoresQueryKey,
   getListProductsQueryKey,
 } from "@workspace/api-client-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProductCard } from "@/components/ProductCard";
-import { ArrowRight, BadgePercent, Clock, CreditCard, ShieldCheck, Truck, Zap } from "lucide-react";
+import { ArrowRight, BadgePercent, Clock, CreditCard, MapPin, Search, ShieldCheck, Sparkles, Truck, Zap } from "lucide-react";
 
 const OFFER_CARDS = [
   { title: "Bank offer", text: "10% instant discount on cards", icon: CreditCard, tone: "bg-blue-50 text-blue-700 border-blue-100" },
@@ -22,31 +24,201 @@ const OFFER_CARDS = [
   { title: "Assured quality", text: "Verified products and sellers", icon: ShieldCheck, tone: "bg-violet-50 text-violet-700 border-violet-100" },
 ];
 
+const CATEGORY_FALLBACK_IMAGES = [
+  "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=300&q=80",
+  "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=300&q=80",
+  "https://images.unsplash.com/photo-1491553895911-0055eca6402d?auto=format&fit=crop&w=300&q=80",
+  "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=300&q=80",
+  "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=300&q=80",
+  "https://images.unsplash.com/photo-1583947215259-38e31be8751f?auto=format&fit=crop&w=300&q=80",
+  "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&w=300&q=80",
+  "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=300&q=80",
+  "https://images.unsplash.com/photo-1571019613914-85f342c6a11e?auto=format&fit=crop&w=300&q=80",
+  "https://images.unsplash.com/photo-1607083206968-13611e3d76db?auto=format&fit=crop&w=300&q=80",
+];
+
+const FALLBACK_BANNERS = [
+  {
+    id: -1,
+    title: "Mega Sale Weekend",
+    subtitle: "Fresh deals on phones, grocery, fashion and daily essentials.",
+    imageUrl: "https://images.unsplash.com/photo-1607083206968-13611e3d76db?auto=format&fit=crop&w=1400&q=80",
+    href: "/search?sort=price_asc",
+  },
+  {
+    id: -2,
+    title: "40 Minute Local Delivery",
+    subtitle: "Order from nearby verified sellers and track every move live.",
+    imageUrl: "https://images.unsplash.com/photo-1586880244386-8b3e34c8382c?auto=format&fit=crop&w=1400&q=80",
+    href: "/search",
+  },
+  {
+    id: -3,
+    title: "Gadget Rush",
+    subtitle: "Mobiles, audio, accessories and home tech at sharper prices.",
+    imageUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1400&q=80",
+    href: "/search?categoryId=1",
+  },
+];
+
 export default function Home() {
+  const [, setLocation] = useLocation();
+  const [searchText, setSearchText] = useState("");
+  const [recentlyViewed, setRecentlyViewed] = useState<any[]>([]);
+  const [secondsLeft, setSecondsLeft] = useState(3600 * 5 + 42 * 60 + 12);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | undefined>();
+
   const { data: banners, isLoading: loadingBanners } = useListBanners({ query: { queryKey: getListBannersQueryKey() } });
   const { data: categories, isLoading: loadingCategories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
   const { data: stores, isLoading: loadingStores } = useListStores({ limit: 5 }, { query: { queryKey: getListStoresQueryKey({ limit: 5 }) } });
   const { data: featured, isLoading: loadingFeatured } = useListProducts({ featured: true, limit: 12 }, { query: { queryKey: getListProductsQueryKey({ featured: true, limit: 12 }) } });
-  const { data: electronics } = useListProducts({ categoryId: 1, limit: 6 }, { query: { queryKey: getListProductsQueryKey({ categoryId: 1, limit: 6 }) } });
-  const { data: grocery } = useListProducts({ categoryId: 2, limit: 6 }, { query: { queryKey: getListProductsQueryKey({ categoryId: 2, limit: 6 }) } });
+  const { data: electronics } = useListProducts({ categoryId: 1, limit: 8 }, { query: { queryKey: getListProductsQueryKey({ categoryId: 1, limit: 8 }) } });
+  const { data: grocery } = useListProducts({ categoryId: 2, limit: 8 }, { query: { queryKey: getListProductsQueryKey({ categoryId: 2, limit: 8 }) } });
+  const { data: bestSellers } = useListProducts({ sort: "rating" as any, limit: 8 }, { query: { queryKey: getListProductsQueryKey({ sort: "rating" as any, limit: 8 }) } });
+  const { data: newest } = useListProducts({ limit: 8 }, { query: { queryKey: getListProductsQueryKey({ limit: 8 }) } });
+  const selectedCategoryParams = { categoryId: selectedCategoryId, limit: 12 };
+  const { data: selectedCategoryProducts, isLoading: loadingSelectedCategory } = useListProducts(selectedCategoryParams, {
+    query: { enabled: !!selectedCategoryId, queryKey: getListProductsQueryKey(selectedCategoryParams) },
+  });
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setSecondsLeft((value) => Math.max(0, value - 1)), 1000);
+    const stored = localStorage.getItem("ekart_recent_products");
+    if (stored) {
+      try {
+        setRecentlyViewed(JSON.parse(stored).slice(0, 8));
+      } catch {
+        setRecentlyViewed([]);
+      }
+    }
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const slides = banners?.length ? banners : FALLBACK_BANNERS;
+  const selectedCategory = categories?.find((cat) => cat.id === selectedCategoryId);
+  const quickPhotoProducts = (newest?.items ?? featured?.items ?? []).slice(0, 7);
+  const countdown = useMemo(() => {
+    const hours = Math.floor(secondsLeft / 3600).toString().padStart(2, "0");
+    const minutes = Math.floor((secondsLeft % 3600) / 60).toString().padStart(2, "0");
+    const seconds = Math.floor(secondsLeft % 60).toString().padStart(2, "0");
+    return `${hours}:${minutes}:${seconds}`;
+  }, [secondsLeft]);
+
+  const submitSearch = (event: React.FormEvent) => {
+    event.preventDefault();
+    const q = searchText.trim();
+    setLocation(q ? `/search?q=${encodeURIComponent(q)}` : "/search");
+  };
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="w-full max-w-full space-y-6 overflow-x-hidden pb-10">
       <style>{`
         @keyframes lch-slide { 0%, 28% { transform: translateX(0); } 34%, 62% { transform: translateX(-100%); } 68%, 96% { transform: translateX(-200%); } 100% { transform: translateX(0); } }
         @keyframes lch-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+        @keyframes lch-shine { 0% { transform: translateX(-140%) skewX(-18deg); } 45%, 100% { transform: translateX(220%) skewX(-18deg); } }
         .lch-carousel { animation: lch-slide 15s ease-in-out infinite; }
         .lch-float { animation: lch-float 3.5s ease-in-out infinite; }
+        .lch-offer-shine::after { animation: lch-shine 3.8s ease-in-out infinite; }
       `}</style>
 
-      <section className="overflow-hidden rounded-lg bg-white border">
-        {loadingBanners ? (
-          <Skeleton className="h-56 md:h-72 w-full" />
+      <section className="rounded-lg border bg-white p-3 shadow-sm">
+        <button className="mb-3 flex w-full items-center gap-2 rounded-md bg-orange-50 px-3 py-2 text-left text-sm text-gray-800">
+          <MapPin className="h-4 w-4 text-primary" />
+          <span className="font-semibold">Deliver to Kolkata 700001</span>
+          <span className="ml-auto text-xs text-primary">Change</span>
+        </button>
+        <form onSubmit={submitSearch} className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              className="h-11 pl-9"
+              placeholder="Search phones, grocery, fashion..."
+              data-testid="home-search"
+            />
+          </div>
+          <Button className="h-11" type="submit">Search</Button>
+        </form>
+      </section>
+
+      <section className="rounded-lg border bg-white p-3 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-bold">Shop by category</h2>
+          <Link href="/search" className="text-xs font-medium text-primary">View all</Link>
+        </div>
+        {loadingCategories ? (
+          <div className="flex max-w-full gap-3 overflow-x-auto pb-1">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 min-w-16 rounded-full" />)}</div>
         ) : (
-          <div className="relative h-56 md:h-72 overflow-hidden">
+          <div className="flex max-w-full gap-3 overflow-x-auto pb-1">
+            {categories?.map((cat, index) => (
+              <button key={cat.id} type="button" onClick={() => setSelectedCategoryId(cat.id)} className="group min-w-[72px] text-center">
+                <div className={`mx-auto h-16 w-16 overflow-hidden rounded-full border-2 border-white bg-gray-50 shadow-sm ring-1 transition-all group-hover:-translate-y-1 ${selectedCategoryId === cat.id ? "ring-2 ring-[#0757ee]" : "ring-gray-200 group-hover:ring-primary/50"}`}>
+                  <img src={cat.imageUrl || CATEGORY_FALLBACK_IMAGES[index % CATEGORY_FALLBACK_IMAGES.length]} alt={cat.name} className="h-full w-full object-cover" />
+                </div>
+                <p className="mt-1.5 line-clamp-2 text-[10px] font-semibold leading-3 text-gray-700">{cat.name}</p>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border bg-white p-3 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-bold">Tap a product style</h2>
+          <span className="text-xs text-muted-foreground">Category opens below</span>
+        </div>
+        <div className="flex max-w-full gap-3 overflow-x-auto pb-1">
+          {quickPhotoProducts.map((product: any) => (
+            <button
+              key={product.id}
+              type="button"
+              onClick={() => setSelectedCategoryId(product.categoryId)}
+              className="min-w-[78px] rounded-xl border bg-white p-2 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
+            >
+              <div className="mx-auto h-16 w-16 overflow-hidden rounded-lg bg-gray-50">
+                {product.images?.[0] && <img src={product.images[0]} alt={product.name} className="h-full w-full object-contain p-1.5" />}
+              </div>
+              <p className="mt-1 line-clamp-2 text-[10px] font-semibold leading-3">{product.name}</p>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {selectedCategoryId && (
+        <section className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold">{selectedCategory?.name ?? "Selected category"}</h2>
+              <p className="text-xs text-muted-foreground">Ei category-r products niche show hocche</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedCategoryId(undefined)}>Clear</Button>
+              <Link href={`/search?categoryId=${selectedCategoryId}`} className="text-sm font-medium text-primary">View all</Link>
+            </div>
+          </div>
+          {loadingSelectedCategory ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-xl" />)}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {(selectedCategoryProducts?.items ?? []).map((product) => (
+                <ProductCard key={product.id} product={product} compact />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="overflow-hidden rounded-lg border bg-white">
+        {loadingBanners ? (
+          <Skeleton className="h-56 w-full md:h-72" />
+        ) : (
+          <div className="relative h-56 overflow-hidden md:h-72">
             <div className="lch-carousel flex h-full w-full">
-              {(banners?.length ? banners : []).slice(0, 3).map((banner) => (
-                <Link key={banner.id} href={(banner as any).href ?? "/search"} className="relative block h-full min-w-full overflow-hidden">
+              {slides.slice(0, 3).map((banner: any) => (
+                <Link key={banner.id} href={banner.href ?? "/search"} className="relative block h-full min-w-full overflow-hidden">
                   {banner.imageUrl && <img src={banner.imageUrl} alt={banner.title} className="h-full w-full object-cover" />}
                   <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/35 to-transparent" />
                   <div className="absolute inset-y-0 left-0 flex max-w-xl flex-col justify-center p-6 text-white md:p-10">
@@ -69,7 +241,7 @@ export default function Home() {
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {OFFER_CARDS.map(({ title, text, icon: Icon, tone }) => (
-          <Link key={title} href="/coupons" className={`rounded-lg border p-4 transition-transform hover:-translate-y-1 ${tone}`}>
+          <Link key={title} href="/coupons" className={`lch-offer-shine relative overflow-hidden rounded-lg border p-4 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg after:absolute after:inset-y-0 after:left-0 after:w-10 after:bg-white/40 after:content-[''] ${tone}`}>
             <Icon className="mb-3 h-5 w-5" />
             <p className="font-semibold">{title}</p>
             <p className="mt-1 text-xs opacity-80">{text}</p>
@@ -77,19 +249,19 @@ export default function Home() {
         ))}
       </section>
 
-      <section className="rounded-lg border bg-white p-4">
+      <section className="hidden rounded-lg border bg-white p-4">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold">Shop by category</h2>
           <Link href="/search" className="text-sm font-medium text-primary">View all</Link>
         </div>
         {loadingCategories ? (
-          <div className="grid grid-cols-5 gap-3 md:grid-cols-10">{Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-20" />)}</div>
+          <div className="grid grid-cols-4 gap-3 md:grid-cols-10">{Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-20" />)}</div>
         ) : (
-          <div className="grid grid-cols-5 gap-3 md:grid-cols-10">
-            {categories?.map((cat) => (
+          <div className="grid grid-cols-4 gap-3 md:grid-cols-10">
+            {categories?.map((cat, index) => (
               <Link key={cat.id} href={`/search?categoryId=${cat.id}`} className="group text-center">
-                <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-lg border text-lg font-bold transition-all group-hover:-translate-y-1 group-hover:shadow-md ${cat.colorClass || "bg-white"}`}>
-                  {cat.iconEmoji}
+                <div className="mx-auto h-16 w-16 overflow-hidden rounded-full border-2 border-white bg-white shadow-sm ring-1 ring-gray-200 transition-all group-hover:-translate-y-1 group-hover:shadow-md">
+                  <img src={cat.imageUrl || CATEGORY_FALLBACK_IMAGES[index % CATEGORY_FALLBACK_IMAGES.length]} alt={cat.name} className="h-full w-full object-cover" />
                 </div>
                 <p className="mt-2 line-clamp-2 text-[11px] font-medium text-gray-700">{cat.name}</p>
               </Link>
@@ -101,24 +273,47 @@ export default function Home() {
       <section className="grid gap-4 md:grid-cols-3">
         <Link href="/search?sort=price_asc" className="rounded-lg bg-gray-950 p-5 text-white transition-transform hover:-translate-y-1">
           <BadgePercent className="mb-4 h-7 w-7 text-yellow-300" />
-          <h3 className="text-xl font-bold">Lowest price zone</h3>
+          <h3 className="text-xl font-bold">Mega Sale</h3>
           <p className="mt-1 text-sm text-white/70">Daily essentials, fashion and electronics under budget.</p>
         </Link>
         <Link href="/search?categoryId=1" className="rounded-lg bg-blue-600 p-5 text-white transition-transform hover:-translate-y-1">
           <Zap className="mb-4 h-7 w-7 text-yellow-200" />
-          <h3 className="text-xl font-bold">Gadget rush</h3>
+          <h3 className="text-xl font-bold">Gadget Rush</h3>
           <p className="mt-1 text-sm text-white/80">Phones, audio and laptops from verified local sellers.</p>
         </Link>
         <Link href="/search?categoryId=2" className="rounded-lg bg-emerald-600 p-5 text-white transition-transform hover:-translate-y-1">
           <Clock className="mb-4 h-7 w-7 text-emerald-100" />
-          <h3 className="text-xl font-bold">Quick grocery</h3>
+          <h3 className="text-xl font-bold">Quick Grocery</h3>
           <p className="mt-1 text-sm text-white/80">Fresh stock, fast packing and live order tracking.</p>
         </Link>
       </section>
 
-      <ProductRail title="Trending deals" isLoading={loadingFeatured} products={featured?.items ?? []} href="/search" />
+      <ProductRail title="Flash Deals" subtitle={`Ends in ${countdown}`} isLoading={loadingFeatured} products={featured?.items ?? []} href="/search?featured=true" />
+      <ProductRail title="Recommended for you" products={newest?.items ?? []} href="/search" />
+      <ProductRail title="Best sellers" products={bestSellers?.items ?? []} href="/search?sort=rating" />
       <ProductRail title="Electronics top picks" products={electronics?.items ?? []} href="/search?categoryId=1" />
       <ProductRail title="Grocery saver packs" products={grocery?.items ?? []} href="/search?categoryId=2" />
+      {recentlyViewed.length > 0 && <ProductRail title="Recently viewed" products={recentlyViewed} href="/search" />}
+
+      <section className="rounded-lg border bg-white p-4">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-bold">Sponsored picks</h2>
+          <Badge variant="outline">Ad</Badge>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {[
+            ["Local Luxe", "Premium fashion under Rs.999", "/search?categoryId=3"],
+            ["Home Upgrade", "Kitchen, decor and appliances", "/search?q=home"],
+            ["Fresh Basket", "Daily grocery combo offers", "/search?categoryId=2"],
+          ].map(([title, text, href]) => (
+            <Link key={title} href={href} className="rounded-lg border bg-gradient-to-br from-white to-orange-50 p-4 transition-all hover:-translate-y-1 hover:shadow-md">
+              <Sparkles className="mb-3 h-5 w-5 text-primary" />
+              <p className="font-bold">{title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{text}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
 
       <section className="rounded-lg border bg-white p-4">
         <div className="mb-4 flex items-center justify-between">
@@ -128,17 +323,19 @@ export default function Home() {
         {loadingStores ? (
           <div className="grid gap-3 md:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)}</div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
             {stores?.map((store) => (
-              <Link key={store.id} href={`/store/${store.id}`} className="rounded-lg border p-3 transition-all hover:-translate-y-1 hover:shadow-md">
-                <div className="mb-3 h-16 overflow-hidden rounded-md bg-gray-100">
+              <Link key={store.id} href={`/store/${store.id}`} className="overflow-hidden rounded-xl border bg-white transition-all hover:-translate-y-1 hover:shadow-md">
+                <div className="h-28 overflow-hidden bg-gray-100 sm:h-32 md:h-36">
                   {store.logoUrl && <img src={store.logoUrl} alt={store.name} className="h-full w-full object-cover" />}
                 </div>
-                <h3 className="line-clamp-1 font-semibold">{store.name}</h3>
-                <p className="line-clamp-1 text-xs text-muted-foreground">{store.address}</p>
-                <div className="mt-2 flex items-center justify-between text-xs">
-                  <span className="font-medium text-amber-600">Star {store.rating || "New"}</span>
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5">{store.estimatedDeliveryMins} min</span>
+                <div className="p-3">
+                  <h3 className="line-clamp-1 text-sm font-semibold">{store.name}</h3>
+                  <p className="line-clamp-1 text-xs text-muted-foreground">{store.address}</p>
+                  <div className="mt-2 flex items-center justify-between text-xs">
+                    <span className="font-medium text-amber-600">{store.rating || "New"} rating</span>
+                    <span className="rounded bg-gray-100 px-1.5 py-0.5">{store.estimatedDeliveryMins} min</span>
+                  </div>
                 </div>
               </Link>
             ))}
@@ -149,18 +346,54 @@ export default function Home() {
   );
 }
 
-function ProductRail({ title, products, isLoading, href }: { title: string; products: any[]; isLoading?: boolean; href: string }) {
+function ProductRail({ title, subtitle, products, isLoading, href }: { title: string; subtitle?: string; products: any[]; isLoading?: boolean; href: string }) {
+  const main = products[0];
+  const rest = products.slice(1, 5);
+
   return (
     <section className="rounded-lg border bg-white p-4">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-bold">{title}</h2>
-        <Link href={href} className="text-sm font-medium text-primary">View more</Link>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold">{title}</h2>
+          {subtitle && <p className="text-xs font-semibold text-primary">{subtitle}</p>}
+        </div>
+        <Link href={href} className="text-sm font-medium text-primary">View all</Link>
       </div>
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-64" />)}</div>
+        <Skeleton className="h-72 rounded-xl" />
+      ) : products.length > 0 ? (
+        <div className="grid gap-3 md:grid-cols-[1.2fr_1fr]">
+          <Link href={`/product/${main.id}`} className="overflow-hidden rounded-xl border bg-gradient-to-br from-white to-blue-50 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
+            <div className="aspect-[1.45/1] bg-white">
+              {main.images?.[0] && <img src={main.images[0]} alt={main.name} className="h-full w-full object-contain p-5" />}
+            </div>
+            <div className="p-4">
+              <p className="line-clamp-2 text-lg font-bold">{main.name}</p>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-xl font-bold">Rs.{Number(main.price).toFixed(0)}</span>
+                {main.mrp && Number(main.mrp) > Number(main.price) && <span className="text-sm text-muted-foreground line-through">Rs.{Number(main.mrp).toFixed(0)}</span>}
+              </div>
+              {main.discountPercent && <p className="mt-1 text-sm font-semibold text-green-600">{Math.round(Number(main.discountPercent))}% off</p>}
+            </div>
+          </Link>
+          <div className="grid grid-cols-2 gap-3">
+            {rest.map((product: any) => (
+              <Link key={product.id} href={`/product/${product.id}`} className="overflow-hidden rounded-xl border bg-white p-2 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
+                <div className="aspect-square rounded-lg bg-gray-50">
+                  {product.images?.[0] && <img src={product.images[0]} alt={product.name} className="h-full w-full object-contain p-2" />}
+                </div>
+                <p className="mt-2 line-clamp-2 text-xs font-semibold leading-4">{product.name}</p>
+                <p className="mt-1 text-sm font-bold">Rs.{Number(product.price).toFixed(0)}</p>
+              </Link>
+            ))}
+          </div>
+          <Link href={href} className="mx-auto flex h-10 w-fit items-center justify-center rounded-full border border-dashed bg-gray-50 px-4 text-xs font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 md:col-start-2">
+            More
+          </Link>
+        </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
-          {products.map((product) => <ProductCard key={product.id} product={product} />)}
+        <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
+          Products will appear here once sellers add stock.
         </div>
       )}
     </section>

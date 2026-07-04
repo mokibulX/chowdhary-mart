@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const schema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -28,6 +28,8 @@ export default function Register() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const registerMutation = useRegister();
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState("");
 
   useEffect(() => {
     if (user) setLocation("/");
@@ -39,6 +41,16 @@ export default function Register() {
   });
 
   const onSubmit = (data: FormData) => {
+    if (!otpSent) {
+      setOtpSent(true);
+      setOtp("123456");
+      toast({ title: "Demo OTP sent", description: "Use 123456 to create your account." });
+      return;
+    }
+    if (otp !== "123456") {
+      toast({ title: "Invalid OTP", description: "Demo OTP is 123456", variant: "destructive" });
+      return;
+    }
     registerMutation.mutate(
       {
         data: {
@@ -69,7 +81,7 @@ export default function Register() {
         <CardHeader className="text-center pb-2">
           <div className="text-3xl font-bold text-primary mb-1">Chowdhary Mart</div>
           <CardTitle className="text-xl">Create account</CardTitle>
-          <CardDescription>Join thousands of happy customers</CardDescription>
+          <CardDescription>OTP verified local shopping account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -109,8 +121,24 @@ export default function Register() {
               <Label htmlFor="referralCode">Referral code (optional)</Label>
               <Input id="referralCode" placeholder="e.g. WELCOME50" {...register("referralCode")} data-testid="input-referral" />
             </div>
+            {otpSent && (
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+                <Label htmlFor="otp">OTP code</Label>
+                <Input
+                  id="otp"
+                  className="mt-1"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="123456"
+                  data-testid="input-otp"
+                />
+                <p className="mt-1 text-xs text-blue-700">Demo OTP: 123456</p>
+              </div>
+            )}
             <Button type="submit" className="w-full" disabled={registerMutation.isPending} data-testid="btn-register">
-              {registerMutation.isPending ? "Creating account..." : "Create account"}
+              {registerMutation.isPending ? "Creating account..." : otpSent ? "Verify OTP and create account" : "Send OTP"}
             </Button>
           </form>
           <p className="text-center text-sm text-muted-foreground mt-4">

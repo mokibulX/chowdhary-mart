@@ -1,146 +1,223 @@
-﻿import { useState } from "react";
-import { useLocation, Link } from "wouter";
+import { useState } from "react";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useLogin } from "@workspace/api-client-react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { customFetch, useLogin } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { KeyRound, ShieldCheck, Smartphone, Zap } from "lucide-react";
 
-const loginSchema = z.object({
-  email: z.string().email("Invalid email address").optional().or(z.literal("")),
-  phone: z.string().optional().or(z.literal("")),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-}).refine(data => data.email || data.phone, {
-  message: "Either email or phone is required",
-  path: ["email"]
-});
+type AuthResponse = {
+  token: string;
+  user: { role: string; name: string };
+};
+
+type LoginMode = "password" | "otp" | "forgot";
+
+function routeForRole(role: string) {
+  if (role === "admin") return "/admin";
+  if (role === "vendor") return "/vendor";
+  if (role === "delivery_partner") return "/delivery";
+  return "/";
+}
+
+function splitIdentifier(identifier: string) {
+  const trimmed = identifier.trim();
+  return trimmed.includes("@") ? { email: trimmed } : { phone: trimmed };
+}
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { login: setAuthContext } = useAuth();
   const { toast } = useToast();
   const loginMutation = useLogin();
+  const [mode, setMode] = useState<LoginMode>("password");
+  const [identifier, setIdentifier] = useState("customer@local.test");
+  const [password, setPassword] = useState("123456");
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const form = useForm<z.infer<typeof loginSchema>>({
-    resolver: zodResolver(loginSchema as any),
-    defaultValues: {
-      email: "",
-      phone: "",
-      password: "",
-    },
-  });
+  const finishLogin = (res: AuthResponse) => {
+    setAuthContext(res.token);
+    toast({ title: "Welcome back!", description: `Signed in as ${res.user.name}` });
+    setLocation(routeForRole(res.user.role));
+  };
 
-  const onSubmit = async (data: z.infer<typeof loginSchema>) => {
+  const handlePasswordLogin = (event: React.FormEvent) => {
+    event.preventDefault();
     loginMutation.mutate(
-      { data },
+      { data: { ...splitIdentifier(identifier), password } },
       {
-        onSuccess: (res) => {
-          setAuthContext(res.token);
-          toast({
-            title: "Welcome back!",
-            description: "Successfully logged in.",
-          });
-          
-          if (res.user.role === 'admin') {
-            setLocation("/admin");
-          } else if (res.user.role === 'vendor') {
-            setLocation("/vendor");
-          } else if (res.user.role === 'delivery_partner') {
-            setLocation("/delivery");
-          } else {
-            setLocation("/");
-          }
+        onSuccess: finishLogin,
+        onError: (err: unknown) => {
+          const message = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
+            ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+            ?? "Invalid credentials";
+          toast({ title: "Login failed", description: message, variant: "destructive" });
         },
-        onError: (err) => {
-          toast({
-            title: "Login failed",
-            description: err?.data?.error || "Invalid credentials",
-            variant: "destructive",
-          });
-        },
-      }
+      },
     );
   };
 
+  const handleSendOtp = () => {
+    if (!identifier.trim()) {
+      toast({ title: "Email or phone required", variant: "destructive" });
+      return;
+    }
+    setOtpSent(true);
+    setOtp("123456");
+    toast({ title: "Demo OTP sent", description: "Use 123456 to continue." });
+  };
+
+  const handleOtpLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!otpSent) {
+      handleSendOtp();
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await customFetch<AuthResponse>("/api/auth/otp-login", {
+        method: "POST",
+        body: JSON.stringify({ ...splitIdentifier(identifier), otp }),
+      });
+      finishLogin(res);
+    } catch (err) {
+      const message = (err as { data?: { error?: string } })?.data?.error ?? "OTP verification failed";
+      toast({ title: "OTP failed", description: message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleForgotPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!otpSent) {
+      handleSendOtp();
+      return;
+    }
+    setBusy(true);
+    try {
+      await customFetch("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ ...splitIdentifier(identifier), otp, password: newPassword }),
+      });
+      toast({ title: "Password updated", description: "Now sign in with your new password." });
+      setPassword(newPassword);
+      setNewPassword("");
+      setOtpSent(false);
+      setOtp("");
+      setMode("password");
+    } catch (err) {
+      const message = (err as { data?: { error?: string } })?.data?.error ?? "Password reset failed";
+      toast({ title: "Reset failed", description: message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-16 h-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-4 text-2xl font-bold">
-            CM
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-8">
+      <Card className="w-full max-w-md overflow-hidden">
+        <CardHeader className="bg-[#0f3f8f] text-white">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-white text-[#0f3f8f]">
+            <Zap className="h-6 w-6" />
           </div>
-          <CardTitle className="text-2xl font-bold">Sign in</CardTitle>
-          <CardDescription>Welcome back to Chowdhary Mart</CardDescription>
+          <CardTitle className="text-2xl">Chowdhary Mart</CardTitle>
+          <CardDescription className="text-white/75">Sign in with password, OTP, or reset access securely.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email Address</FormLabel>
-                    <FormControl>
-                      <Input placeholder="name@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+        <CardContent className="p-5">
+          <Tabs value={mode} onValueChange={(value) => { setMode(value as LoginMode); setOtpSent(false); setOtp(""); }} className="space-y-4">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="password">Password</TabsTrigger>
+              <TabsTrigger value="otp">OTP</TabsTrigger>
+              <TabsTrigger value="forgot">Forgot</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="password">
+              <form onSubmit={handlePasswordLogin} className="space-y-4">
+                <Field label="Email or phone" value={identifier} onChange={setIdentifier} placeholder="customer@local.test" icon={<Smartphone className="h-4 w-4" />} />
+                <Field label="Password" value={password} onChange={setPassword} placeholder="123456" type="password" icon={<KeyRound className="h-4 w-4" />} />
+                <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
+                  {loginMutation.isPending ? "Signing in..." : "Sign in"}
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="otp">
+              <form onSubmit={handleOtpLogin} className="space-y-4">
+                <Field label="Email or phone" value={identifier} onChange={setIdentifier} placeholder="customer@local.test" icon={<Smartphone className="h-4 w-4" />} />
+                {otpSent && <Field label="OTP code" value={otp} onChange={setOtp} placeholder="123456" inputMode="numeric" icon={<ShieldCheck className="h-4 w-4" />} />}
+                <Button type="submit" className="w-full" disabled={busy}>
+                  {busy ? "Verifying..." : otpSent ? "Verify OTP and sign in" : "Send OTP"}
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="forgot">
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                <Field label="Email or phone" value={identifier} onChange={setIdentifier} placeholder="customer@local.test" icon={<Smartphone className="h-4 w-4" />} />
+                {otpSent && (
+                  <>
+                    <Field label="OTP code" value={otp} onChange={setOtp} placeholder="123456" inputMode="numeric" icon={<ShieldCheck className="h-4 w-4" />} />
+                    <Field label="New password" value={newPassword} onChange={setNewPassword} placeholder="Minimum 6 characters" type="password" icon={<KeyRound className="h-4 w-4" />} />
+                  </>
                 )}
-              />
-              
-              <div className="relative my-4 text-center">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
-                <span className="relative bg-white px-2 text-xs text-gray-500">OR</span>
-              </div>
+                <Button type="submit" className="w-full" disabled={busy}>
+                  {busy ? "Updating..." : otpSent ? "Reset password" : "Send reset OTP"}
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
 
-              <FormField
-                control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Phone Number</FormLabel>
-                    <FormControl>
-                      <Input placeholder="9876543210" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
-                {loginMutation.isPending ? "Signing in..." : "Sign in"}
-              </Button>
-            </form>
-          </Form>
-
-          <div className="mt-6 text-center text-sm">
-            Don't have an account?{" "}
-            <Link href="/register" className="text-primary hover:underline font-medium">
-              Create one
-            </Link>
+          <div className="mt-5 rounded-lg bg-orange-50 p-3 text-xs text-orange-900">
+            Demo accounts: customer@local.test, vendor@local.test, admin@local.test, delivery@local.test. Password/OTP: 123456.
           </div>
+          <p className="mt-5 text-center text-sm text-muted-foreground">
+            New here? <Link href="/register" className="font-medium text-primary hover:underline">Create account</Link>
+          </p>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  inputMode,
+  icon,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  type?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</span>
+        <Input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          type={type}
+          inputMode={inputMode}
+          className="pl-9"
+        />
+      </div>
     </div>
   );
 }

@@ -23,6 +23,10 @@ import Addresses from "@/pages/Addresses";
 import Wallet from "@/pages/Wallet";
 import Coupons from "@/pages/Coupons";
 import Notifications from "@/pages/Notifications";
+import HelpSupport from "@/pages/HelpSupport";
+import OrderConfirmation from "@/pages/OrderConfirmation";
+import Returns from "@/pages/Returns";
+import Language from "@/pages/Language";
 
 import VendorDashboard from "@/pages/vendor/VendorDashboard";
 import VendorOrders from "@/pages/vendor/VendorOrders";
@@ -147,6 +151,7 @@ function Router() {
       <Route path="/cart">{() => <ProtectedCustomerRoute component={Cart} />}</Route>
       <Route path="/checkout">{() => <ProtectedCustomerRoute component={Checkout} />}</Route>
       <Route path="/orders">{() => <ProtectedCustomerRoute component={Orders} />}</Route>
+      <Route path="/orders/:orderId/confirmed">{(params) => <ProtectedCustomerRoute component={() => <OrderConfirmation />} />}</Route>
       <Route path="/orders/:orderId">{(params) => <ProtectedCustomerRoute component={() => <OrderDetail />} />}</Route>
       <Route path="/track/:orderId">{(params) => <ProtectedCustomerRoute component={() => <Track />} />}</Route>
       <Route path="/wishlist">{() => <ProtectedCustomerRoute component={Wishlist} />}</Route>
@@ -154,6 +159,9 @@ function Router() {
       <Route path="/addresses">{() => <ProtectedCustomerRoute component={Addresses} />}</Route>
       <Route path="/wallet">{() => <ProtectedCustomerRoute component={Wallet} />}</Route>
       <Route path="/notifications">{() => <ProtectedCustomerRoute component={Notifications} />}</Route>
+      <Route path="/help">{() => <ProtectedCustomerRoute component={HelpSupport} />}</Route>
+      <Route path="/returns">{() => <ProtectedCustomerRoute component={Returns} />}</Route>
+      <Route path="/language">{() => <ProtectedCustomerRoute component={Language} />}</Route>
 
       {/* Public customer routes */}
       <Route path="/coupons">{() => <CustomerRoute component={Coupons} />}</Route>

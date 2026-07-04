@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { LayoutDashboard, Users, ShoppingBag, Store, Tag, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, ShoppingBag, Store, Tag, LogOut, Image, Grid3X3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const NAV = [
@@ -10,6 +10,8 @@ const NAV = [
   { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
   { href: "/admin/stores", label: "Stores", icon: Store },
   { href: "/admin/coupons", label: "Coupons", icon: Tag },
+  { href: "/admin#banners", label: "Banners", icon: Image },
+  { href: "/admin#categories", label: "Categories", icon: Grid3X3 },
 ];
 
 export function AdminLayout({ children }: { children: ReactNode }) {

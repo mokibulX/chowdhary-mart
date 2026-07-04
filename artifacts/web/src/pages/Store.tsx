@@ -38,8 +38,8 @@ export default function Store() {
       <div className="space-y-4">
         <Skeleton className="h-48 rounded-xl" />
         <Skeleton className="h-20" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-60 rounded-lg" />)}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-lg sm:h-60" />)}
         </div>
       </div>
     );
@@ -52,14 +52,14 @@ export default function Store() {
   return (
     <div className="space-y-6">
       {/* Store banner */}
-      <div className="relative h-44 md:h-56 rounded-2xl overflow-hidden bg-gray-100">
+      <div className="relative h-60 overflow-hidden rounded-2xl bg-gray-100 md:h-80">
         {store.bannerUrl && (
           <img src={store.bannerUrl} alt={store.name} className="w-full h-full object-cover" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-        <div className="absolute bottom-0 left-0 right-0 p-4 flex items-end gap-4">
+        <div className="absolute bottom-0 left-0 right-0 flex items-end gap-4 p-5">
           {store.logoUrl && (
-            <img src={store.logoUrl} alt={store.name} className="w-16 h-16 rounded-xl border-2 border-white shadow-lg flex-shrink-0 bg-white" />
+            <img src={store.logoUrl} alt={store.name} className="h-24 w-24 flex-shrink-0 rounded-2xl border-2 border-white bg-white object-cover shadow-lg md:h-28 md:w-28" />
           )}
           <div className="text-white">
             <h1 className="text-xl md:text-2xl font-bold">{store.name}</h1>
@@ -94,8 +94,8 @@ export default function Store() {
 
       {/* Products */}
       {loadingProducts ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-lg" />)}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-lg sm:h-64" />)}
         </div>
       ) : products.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
@@ -108,13 +108,13 @@ export default function Store() {
             grouped.map(([catName, items]) => (
               <section key={catName}>
                 <h2 className="text-lg font-bold mb-3 pb-1 border-b">{catName}</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
                   {items.map(product => <ProductCard key={product.id} product={product} />)}
                 </div>
               </section>
             ))
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
               {products.map(product => <ProductCard key={product.id} product={product} />)}
             </div>
           )}

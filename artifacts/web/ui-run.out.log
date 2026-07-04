@@ -1,0 +1,40 @@
+Starting Ekart Local...
+Open this URL in your browser: http://127.0.0.1:5174
+
+  [32m[1mVITE[22m v7.3.3[39m  [2mready in [0m[1m495[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5174[22m/[39m
+[2m9:23:11 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css[22m
+[2m9:23:25 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/components/layout/CustomerLayout.tsx, /src/index.css[22m
+[2m9:23:46 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/ProductDetail.tsx, /src/index.css[22m
+[2m9:23:58 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Home.tsx, /src/index.css[22m
+[2m9:24:10 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Search.tsx, /src/index.css[22m
+[2m9:24:20 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Profile.tsx, /src/index.css[22m
+[2m9:24:47 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m
+[2m9:24:47 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m
+[2m9:32:15 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Store.tsx, /src/pages/Coupons.tsx, /src/pages/Orders.tsx, /src/pages/admin/AdminCoupons.tsx, /src/hooks/use-auth.tsx, /src/pages/admin/AdminUsers.tsx, /src/pages/Profile.tsx, /src/pages/Search.tsx, /src/pages/admin/AdminDashboard.tsx, /src/pages/Notifications.tsx, /src/pages/vendor/VendorDashboard.tsx, /src/pages/OrderConfirmation.tsx, /src/pages/admin/AdminStores.tsx, /src/pages/Register.tsx, /src/pages/Login.tsx, /src/pages/Home.tsx, /src/pages/vendor/VendorOrders.tsx, /src/pages/Track.tsx, /src/pages/admin/AdminOrders.tsx, /src/pages/Wishlist.tsx, /src/pages/OrderDetail.tsx, /src/pages/Addresses.tsx, /src/pages/delivery/DeliveryDashboard.tsx, /src/pages/Cart.tsx, /src/pages/vendor/VendorStore.tsx, /src/components/layout/CustomerLayout.tsx, /src/pages/ProductDetail.tsx, /src/pages/Wallet.tsx, /src/pages/Checkout.tsx, /src/pages/vendor/VendorProducts.tsx, /src/components/ProductCard.tsx[22m
+[2m9:33:32 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.tsx, /src/index.css[22m
+[2m9:33:32 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Profile.tsx, /src/index.css[22m
+[2m9:34:01 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/ProductDetail.tsx, /src/index.css[22m
+[2m9:34:14 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Store.tsx, /src/pages/Coupons.tsx, /src/pages/Orders.tsx, /src/pages/admin/AdminCoupons.tsx, /src/hooks/use-auth.tsx, /src/pages/admin/AdminUsers.tsx, /src/pages/Profile.tsx, /src/pages/Search.tsx, /src/pages/admin/AdminDashboard.tsx, /src/pages/Notifications.tsx, /src/pages/vendor/VendorDashboard.tsx, /src/pages/OrderConfirmation.tsx, /src/pages/admin/AdminStores.tsx, /src/pages/Register.tsx, /src/pages/Login.tsx, /src/pages/Home.tsx, /src/pages/vendor/VendorOrders.tsx, /src/pages/Track.tsx, /src/pages/admin/AdminOrders.tsx, /src/pages/Wishlist.tsx, /src/pages/OrderDetail.tsx, /src/pages/Addresses.tsx, /src/pages/delivery/DeliveryDashboard.tsx, /src/pages/Cart.tsx, /src/pages/vendor/VendorStore.tsx, /src/components/layout/CustomerLayout.tsx, /src/pages/ProductDetail.tsx, /src/pages/Wallet.tsx, /src/pages/Checkout.tsx, /src/pages/vendor/VendorProducts.tsx, /src/components/ProductCard.tsx[22m
+[2m9:34:46 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m
+[2m9:34:47 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m
+[2m9:40:22 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Store.tsx, /src/pages/Coupons.tsx, /src/pages/Orders.tsx, /src/pages/admin/AdminCoupons.tsx, /src/hooks/use-auth.tsx, /src/pages/admin/AdminUsers.tsx, /src/pages/Profile.tsx, /src/pages/Search.tsx, /src/pages/admin/AdminDashboard.tsx, /src/pages/Notifications.tsx, /src/pages/vendor/VendorDashboard.tsx, /src/pages/OrderConfirmation.tsx, /src/pages/admin/AdminStores.tsx, /src/pages/Register.tsx, /src/pages/Login.tsx, /src/pages/Home.tsx, /src/pages/vendor/VendorOrders.tsx, /src/pages/Track.tsx, /src/pages/admin/AdminOrders.tsx, /src/pages/Wishlist.tsx, /src/pages/OrderDetail.tsx, /src/pages/Addresses.tsx, /src/pages/delivery/DeliveryDashboard.tsx, /src/pages/Cart.tsx, /src/pages/vendor/VendorStore.tsx, /src/components/layout/CustomerLayout.tsx, /src/pages/ProductDetail.tsx, /src/pages/Wallet.tsx, /src/pages/Checkout.tsx, /src/pages/vendor/VendorProducts.tsx, /src/components/ProductCard.tsx[22m
+[2m9:40:58 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Wallet.tsx, /src/index.css[22m
+[2m9:41:32 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Wallet.tsx, /src/index.css[22m
+[2m9:41:51 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Checkout.tsx, /src/index.css[22m
+[2m9:42:05 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Checkout.tsx, /src/index.css[22m
+[2m9:42:31 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/ProductCard.tsx[22m
+[2m9:42:51 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/ui/toast.tsx[22m
+[2m9:43:20 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m
+[2m9:43:21 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m
+[2m9:45:47 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/ProductCard.tsx[22m
+[2m9:45:47 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Home.tsx, /src/index.css[22m
+[2m9:45:47 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/ProductDetail.tsx, /src/index.css[22m
+[2m9:45:58 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/index.css, /src/components/ProductCard.tsx[22m
+[2m9:46:20 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m
+[2m9:46:20 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m
+[2m9:55:27 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Home.tsx, /src/index.css[22m
+[2m9:55:27 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/pages/Store.tsx, /src/index.css[22m
+[2m9:55:46 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m
+[2m9:55:46 am[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mpage reload [39m[2mdist/public/index.html[22m

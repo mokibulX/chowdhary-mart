@@ -115,7 +115,7 @@ export default function OrderDetail() {
       <div className="bg-white border rounded-xl p-4 space-y-3">
         <h2 className="font-semibold">Items ({items.length})</h2>
         {items.map((item: any) => (
-          <div key={item.id} className="flex items-center gap-3">
+          <Link key={item.id} href={`/product/${item.productId}`} className="flex items-center gap-3 rounded-lg p-1 transition-colors hover:bg-gray-50">
             <div className="w-12 h-12 bg-gray-50 rounded-lg flex-shrink-0">
               {item.imageUrl && <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain p-1" />}
             </div>
@@ -124,7 +124,7 @@ export default function OrderDetail() {
               <p className="text-xs text-muted-foreground">Qty: {item.qty} × ₹{Number(item.price).toFixed(0)}</p>
             </div>
             <p className="font-medium text-sm">₹{Number(item.total).toFixed(0)}</p>
-          </div>
+          </Link>
         ))}
       </div>
 

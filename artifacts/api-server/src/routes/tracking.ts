@@ -1,9 +1,27 @@
 import { Router } from "express";
 import { eq, desc } from "drizzle-orm";
-import { db, ordersTable, orderTrackingTable, deliveryPartnersTable, usersTable } from "@workspace/db";
+import { db, ordersTable, orderTrackingTable, deliveryPartnersTable, usersTable, storesTable, addressesTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 
 const router = Router();
+
+function distanceKm(aLat?: number | null, aLng?: number | null, bLat?: number | null, bLng?: number | null): number {
+  if ([aLat, aLng, bLat, bLng].some(v => v === null || v === undefined || Number.isNaN(Number(v)))) return 3.2;
+  const toRad = (value: number) => value * Math.PI / 180;
+  const earthKm = 6371;
+  const dLat = toRad(Number(bLat) - Number(aLat));
+  const dLng = toRad(Number(bLng) - Number(aLng));
+  const lat1 = toRad(Number(aLat));
+  const lat2 = toRad(Number(bLat));
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthKm * Math.asin(Math.sqrt(h));
+}
+
+function etaFromDistance(distance: number, status: string, fallback?: number | null) {
+  if (status === "delivered") return 0;
+  if (["pending", "confirmed", "preparing", "packed"].includes(status)) return Math.min(40, Math.max(18, fallback ?? 40));
+  return Math.min(40, Math.max(4, Math.ceil(distance / 0.32) + 5));
+}
 
 // GET /api/tracking/:orderId
 router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
@@ -15,9 +33,13 @@ router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
 
     if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-    const timeline = await db.select().from(orderTrackingTable)
+    const [[store], [address], timeline] = await Promise.all([
+      db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1),
+      order.addressId ? db.select().from(addressesTable).where(eq(addressesTable.id, order.addressId)).limit(1) : Promise.resolve([null]),
+      db.select().from(orderTrackingTable)
       .where(eq(orderTrackingTable.orderId, orderId))
-      .orderBy(desc(orderTrackingTable.updatedAt));
+      .orderBy(desc(orderTrackingTable.updatedAt)),
+    ]);
 
     let deliveryPartnerInfo = null;
     const latestTracking = timeline[0];
@@ -34,22 +56,46 @@ router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
           rating: dp.rating,
           vehicleType: dp.vehicleType,
           vehicleNumber: dp.vehicleNumber,
-          lat: dp.currentLat,
-          lng: dp.currentLng,
+          lat: dp.currentLat ?? store?.lat ?? 22.5726,
+          lng: dp.currentLng ?? store?.lng ?? 88.3639,
         };
       }
     }
+
+    const storeLocation = {
+      lat: Number(store?.lat ?? 22.5726),
+      lng: Number(store?.lng ?? 88.3639),
+      label: store?.name ?? "Store hub",
+      address: store?.address ?? "Pickup point",
+    };
+    const customerLocation = {
+      lat: Number(address?.lat ?? (storeLocation.lat + 0.026)),
+      lng: Number(address?.lng ?? (storeLocation.lng + 0.031)),
+      label: address?.label ?? "Customer",
+      address: address ? `${address.line1}, ${address.city}` : "Delivery address",
+    };
+    const partnerLocation = deliveryPartnerInfo
+      ? { lat: Number((deliveryPartnerInfo as any).lat), lng: Number((deliveryPartnerInfo as any).lng) }
+      : { lat: storeLocation.lat + 0.006, lng: storeLocation.lng + 0.004 };
+    const distance = distanceKm(partnerLocation.lat, partnerLocation.lng, customerLocation.lat, customerLocation.lng);
+    const eta = etaFromDistance(distance, order.status, order.estimatedDeliveryMins);
 
     res.json({
       orderId,
       status: order.status,
       deliveryPartner: deliveryPartnerInfo,
+      storeLocation,
+      customerLocation,
+      partnerLocation,
+      route: [storeLocation, partnerLocation, customerLocation],
+      distanceKm: Number(distance.toFixed(1)),
+      estimatedMins: eta,
+      deliveryOtp: String(1000 + (order.id % 9000)),
       timeline: timeline.map(t => ({
         status: t.status,
         message: t.message,
         updatedAt: t.updatedAt,
       })),
-      estimatedMins: order.estimatedDeliveryMins,
     });
   } catch (err) {
     req.log.error(err);

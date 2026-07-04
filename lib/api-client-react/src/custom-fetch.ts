@@ -241,11 +241,11 @@ function initialMockState() {
     { id: 10, name: "Pet Supplies", iconEmoji: "D", colorClass: "bg-lime-50", imageUrl: null },
   ];
   const stores = [
-    { id: 1, name: "Local Digital Hub", address: "Salt Lake Sector V", logoUrl: "https://images.unsplash.com/photo-1498049794561-7780e7231661?auto=format&fit=crop&w=400&q=80", rating: "4.6", estimatedDeliveryMins: 35, deliveryFee: "39.00", freeDeliveryAbove: "999.00", isOpen: true, ownerId: 2 },
-    { id: 2, name: "Chowdhary Mart Fresh", address: "New Town Market", logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80", rating: "4.8", estimatedDeliveryMins: 18, deliveryFee: "29.00", freeDeliveryAbove: "299.00", isOpen: true, ownerId: 2 },
-    { id: 3, name: "Style Street", address: "City Centre", logoUrl: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=400&q=80", rating: "4.4", estimatedDeliveryMins: 45, deliveryFee: "49.00", freeDeliveryAbove: "799.00", isOpen: true, ownerId: 2 },
+    { id: 1, name: "Local Digital Hub", address: "Salt Lake Sector V", logoUrl: "https://images.unsplash.com/photo-1498049794561-7780e7231661?auto=format&fit=crop&w=400&q=80", rating: "4.6", estimatedDeliveryMins: 40, deliveryFee: "39.00", freeDeliveryAbove: "999.00", isOpen: true, ownerId: 2 },
+    { id: 2, name: "Chowdhary Mart Fresh", address: "New Town Market", logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80", rating: "4.8", estimatedDeliveryMins: 40, deliveryFee: "29.00", freeDeliveryAbove: "299.00", isOpen: true, ownerId: 2 },
+    { id: 3, name: "Style Street", address: "City Centre", logoUrl: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=400&q=80", rating: "4.4", estimatedDeliveryMins: 40, deliveryFee: "49.00", freeDeliveryAbove: "799.00", isOpen: true, ownerId: 2 },
     { id: 4, name: "Home Needs Bazaar", address: "Biswa Bangla Gate", logoUrl: "https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=400&q=80", rating: "4.5", estimatedDeliveryMins: 40, deliveryFee: "45.00", freeDeliveryAbove: "699.00", isOpen: true, ownerId: 2 },
-    { id: 5, name: "Glow Beauty Store", address: "Park Street", logoUrl: "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=400&q=80", rating: "4.7", estimatedDeliveryMins: 30, deliveryFee: "35.00", freeDeliveryAbove: "499.00", isOpen: true, ownerId: 2 },
+    { id: 5, name: "Glow Beauty Store", address: "Park Street", logoUrl: "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=400&q=80", rating: "4.7", estimatedDeliveryMins: 40, deliveryFee: "35.00", freeDeliveryAbove: "499.00", isOpen: true, ownerId: 2 },
   ];
   const products = seedProducts.map((item, index) => {
     const [name, categoryId, storeId, price, mrp, weight, unit, image] = item as any[];
@@ -260,8 +260,8 @@ function initialMockState() {
       images: [image],
       weight,
       unit,
-      description: `${name} with fast local delivery, easy returns, verified seller support and assured quality.`,
-      specifications: { Warranty: "Assured", Delivery: "Same day available", Return: "7 days" },
+      description: `${name} with 40 minute local delivery target, damaged-item return support, verified seller support and assured quality.`,
+      specifications: { Warranty: "Assured", Delivery: "40 minute local target", Return: "Damaged items only" },
       rating: (4.2 + (index % 6) / 10).toFixed(1),
       reviewCount: 25 + index * 7,
       stock: 20 + (index % 8) * 6,
@@ -286,6 +286,7 @@ function initialMockState() {
       "1": [{ id: 1, userId: 1, name: "Demo Customer", phone: "9876543210", label: "Home", line1: "Action Area I, New Town", line2: "Near community market", city: "Kolkata", state: "West Bengal", pincode: "700156", isDefault: true }],
     } as Record<string, MockRecord[]>,
     orders: [] as MockRecord[],
+    returns: [] as MockRecord[],
     reviews: [
       { id: 1, productId: 1, userId: 1, rating: 5, title: "Great value", body: "Fast delivery and solid quality.", isVerifiedPurchase: true, user: { name: "Demo Customer" }, createdAt: mockNow() },
     ],
@@ -304,7 +305,7 @@ function initialMockState() {
       { id: 2, title: "Fresh groceries in minutes", subtitle: "Daily essentials from nearby stores", imageUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=80", href: "/search?categoryId=2" },
       { id: 3, title: "Seller specials live now", subtitle: "New products, limited stock and fast dispatch", imageUrl: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=1200&q=80", href: "/search?sort=rating" },
     ],
-    nextIds: { user: 4, address: 2, order: 1, cartItem: 1, product: products.length + 1, coupon: 3, review: 2 },
+    nextIds: { user: 4, address: 2, order: 1, cartItem: 1, product: products.length + 1, coupon: 3, review: 2, return: 1 },
   };
 }
 
@@ -392,6 +393,61 @@ function couponDiscount(coupon: MockRecord, amount: number) {
   return Math.min(raw, Number(coupon.maxDiscount ?? raw), amount);
 }
 
+function mockDistanceKm(aLat?: number, aLng?: number, bLat?: number, bLng?: number) {
+  if ([aLat, aLng, bLat, bLng].some(value => value === undefined || Number.isNaN(Number(value)))) return 3.2;
+  const toRad = (value: number) => value * Math.PI / 180;
+  const earthKm = 6371;
+  const dLat = toRad(Number(bLat) - Number(aLat));
+  const dLng = toRad(Number(bLng) - Number(aLng));
+  const lat1 = toRad(Number(aLat));
+  const lat2 = toRad(Number(bLat));
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthKm * Math.asin(Math.sqrt(h));
+}
+
+function mockOrderLocations(order: MockRecord) {
+  const storeLat = Number(order.store?.lat ?? 22.5726);
+  const storeLng = Number(order.store?.lng ?? 88.3639);
+  const customerLat = Number(order.address?.lat ?? order.addressSnapshot?.lat ?? storeLat + 0.026);
+  const customerLng = Number(order.address?.lng ?? order.addressSnapshot?.lng ?? storeLng + 0.031);
+  const partnerLocation = order.tracking?.partnerLocation ?? order.tracking?.deliveryPartner?.location ?? { lat: storeLat + 0.006, lng: storeLng + 0.004 };
+  return {
+    storeLocation: { lat: storeLat, lng: storeLng, label: order.store?.name ?? "Store hub", address: order.store?.address ?? "Pickup point" },
+    customerLocation: { lat: customerLat, lng: customerLng, label: order.address?.label ?? "Customer", address: `${order.addressSnapshot?.line1 ?? "Delivery address"}, ${order.addressSnapshot?.city ?? ""}` },
+    partnerLocation: { lat: Number(partnerLocation.lat), lng: Number(partnerLocation.lng) },
+  };
+}
+
+function mockTrackingPayload(order: MockRecord) {
+  const locations = mockOrderLocations(order);
+  const distance = mockDistanceKm(locations.partnerLocation.lat, locations.partnerLocation.lng, locations.customerLocation.lat, locations.customerLocation.lng);
+  const eta = order.status === "delivered"
+    ? 0
+    : ["picked_up", "on_the_way", "arriving"].includes(order.status)
+      ? Math.min(40, Math.max(4, Math.ceil(distance / 0.32) + 5))
+      : Math.min(40, Math.max(18, Number(order.estimatedDeliveryMins ?? 40)));
+  const tracking = order.tracking ?? {};
+  return {
+    orderId: order.id,
+    status: order.status,
+    estimatedMins: eta,
+    distanceKm: Number(distance.toFixed(1)),
+    deliveryOtp: String(1000 + (order.id % 9000)),
+    deliveryPartner: tracking.deliveryPartner ?? null,
+    ...locations,
+    route: [locations.storeLocation, locations.partnerLocation, locations.customerLocation],
+    timeline: tracking.timeline ?? [],
+  };
+}
+
+function mockMovePartner(order: MockRecord, lat: number, lng: number) {
+  order.tracking = order.tracking ?? {};
+  order.tracking.partnerLocation = { lat, lng, updatedAt: mockNow() };
+  if (order.tracking.deliveryPartner) {
+    order.tracking.deliveryPartner.location = { lat, lng, updatedAt: mockNow() };
+  }
+}
+
 async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOptions, method: string): Promise<T | undefined> {
   const state = getMockState();
   if (!state) return undefined;
@@ -421,6 +477,20 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     const user = state.users.find((item: MockRecord) => (body.email && item.email === body.email) || (body.phone && item.phone === body.phone));
     if (!user || user.password !== body.password) makeMockError(401, "Invalid credentials. Try customer@local.test / 123456", method, path);
     return ok({ token: `mock-token-${user.id}`, user: publicUser(user) });
+  }
+  if (path === "/api/auth/otp-login" && method === "POST") {
+    const user = state.users.find((item: MockRecord) => (body.email && item.email === body.email) || (body.phone && item.phone === body.phone));
+    if (!user || body.otp !== "123456") makeMockError(401, "Invalid OTP. Demo OTP is 123456", method, path);
+    return ok({ token: `mock-token-${user.id}`, user: publicUser(user) });
+  }
+  if (path === "/api/auth/forgot-password" && method === "POST") {
+    const user = state.users.find((item: MockRecord) => (body.email && item.email === body.email) || (body.phone && item.phone === body.phone));
+    if (!user) makeMockError(404, "Account not found", method, path);
+    if (body.otp !== "123456" || !body.password || String(body.password).length < 6) makeMockError(400, "Valid OTP and 6-character password required", method, path);
+    user.password = body.password;
+    user.updatedAt = mockNow();
+    saveMockState(state);
+    return ok({ message: "Password updated successfully", user: publicUser(user) });
   }
   if (path === "/api/auth/logout" && method === "POST") return ok({ message: "Logged out successfully" });
   if (path === "/api/auth/me") {
@@ -587,7 +657,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
         address,
         addressSnapshot: address,
         items: cart.items.map((item: MockRecord) => ({ id: item.id, productId: item.productId, name: item.product.name, imageUrl: item.product.images?.[0], price: item.price, mrp: item.product.mrp, qty: item.qty, total: (Number(item.price) * item.qty).toFixed(2) })),
-        status: "pending",
+        status: "confirmed",
         paymentMethod: body.paymentMethod,
         paymentStatus: body.paymentMethod === "cod" ? "pending" : "paid",
         subtotal: subtotal.toFixed(2),
@@ -597,22 +667,27 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
         walletUsed: walletUsed.toFixed(2),
         total: Math.max(0, subtotal + deliveryFee - discount - walletUsed).toFixed(2),
         loyaltyPointsEarned: Math.floor(subtotal / 10),
-        estimatedDeliveryMins: cart.store?.estimatedDeliveryMins ?? 30,
+        estimatedDeliveryMins: 40,
         createdAt: mockNow(),
         tracking: {
           orderId: 0,
-          status: "pending",
-          estimatedMins: cart.store?.estimatedDeliveryMins ?? 30,
+          status: "confirmed",
+          estimatedMins: 40,
           deliveryPartner: {
             id: 4,
-            name: "Delivery Partner",
+            name: "Rahul Das",
             phone: "9000000000",
             vehicleType: "bike",
             vehicleNumber: "WB 20 LC 1024",
             rating: "4.8",
-            location: { lat: 22.5726, lng: 88.3639 },
+            photoUrl: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=160&q=80",
+            location: { lat: Number(cart.store?.lat ?? 22.5726) + 0.006, lng: Number(cart.store?.lng ?? 88.3639) + 0.004 },
           },
-          timeline: [{ status: "pending", message: "Order placed and waiting for seller confirmation", updatedAt: mockNow() }],
+          partnerLocation: { lat: Number(cart.store?.lat ?? 22.5726) + 0.006, lng: Number(cart.store?.lng ?? 88.3639) + 0.004 },
+          timeline: [
+            { status: "confirmed", message: "Order confirmed and delivery partner assigned", updatedAt: mockNow() },
+            { status: "pending", message: "Order placed", updatedAt: mockNow() },
+          ],
         },
       };
       order.tracking.orderId = order.id;
@@ -638,17 +713,59 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
   const orderReviewMatch = path.match(/^\/api\/orders\/(\d+)\/review$/);
   if (orderReviewMatch) {
     const user = requireUser();
+    const order = state.orders.find((item: MockRecord) => item.id === Number(orderReviewMatch[1]) && item.userId === user.id);
+    if (!order) makeMockError(404, "Order not found", method, path);
+    if (order.status !== "delivered") makeMockError(400, "Review can be submitted only after delivery", method, path);
+    const orderedProduct = (order.items ?? []).some((item: MockRecord) => Number(item.productId) === Number(body.productId));
+    if (!orderedProduct) makeMockError(400, "You can review only products from this order", method, path);
     const review = { id: state.nextIds.review++, userId: user.id, orderId: Number(orderReviewMatch[1]), isVerifiedPurchase: true, createdAt: mockNow(), user: { name: user.name }, ...body };
     state.reviews.unshift(review);
     saveMockState(state);
     return ok(review);
   }
-  const orderTrackingMatch = path.match(/^\/api\/orders\/(\d+)\/tracking$/) ?? path.match(/^\/api\/tracking\/orders\/(\d+)$/);
+  if (path === "/api/returns") {
+    const user = requireUser();
+    state.returns = state.returns ?? [];
+    state.nextIds.return = state.nextIds.return ?? (state.returns.length + 1);
+    if (method === "POST") {
+      const order = state.orders.find((item: MockRecord) => item.id === Number(body.orderId) && item.userId === user.id);
+      if (!order) makeMockError(404, "Order not found", method, path);
+      const returnReason = String(body.reason ?? "").toLowerCase();
+      if (!returnReason.includes("damage") && !returnReason.includes("damaged") && !returnReason.includes("broken") && !returnReason.includes("leaked")) {
+        makeMockError(400, "Only damaged items are eligible for return", method, path);
+      }
+      const product = (order.items ?? []).find((item: MockRecord) => item.productId === Number(body.productId)) ?? order.items?.[0];
+      if (!product) makeMockError(400, "Select a product for return", method, path);
+      const request = {
+        id: state.nextIds.return++,
+        userId: user.id,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        productId: product.productId,
+        productName: product.name,
+        imageUrl: product.imageUrl,
+        reason: body.reason ?? "Return requested",
+        details: body.details ?? "",
+        status: "requested",
+        refundAmount: product.total ?? product.price,
+        createdAt: mockNow(),
+        timeline: [
+          { status: "requested", message: "Return request submitted", updatedAt: mockNow() },
+          { status: "pickup_pending", message: "Pickup will be scheduled after approval", updatedAt: mockNow() },
+        ],
+      };
+      state.returns.unshift(request);
+      saveMockState(state);
+      return ok(request);
+    }
+    return ok(state.returns.filter((item: MockRecord) => item.userId === user.id));
+  }
+  const orderTrackingMatch = path.match(/^\/api\/tracking\/(\d+)$/) ?? path.match(/^\/api\/orders\/(\d+)\/tracking$/) ?? path.match(/^\/api\/tracking\/orders\/(\d+)$/);
   if (orderTrackingMatch) {
     requireUser();
     const order = state.orders.find((item: MockRecord) => item.id === Number(orderTrackingMatch[1]));
     if (!order) makeMockError(404, "Order not found", method, path);
-    return ok(order.tracking);
+    return ok(mockTrackingPayload(order));
   }
   const orderMatch = path.match(/^\/api\/orders\/(\d+)$/);
   if (orderMatch) {
@@ -676,6 +793,31 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
   if (path === "/api/wallet") {
     const user = requireUser();
     return ok({ balance: user.walletBalance, loyaltyPoints: user.loyaltyPoints, referralCode: user.referralCode });
+  }
+  if (path === "/api/wallet/topup" && method === "POST") {
+    const user = requireUser();
+    const amount = Number(body.amount ?? 0);
+    const upiId = String(body.upiId ?? "").trim();
+    if (!amount || amount < 1 || amount > 50000) makeMockError(400, "Enter an amount between Rs.1 and Rs.50,000", method, path);
+    if (!/^[\w.-]+@[\w.-]+$/.test(upiId)) makeMockError(400, "Enter a valid UPI ID", method, path);
+    const balance = Number(user.walletBalance ?? 0) + amount;
+    user.walletBalance = balance.toFixed(2);
+    const key = String(user.id);
+    state.walletTransactions[key] = state.walletTransactions[key] ?? [];
+    const tx = {
+      id: Date.now(),
+      userId: user.id,
+      type: "credit",
+      amount: amount.toFixed(2),
+      balance: balance.toFixed(2),
+      description: `Added money via UPI (${upiId})`,
+      referenceId: `UPI-${Date.now()}`,
+      referenceType: "wallet_topup",
+      createdAt: mockNow(),
+    };
+    state.walletTransactions[key].unshift(tx);
+    saveMockState(state);
+    return ok({ balance: balance.toFixed(2), transaction: tx });
   }
   if (path === "/api/wallet/transactions") {
     const user = requireUser();
@@ -813,14 +955,53 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     requireUser();
     return ok(state.orders.filter((order: MockRecord) => !["cancelled", "delivered"].includes(order.status)));
   }
+  if (path === "/api/delivery/available-orders") {
+    requireUser();
+    return ok(state.orders.filter((order: MockRecord) => ["confirmed", "packed"].includes(order.status)));
+  }
   if (path === "/api/delivery/location") {
     requireUser();
     const location = { lat: Number(body.lat ?? 22.5726), lng: Number(body.lng ?? 88.3639), updatedAt: mockNow() };
     state.orders.forEach((order: MockRecord) => {
-      if (order.tracking?.deliveryPartner) order.tracking.deliveryPartner.location = location;
+      if (!["cancelled", "delivered"].includes(order.status)) mockMovePartner(order, location.lat, location.lng);
     });
     saveMockState(state);
     return ok({ message: "Location updated" });
+  }
+  const deliveryAcceptMatch = path.match(/^\/api\/delivery\/orders\/(\d+)\/accept$/);
+  if (deliveryAcceptMatch && method === "POST") {
+    requireUser();
+    const order = state.orders.find((item: MockRecord) => item.id === Number(deliveryAcceptMatch[1]));
+    if (!order) makeMockError(404, "Order not found", method, path);
+    order.status = order.status === "confirmed" ? "packed" : order.status;
+    order.tracking.status = order.status;
+    order.tracking.timeline.unshift({ status: order.status, message: "Delivery partner accepted the order", updatedAt: mockNow() });
+    saveMockState(state);
+    return ok(order);
+  }
+  const deliveryRejectMatch = path.match(/^\/api\/delivery\/orders\/(\d+)\/reject$/);
+  if (deliveryRejectMatch && method === "POST") {
+    requireUser();
+    const order = state.orders.find((item: MockRecord) => item.id === Number(deliveryRejectMatch[1]));
+    if (!order) makeMockError(404, "Order not found", method, path);
+    order.tracking.timeline.unshift({ status: order.status, message: "Delivery partner rejected the order", updatedAt: mockNow() });
+    saveMockState(state);
+    return ok({ message: "Order rejected" });
+  }
+  const deliveryStatusMatch = path.match(/^\/api\/delivery\/orders\/(\d+)\/status$/);
+  if (deliveryStatusMatch && method === "PATCH") {
+    requireUser();
+    const order = state.orders.find((item: MockRecord) => item.id === Number(deliveryStatusMatch[1]));
+    if (!order) makeMockError(404, "Order not found", method, path);
+    order.status = body.status ?? order.status;
+    order.tracking.status = order.status;
+    const locations = mockOrderLocations(order);
+    if (order.status === "picked_up") mockMovePartner(order, locations.storeLocation.lat + 0.01, locations.storeLocation.lng + 0.012);
+    if (order.status === "on_the_way") mockMovePartner(order, (locations.storeLocation.lat + locations.customerLocation.lat) / 2, (locations.storeLocation.lng + locations.customerLocation.lng) / 2);
+    if (order.status === "delivered") mockMovePartner(order, locations.customerLocation.lat, locations.customerLocation.lng);
+    order.tracking.timeline.unshift({ status: order.status, message: `Delivery partner marked ${String(order.status).replace(/_/g, " ")}`, updatedAt: mockNow() });
+    saveMockState(state);
+    return ok(order);
   }
   if (path === "/api/delivery/toggle-online") {
     const user = requireUser();

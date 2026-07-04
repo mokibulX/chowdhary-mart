@@ -42,7 +42,7 @@ export default function Wishlist() {
     );
   }
 
-  if (isLoading) return <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-64 rounded-lg" />)}</div>;
+  if (isLoading) return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-lg sm:h-64" />)}</div>;
 
   if (!wishlist?.length) {
     return (
@@ -57,7 +57,7 @@ export default function Wishlist() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">Wishlist ({wishlist.length})</h1>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
         {wishlist.map((item: any) => {
           const product = item.product ?? item;
           return (

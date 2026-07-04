@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, ShoppingBag, TrendingUp, Store, Clock, Bike } from "lucide-react";
+import { Users, ShoppingBag, TrendingUp, Store, Clock, Bike, Image, Grid3X3, BadgePercent } from "lucide-react";
 import { Link } from "wouter";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -56,6 +56,35 @@ export default function AdminDashboard() {
           </Link>
         ))}
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Marketplace controls</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-3">
+          <Link href="/admin/coupons">
+            <div className="rounded-lg border p-4 transition-all hover:-translate-y-1 hover:shadow-md">
+              <BadgePercent className="mb-3 h-5 w-5 text-primary" />
+              <p className="font-semibold">Discounts & coupons</p>
+              <p className="text-sm text-muted-foreground">Create offers and campaign codes.</p>
+            </div>
+          </Link>
+          <Link href="/admin#banners">
+            <div id="banners" className="rounded-lg border p-4 transition-all hover:-translate-y-1 hover:shadow-md">
+              <Image className="mb-3 h-5 w-5 text-blue-600" />
+              <p className="font-semibold">Banners & ads</p>
+              <p className="text-sm text-muted-foreground">Review active homepage promotions.</p>
+            </div>
+          </Link>
+          <Link href="/admin#categories">
+            <div id="categories" className="rounded-lg border p-4 transition-all hover:-translate-y-1 hover:shadow-md">
+              <Grid3X3 className="mb-3 h-5 w-5 text-green-700" />
+              <p className="font-semibold">Category experience</p>
+              <p className="text-sm text-muted-foreground">Category images are shown on the customer home page.</p>
+            </div>
+          </Link>
+        </CardContent>
+      </Card>
 
       {/* Recent Orders */}
       <Card>

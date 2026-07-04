@@ -4,7 +4,7 @@ import {
   db, ordersTable, orderItemsTable, orderTrackingTable,
   cartItemsTable, cartsTable, productsTable, storesTable,
   addressesTable, usersTable, couponUsesTable, couponsTable,
-  walletTransactionsTable, reviewsTable
+  walletTransactionsTable, reviewsTable, deliveryPartnersTable
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 import { generateOrderNumber } from "../lib/auth";
@@ -16,6 +16,29 @@ router.use(requireAuth);
 function safeNum(v: unknown, fallback = 0): number {
   const n = Number(v);
   return isNaN(n) ? fallback : n;
+}
+
+function distanceKm(aLat?: number | null, aLng?: number | null, bLat?: number | null, bLng?: number | null): number {
+  if ([aLat, aLng, bLat, bLng].some(v => v === null || v === undefined || Number.isNaN(Number(v)))) return 9999;
+  const toRad = (value: number) => value * Math.PI / 180;
+  const earthKm = 6371;
+  const dLat = toRad(Number(bLat) - Number(aLat));
+  const dLng = toRad(Number(bLng) - Number(aLng));
+  const lat1 = toRad(Number(aLat));
+  const lat2 = toRad(Number(bLat));
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthKm * Math.asin(Math.sqrt(h));
+}
+
+async function assignNearestPartner(store: typeof storesTable.$inferSelect) {
+  const partners = await db.select().from(deliveryPartnersTable);
+  if (!partners.length) return null;
+  const available = partners.filter(partner => partner.isOnline || partner.isVerified);
+  const pool = available.length ? available : partners;
+  return pool.sort((a, b) =>
+    distanceKm(a.currentLat, a.currentLng, store.lat, store.lng) -
+    distanceKm(b.currentLat, b.currentLng, store.lat, store.lng)
+  )[0] ?? null;
 }
 
 async function enrichOrder(order: typeof ordersTable.$inferSelect) {
@@ -133,13 +156,16 @@ router.post("/", async (req: AuthRequest, res) => {
     const loyaltyEarned = Math.floor(total / 10); // 1 point per ₹10
 
     // Create order
+    const assignedPartner = await assignNearestPartner(store);
+    const promisedMins = Math.min(40, Math.max(20, store.estimatedDeliveryMins ?? 40));
+
     const [order] = await db.insert(ordersTable).values({
       orderNumber: generateOrderNumber(),
       userId,
       storeId: cart.storeId,
       addressId,
       addressSnapshot: { line1: address.line1, city: address.city, pincode: address.pincode, name: address.name },
-      status: "confirmed",
+      status: assignedPartner ? "confirmed" : "pending",
       paymentMethod,
       paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
       subtotal: subtotal.toFixed(2),
@@ -150,7 +176,7 @@ router.post("/", async (req: AuthRequest, res) => {
       walletUsed: walletUsed.toFixed(2),
       total: total.toFixed(2),
       loyaltyPointsEarned: loyaltyEarned,
-      estimatedDeliveryMins: store.estimatedDeliveryMins ?? 30,
+      estimatedDeliveryMins: promisedMins,
       notes,
     }).returning();
 
@@ -160,11 +186,22 @@ router.post("/", async (req: AuthRequest, res) => {
     );
 
     // Insert tracking event
-    await db.insert(orderTrackingTable).values({
-      orderId: order.id,
-      status: "confirmed",
-      message: "Order confirmed by store",
-    });
+    await db.insert(orderTrackingTable).values([
+      {
+        orderId: order.id,
+        deliveryPartnerId: assignedPartner?.id,
+        status: "pending",
+        message: "Order placed",
+      },
+      {
+        orderId: order.id,
+        deliveryPartnerId: assignedPartner?.id,
+        status: assignedPartner ? "confirmed" : "pending",
+        message: assignedPartner ? "Order confirmed and delivery partner assigned" : "Order confirmed, assigning delivery partner",
+        lat: assignedPartner?.currentLat ?? store.lat,
+        lng: assignedPartner?.currentLng ?? store.lng,
+      },
+    ]);
 
     // Clear cart
     await db.delete(cartItemsTable).where(eq(cartItemsTable.cartId, cart.id));
@@ -319,6 +356,18 @@ router.post("/:orderId/review", async (req: AuthRequest, res) => {
       .where(and(eq(ordersTable.id, orderId), eq(ordersTable.userId, userId)))
       .limit(1);
     if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    if (order.status !== "delivered") {
+      res.status(400).json({ error: "Review can be submitted only after delivery" });
+      return;
+    }
+
+    const [orderedItem] = await db.select().from(orderItemsTable)
+      .where(and(eq(orderItemsTable.orderId, orderId), eq(orderItemsTable.productId, productId)))
+      .limit(1);
+    if (!orderedItem) {
+      res.status(400).json({ error: "You can review only products from this order" });
+      return;
+    }
 
     const [review] = await db.insert(reviewsTable).values({
       userId,
