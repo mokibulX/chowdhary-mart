@@ -16,9 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LocateFixed, MapPin, Plus, Pencil, Trash2 } from "lucide-react";
+import { Camera, LocateFixed, MapPin, Navigation, Plus, Pencil, Trash2 } from "lucide-react";
 import { Link } from "wouter";
 import { getSavedDeliveryLocation, lookupPincode } from "@/lib/pincode";
+import { fileToDataUrl, getBrowserLocation } from "@/lib/live-location";
 
 const schema = z.object({
   label: z.string().optional().or(z.literal("")),
@@ -31,6 +32,9 @@ const schema = z.object({
   pincode: z.string().length(6, "Valid 6-digit pincode"),
   lat: z.coerce.number().optional(),
   lng: z.coerce.number().optional(),
+  locationAccuracy: z.coerce.number().optional(),
+  locationCapturedAt: z.string().optional().or(z.literal("")),
+  photoUrl: z.string().optional().or(z.literal("")),
   isDefault: z.boolean().optional(),
 });
 type FormData = z.infer<typeof schema>;
@@ -41,6 +45,8 @@ export default function Addresses() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState("");
 
   const { data: addresses, isLoading } = useListAddresses({
     query: { enabled: !!user, queryKey: getListAddressesQueryKey() },
@@ -54,6 +60,8 @@ export default function Addresses() {
     defaultValues: { label: "home", state: "West Bengal", isDefault: false },
   });
   const pincodeValue = watch("pincode");
+  const latValue = watch("lat");
+  const lngValue = watch("lng");
 
   const fillFromPincode = (value = pincodeValue) => {
     const found = lookupPincode(value ?? "");
@@ -70,25 +78,81 @@ export default function Addresses() {
     toast({ title: "Location selected", description: `${found.area}, ${found.city} - ${found.pincode}` });
   };
 
+  const captureLiveLocation = async () => {
+    setLocationLoading(true);
+    try {
+      const location = await getBrowserLocation();
+      setValue("lat", location.lat, { shouldValidate: true });
+      setValue("lng", location.lng, { shouldValidate: true });
+      setValue("locationAccuracy", location.accuracy);
+      setValue("locationCapturedAt", location.capturedAt);
+      toast({
+        title: "Live location captured",
+        description: location.accuracy ? `Accuracy around ${location.accuracy}m` : "GPS location saved for delivery",
+      });
+      return location;
+    } catch (error) {
+      toast({ title: "Location needed", description: (error as Error).message, variant: "destructive" });
+      throw error;
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  const handlePhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setValue("photoUrl", dataUrl, { shouldValidate: true });
+      setPhotoPreview(dataUrl);
+      toast({ title: "Address photo added" });
+    } catch (error) {
+      toast({ title: "Photo could not be added", description: (error as Error).message, variant: "destructive" });
+    }
+  };
+
   const openCreate = () => {
     setEditId(null);
     const saved = getSavedDeliveryLocation();
-    reset({ label: "home", state: saved.state, city: saved.city, pincode: saved.pincode, line2: saved.area, lat: saved.lat, lng: saved.lng, isDefault: false });
+    setPhotoPreview("");
+    reset({ label: "home", state: saved.state, city: saved.city, pincode: saved.pincode, line2: saved.area, lat: saved.lat, lng: saved.lng, photoUrl: "", isDefault: false });
     setDialogOpen(true);
+    void captureLiveLocation().catch(() => undefined);
   };
 
   const openEdit = (addr: any) => {
     setEditId(addr.id);
+    setPhotoPreview(addr.photoUrl ?? "");
     reset({
       label: addr.label ?? "", name: addr.name, phone: addr.phone,
       line1: addr.line1, line2: addr.line2 ?? "", city: addr.city,
-      state: addr.state, pincode: addr.pincode, lat: addr.lat ?? undefined, lng: addr.lng ?? undefined, isDefault: !!addr.isDefault,
+      state: addr.state, pincode: addr.pincode, lat: addr.lat ?? undefined, lng: addr.lng ?? undefined,
+      locationAccuracy: addr.locationAccuracy ?? undefined,
+      locationCapturedAt: addr.locationCapturedAt ?? "",
+      photoUrl: addr.photoUrl ?? "",
+      isDefault: !!addr.isDefault,
     });
     setDialogOpen(true);
   };
 
-  const onSubmit = (data: FormData) => {
+  const onSubmit = async (data: FormData) => {
     const payload = { ...data, label: data.label || "home", isDefault: data.isDefault ?? false };
+    if (!payload.lat || !payload.lng) {
+      try {
+        const location = await captureLiveLocation();
+        payload.lat = location.lat;
+        payload.lng = location.lng;
+        payload.locationAccuracy = location.accuracy;
+        payload.locationCapturedAt = location.capturedAt;
+      } catch {
+        return;
+      }
+    }
+    if (!payload.photoUrl) {
+      toast({ title: "Address photo required", description: "Please add one photo of the delivery place.", variant: "destructive" });
+      return;
+    }
     const onSuccess = () => {
       qc.invalidateQueries({ queryKey: getListAddressesQueryKey() });
       setDialogOpen(false);
@@ -96,9 +160,9 @@ export default function Addresses() {
     };
     const onError = () => toast({ title: "Failed to save address", variant: "destructive" });
     if (editId) {
-      update.mutate({ addressId: editId, data: payload }, { onSuccess, onError });
+      update.mutate({ addressId: editId, data: payload as any }, { onSuccess, onError });
     } else {
-      create.mutate({ data: payload }, { onSuccess, onError });
+      create.mutate({ data: payload as any }, { onSuccess, onError });
     }
   };
 
@@ -135,7 +199,14 @@ export default function Addresses() {
           {addresses.map((addr: any) => (
             <div key={addr.id} className={`border rounded-xl p-4 ${addr.isDefault ? "border-primary bg-orange-50" : "bg-white"}`}>
               <div className="flex items-start justify-between gap-2">
-                <div className="flex items-start gap-2">
+                <div className="flex items-start gap-3">
+                  {addr.photoUrl ? (
+                    <img src={addr.photoUrl} alt="Address place" className="h-14 w-14 rounded-lg border object-cover" />
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-lg border bg-orange-50">
+                      <MapPin className="h-5 w-5 text-primary" />
+                    </div>
+                  )}
                   <MapPin className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                   <div>
                     <div className="flex items-center gap-2 flex-wrap mb-0.5">
@@ -146,6 +217,9 @@ export default function Addresses() {
                     <p className="text-sm text-muted-foreground">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ""}</p>
                     <p className="text-sm text-muted-foreground">{addr.city}, {addr.state} - {addr.pincode}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{addr.phone}</p>
+                    {addr.lat && addr.lng && (
+                      <p className="mt-1 text-[11px] text-emerald-700">GPS saved: {Number(addr.lat).toFixed(4)}, {Number(addr.lng).toFixed(4)}</p>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
@@ -221,6 +295,37 @@ export default function Addresses() {
             </div>
             <input type="hidden" {...register("lat")} />
             <input type="hidden" {...register("lng")} />
+            <input type="hidden" {...register("locationAccuracy")} />
+            <input type="hidden" {...register("locationCapturedAt")} />
+            <input type="hidden" {...register("photoUrl")} />
+            <div className="rounded-xl border bg-blue-50 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-blue-950">Live delivery location</p>
+                  <p className="text-xs text-blue-800">
+                    {latValue && lngValue ? `GPS: ${Number(latValue).toFixed(5)}, ${Number(lngValue).toFixed(5)}` : "Tap to capture the exact delivery spot."}
+                  </p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={captureLiveLocation} disabled={locationLoading}>
+                  <Navigation className="mr-1 h-3.5 w-3.5" />
+                  {locationLoading ? "Capturing..." : "Use GPS"}
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-xl border bg-white p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Delivery place photo *</p>
+                  <p className="text-xs text-muted-foreground">Add one photo of the gate/building/shop front.</p>
+                </div>
+                <Label className="inline-flex cursor-pointer items-center rounded-md border px-3 py-2 text-sm font-medium">
+                  <Camera className="mr-1.5 h-4 w-4" />
+                  Add Photo
+                  <Input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+                </Label>
+              </div>
+              {photoPreview && <img src={photoPreview} alt="Delivery place preview" className="mt-3 h-32 w-full rounded-lg object-cover" />}
+            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" {...register("isDefault")} className="accent-primary" data-testid="checkbox-default" />
               <span className="text-sm">Set as default address</span>

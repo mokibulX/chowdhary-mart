@@ -3,8 +3,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, ShoppingBag, TrendingUp, Store, Clock, Bike, Image, Grid3X3, BadgePercent } from "lucide-react";
+import { Users, ShoppingBag, TrendingUp, Store, Clock, Bike, Image, Grid3X3, BadgePercent, ShieldCheck } from "lucide-react";
 import { Link } from "wouter";
+import { WalletSummaryCard } from "@/components/WalletSummaryCard";
 
 const STATUS_COLORS: Record<string, string> = {
   delivered: "bg-green-100 text-green-700", cancelled: "bg-red-100 text-red-700",
@@ -23,6 +24,7 @@ export default function AdminDashboard() {
     { label: "Total Orders", value: dashboard?.totalOrders ?? 0, icon: ShoppingBag, color: "text-primary", href: "/admin/orders" },
     { label: "Total Revenue", value: `₹${Number(dashboard?.totalRevenue ?? 0).toLocaleString("en-IN")}`, icon: TrendingUp, color: "text-green-600", href: "/admin/orders" },
     { label: "Stores", value: dashboard?.totalStores ?? 0, icon: Store, color: "text-purple-600", href: "/admin/stores" },
+    { label: "Pending Shops", value: (dashboard as any)?.pendingStores ?? 0, icon: ShieldCheck, color: "text-yellow-600", href: "/admin/approvals" },
     { label: "Today Orders", value: dashboard?.todayOrders ?? 0, icon: Clock, color: "text-orange-500", href: "/admin/orders" },
     { label: "Today Revenue", value: `₹${Number(dashboard?.todayRevenue ?? 0).toFixed(0)}`, icon: TrendingUp, color: "text-emerald-600", href: "/admin/orders" },
     { label: "Active Riders", value: dashboard?.activeDeliveryPartners ?? 0, icon: Bike, color: "text-cyan-600", href: "/admin/users" },
@@ -34,6 +36,8 @@ export default function AdminDashboard() {
         <h1 className="text-2xl font-bold">Admin Dashboard</h1>
         <p className="text-muted-foreground text-sm mt-0.5">Welcome, {user?.name}</p>
       </div>
+
+      <WalletSummaryCard href="/admin/wallet" title="Admin wallet" tone="dark" />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map(({ label, value, icon: Icon, color, href }) => (
@@ -61,12 +65,19 @@ export default function AdminDashboard() {
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Marketplace controls</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
+        <CardContent className="grid gap-3 md:grid-cols-4">
           <Link href="/admin/coupons">
             <div className="rounded-lg border p-4 transition-all hover:-translate-y-1 hover:shadow-md">
               <BadgePercent className="mb-3 h-5 w-5 text-primary" />
               <p className="font-semibold">Discounts & coupons</p>
               <p className="text-sm text-muted-foreground">Create offers and campaign codes.</p>
+            </div>
+          </Link>
+          <Link href="/admin/approvals">
+            <div className="rounded-lg border p-4 transition-all hover:-translate-y-1 hover:shadow-md">
+              <ShieldCheck className="mb-3 h-5 w-5 text-yellow-600" />
+              <p className="font-semibold">Shop owner approvals</p>
+              <p className="text-sm text-muted-foreground">Approve sellers before product uploads.</p>
             </div>
           </Link>
           <Link href="/admin#banners">

@@ -28,8 +28,33 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { ProductCard } from "@/components/ProductCard";
-import { BadgePercent, Heart, Minus, PackageCheck, Plus, RotateCcw, Shield, ShoppingCart, Star, Store, Truck, Zap } from "lucide-react";
-import { getSavedDeliveryLocation } from "@/lib/pincode";
+import { BadgePercent, Heart, LocateFixed, Minus, PackageCheck, Plus, RotateCcw, Shield, ShoppingCart, Star, Store, Truck, Zap } from "lucide-react";
+import { getSavedDeliveryLocation, nearestDeliveryLocation, saveDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
+import { getBrowserLocation } from "@/lib/live-location";
+
+const COLOR_SWATCHES: Record<string, string> = {
+  black: "#111827",
+  white: "#ffffff",
+  blue: "#2563eb",
+  red: "#dc2626",
+  green: "#16a34a",
+  yellow: "#facc15",
+  brown: "#92400e",
+  grey: "#9ca3af",
+  gray: "#9ca3af",
+  navy: "#1e3a8a",
+  pink: "#ec4899",
+  purple: "#9333ea",
+  orange: "#f97316",
+  beige: "#d6b98c",
+  gold: "#d4af37",
+  silver: "#c0c0c0",
+};
+
+function normalizeOptions(value: unknown) {
+  const source = Array.isArray(value) ? value : String(value ?? "").split(",");
+  return Array.from(new Set(source.map((item) => String(item).trim()).filter(Boolean)));
+}
 
 export default function ProductDetail() {
   const { productId } = useParams<{ productId: string }>();
@@ -43,6 +68,10 @@ export default function ProductDetail() {
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewBody, setReviewBody] = useState("");
   const [showAllReviews, setShowAllReviews] = useState(false);
+  const [deliveryLocation, setDeliveryLocation] = useState<DeliveryLocation>(() => getSavedDeliveryLocation());
+  const [locatingGps, setLocatingGps] = useState(false);
+  const [selectedSize, setSelectedSize] = useState("");
+  const [selectedColor, setSelectedColor] = useState("");
 
   const { data: product, isLoading } = useGetProduct(id, {
     query: { enabled: !!id, queryKey: getGetProductQueryKey(id) },
@@ -64,6 +93,17 @@ export default function ProductDetail() {
   const createReview = useCreateReview();
   const addToWishlist = useAddToWishlist();
   const removeFromWishlist = useRemoveFromWishlist();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setSelectedImg(0);
+  }, [id]);
+
+  useEffect(() => {
+    const syncLocation = () => setDeliveryLocation(getSavedDeliveryLocation());
+    window.addEventListener("delivery-location-change", syncLocation);
+    return () => window.removeEventListener("delivery-location-change", syncLocation);
+  }, []);
 
   useEffect(() => {
     if (!product) return;
@@ -89,6 +129,31 @@ export default function ProductDetail() {
     }
   }, [product]);
 
+  useEffect(() => {
+    setSelectedImg(0);
+    setSelectedSize("");
+    setSelectedColor("");
+  }, [(product as any)?.id]);
+
+  useEffect(() => {
+    const colorImages = (product as any)?.colorImages && typeof (product as any).colorImages === "object" ? (product as any).colorImages : {};
+    const colorImage = selectedColor ? colorImages[selectedColor] || colorImages[selectedColor.toLowerCase()] : "";
+    const rotatingImages = [colorImage, ...((product as any)?.images ?? [])].filter(Boolean);
+    if (rotatingImages.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setSelectedImg((current) => (current + 1) % rotatingImages.length);
+    }, 2400);
+    return () => window.clearInterval(timer);
+  }, [(product as any)?.id, (product as any)?.images?.length, selectedColor]);
+
+  useEffect(() => {
+    if (!product) return;
+    const nextSizes = normalizeOptions((product as any).sizes ?? (product as any).specifications?.Sizes ?? (product as any).specifications?.Size);
+    const nextColors = normalizeOptions((product as any).colors ?? (product as any).specifications?.Colors ?? (product as any).specifications?.Color);
+    setSelectedSize((current) => nextSizes.length ? (nextSizes.includes(current) ? current : nextSizes[0]) : "");
+    setSelectedColor((current) => nextColors.length ? (nextColors.includes(current) ? current : nextColors[0]) : "");
+  }, [(product as any)?.id, (product as any)?.sizes, (product as any)?.colors]);
+
   if (!product) {
     if (isLoading) {
       return (
@@ -102,25 +167,88 @@ export default function ProductDetail() {
     return <div className="py-16 text-center text-muted-foreground">Product not found.</div>;
   }
 
-  const cartItem = cart?.items?.find((item: { productId: number }) => item.productId === id);
-  const qty = cartItem?.qty ?? 0;
   const isWishlisted = wishlist?.some((item: { productId: number }) => item.productId === id) ?? false;
-  const images = (product as any).images ?? [];
+  const baseImages = ((product as any).images ?? []).filter(Boolean);
+  const colorImages = (product as any).colorImages && typeof (product as any).colorImages === "object" ? (product as any).colorImages : {};
   const discount = product.discountPercent ? Number(product.discountPercent) : 0;
   const available = (product as any).isAvailable !== false && (product as any).isAvailable !== 0;
-  const deliveryLocation = getSavedDeliveryLocation();
+  const sellerActive = !(product as any).store || (product as any).store?.isOpen !== false;
   const specs = (product as any).specifications && typeof (product as any).specifications === "object" ? Object.entries((product as any).specifications) : [];
   const similarProducts = (similar?.items ?? []).filter((item: any) => item.id !== id);
   const eligibleOrder = (orders ?? []).find((order: any) => order.status === "delivered" && (order.items ?? []).some((item: any) => Number(item.productId) === id));
+  const sizes = normalizeOptions((product as any).sizes ?? (product as any).specifications?.Sizes ?? (product as any).specifications?.Size);
+  const colors = normalizeOptions((product as any).colors ?? (product as any).specifications?.Colors ?? (product as any).specifications?.Color);
+  const selectedColorImage = selectedColor ? colorImages[selectedColor] || colorImages[selectedColor.toLowerCase()] : "";
+  const images = selectedColorImage
+    ? [selectedColorImage, ...baseImages.filter((image: string) => image !== selectedColorImage)]
+    : baseImages;
+  const selectedImageUrl = images[selectedImg] ?? images[0] ?? "";
+  const cartItem = cart?.items?.find((item: any) =>
+    item.productId === id
+    && (!sizes.length || String(item.selectedSize ?? "") === selectedSize)
+    && (!colors.length || String(item.selectedColor ?? "") === selectedColor)
+  );
+  const qty = cartItem?.qty ?? 0;
+  const returnWindow = (product as any).returnWindow || (product as any).returnPolicy || (product as any).specifications?.Return || "Damaged items only";
+  const warranty = (product as any).warranty || (product as any).specifications?.Warranty || "Seller assured";
+  const paymentOptions = (product as any).paymentOptions || (product as any).specifications?.Payment || "Cash on Delivery, UPI";
+  const deliveryNote = (product as any).deliveryNote || (product as any).specifications?.Delivery || "40 minute local target";
+
+  const requireOptions = () => {
+    if (sizes.length && !selectedSize) {
+      toast({ title: "Please select a size", variant: "destructive" });
+      return false;
+    }
+    if (colors.length && !selectedColor) {
+      toast({ title: "Please select a color", variant: "destructive" });
+      return false;
+    }
+    return true;
+  };
+
+  const applyLiveGps = async () => {
+    setLocatingGps(true);
+    try {
+      const gps = await getBrowserLocation();
+      const nearest = nearestDeliveryLocation(gps.lat, gps.lng);
+      const selected: DeliveryLocation = {
+        ...nearest.location,
+        area: `Live GPS near ${nearest.location.area}`,
+        lat: gps.lat,
+        lng: gps.lng,
+        source: "gps",
+        accuracy: gps.accuracy,
+        capturedAt: gps.capturedAt,
+      };
+      saveDeliveryLocation(selected);
+      setDeliveryLocation(selected);
+      toast({ title: "Live location saved", description: `${nearest.location.pincode} selected from GPS.` });
+    } catch (error) {
+      toast({ title: "GPS failed", description: (error as Error).message, variant: "destructive" });
+    } finally {
+      setLocatingGps(false);
+    }
+  };
 
   const handleAdd = () => {
     if (!user) { setLocation("/login"); return; }
+    if (!sellerActive) {
+      toast({ title: "Seller is not active", description: "This seller is not accepting orders right now.", variant: "destructive" });
+      return;
+    }
+    if (!requireOptions()) return;
     addToCart.mutate(
-      { data: { productId: id, qty: 1 } },
+      { data: { productId: id, qty: 1, selectedSize, selectedColor, selectedImageUrl } },
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetCartQueryKey() });
           toast({ title: "Added to cart" });
+        },
+        onError: (err: unknown) => {
+          const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
+            ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+            ?? "Could not add to cart";
+          toast({ title: msg, variant: "destructive" });
         },
       }
     );
@@ -128,19 +256,30 @@ export default function ProductDetail() {
 
   const handleAdjust = (newQty: number) => {
     addToCart.mutate(
-      { data: { productId: id, qty: newQty } },
+      { data: { productId: id, qty: newQty, selectedSize, selectedColor, selectedImageUrl } },
       { onSuccess: () => qc.invalidateQueries({ queryKey: getGetCartQueryKey() }) }
     );
   };
 
   const handleOrderNow = () => {
     if (!user) { setLocation("/login"); return; }
+    if (!sellerActive) {
+      toast({ title: "Seller is not active", description: "This seller is not accepting orders right now.", variant: "destructive" });
+      return;
+    }
+    if (!requireOptions()) return;
     addToCart.mutate(
-      { data: { productId: id, qty: Math.max(1, qty || 1) } },
+      { data: { productId: id, qty: Math.max(1, qty || 1), selectedSize, selectedColor, selectedImageUrl } },
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetCartQueryKey() });
           setLocation("/checkout");
+        },
+        onError: (err: unknown) => {
+          const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
+            ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+            ?? "Order failed";
+          toast({ title: msg, variant: "destructive" });
         },
       }
     );
@@ -217,6 +356,13 @@ export default function ProductDetail() {
               ))}
             </div>
           )}
+          {images.length > 1 && (
+            <div className="flex justify-center gap-1 px-3 md:hidden">
+              {images.slice(0, 6).map((_: string, index: number) => (
+                <span key={index} className={`h-1.5 rounded-full ${index === selectedImg ? "w-5 bg-primary" : "w-1.5 bg-gray-300"}`} />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="min-w-0 space-y-4 p-4 md:p-0">
@@ -250,6 +396,52 @@ export default function ProductDetail() {
 
           {product.description && <p className="text-sm leading-relaxed text-muted-foreground">{product.description}</p>}
 
+          {!sellerActive && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+              Seller is not active. This product cannot be ordered right now.
+            </div>
+          )}
+
+          {sizes.length > 0 && (
+            <div className="rounded-lg border bg-gray-50 p-3">
+              <p className="mb-2 text-sm font-semibold">Select size</p>
+              <div className="flex flex-wrap gap-2">
+                {sizes.map((size: string) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setSelectedSize(size)}
+                    className={`rounded-lg border px-3 py-1.5 text-sm font-semibold shadow-sm transition-colors ${selectedSize === size ? "border-primary bg-primary text-white" : "bg-white text-gray-800 hover:border-primary/50"}`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {colors.length > 0 && (
+            <div className="rounded-lg border bg-gray-50 p-3">
+              <p className="mb-2 text-sm font-semibold">Select color</p>
+              <div className="flex flex-wrap gap-2">
+                {colors.map((color: string) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => {
+                      setSelectedColor(color);
+                      setSelectedImg(0);
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold shadow-sm transition-colors ${selectedColor === color ? "border-primary bg-primary text-white" : "bg-white text-gray-800 hover:border-primary/50"}`}
+                  >
+                    <span className="h-4 w-4 rounded-full border" style={{ backgroundColor: COLOR_SWATCHES[color.toLowerCase()] ?? color }} />
+                    {color}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
             <p className="font-medium text-green-600">Save extra with combo offers</p>
             {[
@@ -273,11 +465,20 @@ export default function ProductDetail() {
               <div className="flex items-start gap-3">
                 <Truck className="mt-1 h-5 w-5 text-[#0757ee]" />
                 <div>
-                  <p className="font-semibold">Deliver to: {deliveryLocation.city} - {deliveryLocation.pincode}</p>
-                  <p className="text-sm text-muted-foreground">Delivery in <span className="font-semibold text-gray-950">40 minutes</span> | Free above eligible cart</p>
+                  <p className="font-semibold">
+                    {deliveryLocation.pincode ? `Deliver to: ${deliveryLocation.area} - ${deliveryLocation.pincode}` : "Select live delivery location"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {deliveryLocation.source === "gps" ? "Live GPS saved" : "Use GPS or pincode"} | Delivery in <span className="font-semibold text-gray-950">40 minutes</span>
+                  </p>
                 </div>
               </div>
-              <Link href="/addresses"><Button variant="secondary" size="sm">Change</Button></Link>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button variant="outline" size="sm" onClick={applyLiveGps} disabled={locatingGps}>
+                  <LocateFixed className="mr-1 h-4 w-4" /> {locatingGps ? "GPS..." : "GPS"}
+                </Button>
+                <Link href="/addresses"><Button variant="secondary" size="sm">Change</Button></Link>
+              </div>
             </div>
           </div>
 
@@ -305,10 +506,10 @@ export default function ProductDetail() {
           )}
 
           <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 text-center text-xs sm:grid-cols-4">
-            <div className="min-w-0 space-y-1"><RotateCcw className="mx-auto h-5 w-5 text-[#0757ee]" /><span className="block leading-tight">7 Days<br />Replacement</span></div>
-            <div className="min-w-0 space-y-1"><PackageCheck className="mx-auto h-5 w-5 text-[#0757ee]" /><span className="block leading-tight">Cash on<br />Delivery</span></div>
-            <div className="min-w-0 space-y-1"><Shield className="mx-auto h-5 w-5 text-[#0757ee]" /><span className="block leading-tight">1 Year<br />Warranty</span></div>
-            <div className="min-w-0 space-y-1"><Zap className="mx-auto h-5 w-5 text-[#0757ee]" /><span className="block leading-tight">No Contact<br />Delivery</span></div>
+            <div className="min-w-0 space-y-1"><RotateCcw className="mx-auto h-5 w-5 text-[#0757ee]" /><span className="block leading-tight">{returnWindow}</span></div>
+            <div className="min-w-0 space-y-1"><PackageCheck className="mx-auto h-5 w-5 text-[#0757ee]" /><span className="block leading-tight">{paymentOptions}</span></div>
+            <div className="min-w-0 space-y-1"><Shield className="mx-auto h-5 w-5 text-[#0757ee]" /><span className="block leading-tight">{warranty}</span></div>
+            <div className="min-w-0 space-y-1"><Zap className="mx-auto h-5 w-5 text-[#0757ee]" /><span className="block leading-tight">{deliveryNote}</span></div>
           </div>
 
           <div className="space-y-2 text-sm text-muted-foreground">

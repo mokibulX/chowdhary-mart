@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   useListBanners,
   useListCategories,
@@ -9,6 +10,7 @@ import {
   getListStoresQueryKey,
   getListProductsQueryKey,
 } from "@workspace/api-client-react";
+import { customFetch } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProductCard } from "@/components/ProductCard";
 import { ArrowRight, BadgePercent, Clock, CreditCard, MapPin, Search, ShieldCheck, Sparkles, Truck, Zap } from "lucide-react";
+import { useInfiniteProducts } from "@/hooks/use-infinite-products";
+import { getSavedDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
 
 const OFFER_CARDS = [
   { title: "Bank offer", text: "10% instant discount on cards", icon: CreditCard, tone: "bg-blue-50 text-blue-700 border-blue-100" },
@@ -67,19 +71,33 @@ export default function Home() {
   const [recentlyViewed, setRecentlyViewed] = useState<any[]>([]);
   const [secondsLeft, setSecondsLeft] = useState(3600 * 5 + 42 * 60 + 12);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | undefined>();
+  const [deliveryLocation, setDeliveryLocation] = useState<DeliveryLocation>(() => getSavedDeliveryLocation());
+  const categoryLoadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const { data: banners, isLoading: loadingBanners } = useListBanners({ query: { queryKey: getListBannersQueryKey() } });
   const { data: categories, isLoading: loadingCategories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
-  const { data: stores, isLoading: loadingStores } = useListStores({ limit: 5 }, { query: { queryKey: getListStoresQueryKey({ limit: 5 }) } });
-  const { data: featured, isLoading: loadingFeatured } = useListProducts({ featured: true, limit: 12 }, { query: { queryKey: getListProductsQueryKey({ featured: true, limit: 12 }) } });
-  const { data: electronics } = useListProducts({ categoryId: 1, limit: 8 }, { query: { queryKey: getListProductsQueryKey({ categoryId: 1, limit: 8 }) } });
-  const { data: grocery } = useListProducts({ categoryId: 2, limit: 8 }, { query: { queryKey: getListProductsQueryKey({ categoryId: 2, limit: 8 }) } });
-  const { data: bestSellers } = useListProducts({ sort: "rating" as any, limit: 8 }, { query: { queryKey: getListProductsQueryKey({ sort: "rating" as any, limit: 8 }) } });
-  const { data: newest } = useListProducts({ limit: 8 }, { query: { queryKey: getListProductsQueryKey({ limit: 8 }) } });
-  const selectedCategoryParams = { categoryId: selectedCategoryId, limit: 12 };
-  const { data: selectedCategoryProducts, isLoading: loadingSelectedCategory } = useListProducts(selectedCategoryParams, {
-    query: { enabled: !!selectedCategoryId, queryKey: getListProductsQueryKey(selectedCategoryParams) },
+  const zoneParams = { lat: deliveryLocation.lat, lng: deliveryLocation.lng, radiusKm: 5 };
+  const { data: stores, isLoading: loadingStores } = useListStores({ limit: 5, ...zoneParams }, { query: { queryKey: getListStoresQueryKey({ limit: 5, ...zoneParams }) } });
+  const { data: featured, isLoading: loadingFeatured } = useListProducts({ featured: true, limit: 12, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ featured: true, limit: 12, ...zoneParams }) } });
+  const { data: electronics } = useListProducts({ categoryId: 1, limit: 8, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ categoryId: 1, limit: 8, ...zoneParams }) } });
+  const { data: grocery } = useListProducts({ categoryId: 2, limit: 8, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ categoryId: 2, limit: 8, ...zoneParams }) } });
+  const { data: dailyEssentials } = useListProducts({ categoryId: 2, limit: 12, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ categoryId: 2, limit: 12, ...zoneParams }) } });
+  const { data: bestSellers } = useListProducts({ sort: "rating" as any, limit: 8, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ sort: "rating" as any, limit: 8, ...zoneParams }) } });
+  const { data: newest } = useListProducts({ limit: 8, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ limit: 8, ...zoneParams }) } });
+  const zoneId = (deliveryLocation as DeliveryLocation & { zoneId?: number }).zoneId;
+  const { data: homepageData } = useQuery({
+    queryKey: ["/api/homepage", zoneId],
+    queryFn: () => customFetch<any>(`/api/homepage${zoneId ? `?zoneId=${zoneId}` : ""}`),
   });
+  const selectedCategoryParams = { categoryId: selectedCategoryId, sort: "newest" as any, ...zoneParams };
+  const {
+    products: selectedCategoryProducts,
+    total: selectedCategoryTotal,
+    isLoading: loadingSelectedCategory,
+    hasNextPage: hasMoreCategoryProducts,
+    fetchNextPage: fetchMoreCategoryProducts,
+    isFetchingNextPage: loadingMoreCategoryProducts,
+  } = useInfiniteProducts(selectedCategoryParams, !!selectedCategoryId);
 
   useEffect(() => {
     const timer = window.setInterval(() => setSecondsLeft((value) => Math.max(0, value - 1)), 1000);
@@ -110,6 +128,27 @@ export default function Home() {
     setLocation(q ? `/search?q=${encodeURIComponent(q)}` : "/search");
   };
 
+  useEffect(() => {
+    const syncLocation = () => setDeliveryLocation(getSavedDeliveryLocation());
+    window.addEventListener("delivery-location-change", syncLocation);
+    return () => window.removeEventListener("delivery-location-change", syncLocation);
+  }, []);
+
+  useEffect(() => {
+    const node = categoryLoadMoreRef.current;
+    if (!node || !hasMoreCategoryProducts) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !loadingMoreCategoryProducts) {
+          void fetchMoreCategoryProducts();
+        }
+      },
+      { rootMargin: "450px 0px" }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fetchMoreCategoryProducts, hasMoreCategoryProducts, loadingMoreCategoryProducts, selectedCategoryProducts.length]);
+
   return (
     <div className="w-full max-w-full space-y-6 overflow-x-hidden pb-10">
       <style>{`
@@ -124,7 +163,9 @@ export default function Home() {
       <section className="rounded-lg border bg-white p-3 shadow-sm">
         <button className="mb-3 flex w-full items-center gap-2 rounded-md bg-orange-50 px-3 py-2 text-left text-sm text-gray-800">
           <MapPin className="h-4 w-4 text-primary" />
-          <span className="font-semibold">Deliver to Kolkata 700001</span>
+          <span className="font-semibold">
+            {deliveryLocation.pincode ? `Deliver to ${deliveryLocation.area} ${deliveryLocation.pincode}` : "Select live delivery location"}
+          </span>
           <span className="ml-auto text-xs text-primary">Change</span>
         </button>
         <form onSubmit={submitSearch} className="flex gap-2">
@@ -190,7 +231,7 @@ export default function Home() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold">{selectedCategory?.name ?? "Selected category"}</h2>
-              <p className="text-xs text-muted-foreground">Ei category-r products niche show hocche</p>
+              <p className="text-xs text-muted-foreground">{selectedCategoryProducts.length} of {selectedCategoryTotal} products loaded. Scroll for more.</p>
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={() => setSelectedCategoryId(undefined)}>Clear</Button>
@@ -202,11 +243,26 @@ export default function Home() {
               {Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-xl" />)}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-              {(selectedCategoryProducts?.items ?? []).map((product) => (
-                <ProductCard key={product.id} product={product} compact />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                {selectedCategoryProducts.map((product) => (
+                  <ProductCard key={product.id} product={product} compact />
+                ))}
+              </div>
+              <div ref={categoryLoadMoreRef} className="flex min-h-16 items-center justify-center py-4">
+                {loadingMoreCategoryProducts ? (
+                  <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                    {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-xl" />)}
+                  </div>
+                ) : hasMoreCategoryProducts ? (
+                  <Button variant="outline" onClick={() => fetchMoreCategoryProducts()}>Load more</Button>
+                ) : selectedCategoryProducts.length > 0 ? (
+                  <p className="text-xs text-muted-foreground">All products from this category are loaded.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No products in this category yet.</p>
+                )}
+              </div>
+            </>
           )}
         </section>
       )}
@@ -288,11 +344,26 @@ export default function Home() {
         </Link>
       </section>
 
-      <ProductRail title="Flash Deals" subtitle={`Ends in ${countdown}`} isLoading={loadingFeatured} products={featured?.items ?? []} href="/search?featured=true" />
-      <ProductRail title="Recommended for you" products={newest?.items ?? []} href="/search" />
-      <ProductRail title="Best sellers" products={bestSellers?.items ?? []} href="/search?sort=rating" />
-      <ProductRail title="Electronics top picks" products={electronics?.items ?? []} href="/search?categoryId=1" />
-      <ProductRail title="Grocery saver packs" products={grocery?.items ?? []} href="/search?categoryId=2" />
+      {homepageData?.sections?.length ? (
+        homepageData.sections.map((section: any) => (
+          <ProductRail
+            key={section.id}
+            title={section.title}
+            subtitle={section.subtitle || (section.title.toLowerCase().includes("deal") ? `Ends in ${countdown}` : undefined)}
+            products={section.products ?? []}
+            href={`/search?section=${encodeURIComponent(section.id)}`}
+          />
+        ))
+      ) : (
+        <>
+          <ProductRail title="Flash Deals" subtitle={`Ends in ${countdown}`} isLoading={loadingFeatured} products={featured?.items ?? []} href="/search?featured=true" />
+          <ProductRail title="Daily essentials" subtitle="Milk, bread, cleaning, personal care and household basics" products={dailyEssentials?.items ?? grocery?.items ?? []} href="/search?categoryId=2" />
+          <ProductRail title="Recommended for you" products={newest?.items ?? []} href="/search" />
+          <ProductRail title="Best sellers" products={bestSellers?.items ?? []} href="/search?sort=rating" />
+          <ProductRail title="Electronics top picks" products={electronics?.items ?? []} href="/search?categoryId=1" />
+          <ProductRail title="Grocery saver packs" products={grocery?.items ?? []} href="/search?categoryId=2" />
+        </>
+      )}
       {recentlyViewed.length > 0 && <ProductRail title="Recently viewed" products={recentlyViewed} href="/search" />}
 
       <section className="rounded-lg border bg-white p-4">

@@ -73,7 +73,7 @@ export default function HelpSupport() {
         <div className="rounded-lg border bg-white p-4">
           <MessageCircle className="mb-3 h-5 w-5 text-green-700" />
           <p className="font-semibold">Live chat</p>
-          <p className="text-sm text-muted-foreground">Coming online soon</p>
+          <p className="text-sm text-muted-foreground">Available through support ticket</p>
         </div>
       </section>
 

@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ interface Product {
   isAvailable?: boolean | number;
   rating?: string | number | null;
   storeId?: number;
+  sizes?: string[] | null;
 }
 
 interface ProductCardProps {
@@ -32,6 +34,7 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
+  const [imageIndex, setImageIndex] = useState(0);
 
   const { data: cart } = useGetCart({ query: { enabled: !!user, queryKey: getGetCartQueryKey() } });
   const addToCart = useAddToCart();
@@ -40,6 +43,20 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
   const qty = cartItem?.qty ?? 0;
   const discount = product.discountPercent ? Number(product.discountPercent) : 0;
   const available = product.isAvailable !== false && product.isAvailable !== 0;
+  const images = useMemo(() => (Array.isArray(product.images) ? product.images.filter(Boolean) : []), [product.images]);
+  const sizes = Array.isArray(product.sizes) ? product.sizes.filter(Boolean) : [];
+
+  useEffect(() => {
+    setImageIndex(0);
+  }, [product.id]);
+
+  useEffect(() => {
+    if (images.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setImageIndex((current) => (current + 1) % images.length);
+    }, 2400);
+    return () => window.clearInterval(timer);
+  }, [images.length]);
 
   const addProduct = (qtyToSet: number, goCheckout = false) => {
     if (!user) {
@@ -81,9 +98,9 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
     <Link href={`/product/${product.id}`}>
       <Card className={`group flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg ${compact ? "min-h-[246px]" : "min-h-[318px]"}`} data-testid={`product-card-${product.id}`}>
         <div className="relative aspect-[1.18/1] w-full flex-shrink-0 overflow-hidden bg-gray-50">
-          {product.images?.[0] ? (
+          {images[imageIndex] ? (
             <img
-              src={product.images[0]}
+              src={images[imageIndex]}
               alt={product.name}
               className="h-full w-full object-contain p-4 transition-transform duration-500 group-hover:scale-105"
             />
@@ -100,6 +117,13 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
           {!available && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/75">
               <span className="text-xs font-semibold text-gray-500">Out of Stock</span>
+            </div>
+          )}
+          {images.length > 1 && (
+            <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1">
+              {images.slice(0, 5).map((_, index) => (
+                <span key={index} className={`h-1.5 rounded-full transition-all ${index === imageIndex ? "w-4 bg-primary" : "w-1.5 bg-gray-300"}`} />
+              ))}
             </div>
           )}
         </div>
@@ -124,6 +148,15 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
               <span className="text-xs text-muted-foreground line-through">Rs.{Number(product.mrp).toFixed(0)}</span>
             )}
           </div>
+
+          {sizes.length > 0 && (
+            <div className="mt-1.5 flex min-h-[22px] flex-wrap gap-1">
+              {sizes.slice(0, compact ? 3 : 5).map((size) => (
+                <span key={size} className="rounded-full border bg-gray-50 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">{size}</span>
+              ))}
+              {sizes.length > (compact ? 3 : 5) && <span className="text-[10px] text-muted-foreground">+{sizes.length - (compact ? 3 : 5)}</span>}
+            </div>
+          )}
 
           {!compact && (
           <div className="mt-auto pt-2">

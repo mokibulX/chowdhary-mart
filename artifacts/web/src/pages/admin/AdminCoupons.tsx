@@ -2,7 +2,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
-import { useListAdminCoupons, useCreateCoupon, getListAdminCouponsQueryKey } from "@workspace/api-client-react";
+import { customFetch, useListAdminCoupons, useCreateCoupon, getListAdminCouponsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -13,17 +13,23 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Tag, Clock } from "lucide-react";
+import { Plus, Tag, Clock, Pencil, Trash2, Power } from "lucide-react";
+
+const optionalNumber = (min = 0) =>
+  z.preprocess(
+    (value) => value === "" || value === null || value === undefined ? undefined : value,
+    z.coerce.number().min(min).optional(),
+  );
 
 const schema = z.object({
-  code: z.string().min(3, "Min 3 characters").max(20, "Max 20 characters"),
+  code: z.string().trim().min(3, "Min 3 characters").max(20, "Max 20 characters").regex(/^[A-Za-z0-9_-]+$/, "Use only letters, numbers, dash or underscore"),
   description: z.string().min(5, "Description required"),
   discountType: z.enum(["flat", "percent"]),
-  discountValue: z.coerce.number().min(1),
-  minOrderValue: z.coerce.number().min(0).optional(),
-  maxDiscount: z.coerce.number().min(0).optional(),
-  usageLimit: z.coerce.number().min(1).optional(),
-  perUserLimit: z.coerce.number().min(1).optional(),
+  discountValue: z.coerce.number().min(1, "Discount value required"),
+  minOrderValue: optionalNumber(0),
+  maxDiscount: optionalNumber(0),
+  usageLimit: optionalNumber(1),
+  perUserLimit: optionalNumber(1),
   expiresAt: z.string().optional().or(z.literal("")),
 });
 type FormData = z.infer<typeof schema>;
@@ -33,6 +39,7 @@ export default function AdminCoupons() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
 
   const { data: coupons, isLoading } = useListAdminCoupons({
     query: { enabled: !!user, queryKey: getListAdminCouponsQueryKey() },
@@ -41,34 +48,84 @@ export default function AdminCoupons() {
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema as any),
-    defaultValues: { discountType: "flat" },
+    defaultValues: { code: "", description: "", discountType: "flat", discountValue: 1, minOrderValue: undefined, maxDiscount: undefined, usageLimit: undefined, perUserLimit: undefined, expiresAt: "" },
   });
   const discountType = watch("discountType");
 
-  const onSubmit = (data: FormData) => {
+  const refresh = () => qc.invalidateQueries({ queryKey: getListAdminCouponsQueryKey() });
+
+  const openEdit = (coupon: any) => {
+    setEditing(coupon);
+    reset({
+      code: coupon.code ?? "",
+      description: coupon.description ?? "",
+      discountType: coupon.discountType === "percent" ? "percent" : "flat",
+      discountValue: Number(coupon.discountValue ?? 0),
+      minOrderValue: Number(coupon.minOrderValue ?? 0),
+      maxDiscount: Number(coupon.maxDiscount ?? 0),
+      usageLimit: coupon.usageLimit ? Number(coupon.usageLimit) : undefined,
+      perUserLimit: coupon.perUserLimit ? Number(coupon.perUserLimit) : undefined,
+      expiresAt: coupon.expiresAt ? String(coupon.expiresAt).slice(0, 10) : "",
+    });
+    setDialogOpen(true);
+  };
+
+  const toggleCoupon = async (coupon: any) => {
+    await customFetch(`/api/admin/coupons/${coupon.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !coupon.isActive }) });
+    refresh();
+    toast({ title: !coupon.isActive ? "Coupon activated" : "Coupon deactivated" });
+  };
+
+  const deleteCoupon = async (coupon: any) => {
+    if (!confirm(`Delete coupon ${coupon.code}?`)) return;
+    await customFetch(`/api/admin/coupons/${coupon.id}`, { method: "DELETE" });
+    refresh();
+    toast({ title: "Coupon deleted" });
+  };
+
+  const onSubmit = async (data: FormData) => {
+    const payload = {
+      code: data.code.trim().toUpperCase(),
+      description: data.description.trim(),
+      discountType: data.discountType,
+      discountValue: String(data.discountValue),
+      minOrderValue: data.minOrderValue !== undefined ? String(data.minOrderValue) : "0",
+      maxDiscount: data.maxDiscount !== undefined ? String(data.maxDiscount) : undefined,
+      usageLimit: data.usageLimit,
+      perUserLimit: data.perUserLimit,
+      expiresAt: data.expiresAt || undefined,
+    } as any;
+    if (editing) {
+      try {
+        await customFetch(`/api/admin/coupons/${editing.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+        refresh();
+        setDialogOpen(false);
+        setEditing(null);
+        toast({ title: "Coupon updated" });
+      } catch (err: unknown) {
+        const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
+          ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+          ?? "Failed to update coupon";
+        toast({ title: "Error", description: msg, variant: "destructive" });
+      }
+      return;
+    }
     create.mutate(
       {
-        data: {
-          code: data.code.toUpperCase(),
-          description: data.description,
-          discountType: data.discountType,
-          discountValue: String(data.discountValue),
-          minOrderValue: data.minOrderValue ? String(data.minOrderValue) : undefined,
-          maxDiscount: data.maxDiscount ? String(data.maxDiscount) : undefined,
-          usageLimit: data.usageLimit,
-          perUserLimit: data.perUserLimit,
-          expiresAt: data.expiresAt || undefined,
-        } as any
+        data: payload
       },
       {
         onSuccess: () => {
-          qc.invalidateQueries({ queryKey: getListAdminCouponsQueryKey() });
+          refresh();
           setDialogOpen(false);
+          setEditing(null);
           reset();
           toast({ title: "Coupon created" });
         },
         onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Failed to create coupon";
+          const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
+            ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+            ?? "Failed to create coupon";
           toast({ title: "Error", description: msg, variant: "destructive" });
         },
       }
@@ -79,7 +136,7 @@ export default function AdminCoupons() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Coupons ({coupons?.length ?? 0})</h1>
-        <Button onClick={() => { reset(); setDialogOpen(true); }} data-testid="btn-create">
+        <Button onClick={() => { setEditing(null); reset({ code: "", description: "", discountType: "flat", discountValue: 1, minOrderValue: undefined, maxDiscount: undefined, usageLimit: undefined, perUserLimit: undefined, expiresAt: "" }); setDialogOpen(true); }} data-testid="btn-create">
           <Plus className="w-4 h-4 mr-2" />Create Coupon
         </Button>
       </div>
@@ -123,6 +180,17 @@ export default function AdminCoupons() {
                     )}
                   </div>
                 </div>
+                <div className="flex flex-shrink-0 gap-1">
+                  <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => openEdit(coupon)} title="Edit coupon">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => toggleCoupon(coupon)} title={coupon.isActive ? "Deactivate" : "Activate"}>
+                    <Power className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:bg-red-50" onClick={() => deleteCoupon(coupon)} title="Delete coupon">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             );
           })}
@@ -131,7 +199,7 @@ export default function AdminCoupons() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Create Coupon</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editing ? "Edit Coupon" : "Create Coupon"}</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -141,7 +209,7 @@ export default function AdminCoupons() {
               </div>
               <div className="space-y-1">
                 <Label>Type *</Label>
-                <Select defaultValue="flat" onValueChange={v => setValue("discountType", v as "flat" | "percent")}>
+                <Select value={discountType} onValueChange={v => setValue("discountType", v as "flat" | "percent")}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="flat">Flat (â‚¹)</SelectItem>
@@ -187,7 +255,7 @@ export default function AdminCoupons() {
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={create.isPending} data-testid="btn-save">
-                {create.isPending ? "Creating..." : "Create Coupon"}
+                {create.isPending ? "Saving..." : editing ? "Save Coupon" : "Create Coupon"}
               </Button>
             </DialogFooter>
           </form>

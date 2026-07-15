@@ -11,6 +11,12 @@ import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Tag, X } from "lucide-re
 import { Link } from "wouter";
 import { useState } from "react";
 
+function getErrorMessage(err: unknown, fallback: string) {
+  return (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
+    ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+    ?? fallback;
+}
+
 export default function Cart() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -24,11 +30,15 @@ export default function Cart() {
   const validateCoupon = useValidateCoupon();
 
   const items = cart?.items ?? [];
+  const sellerActive = !(cart as any)?.store || (cart as any).store?.isOpen !== false;
 
-  const handleQty = (productId: number, qty: number) => {
+  const handleQty = (item: any, qty: number) => {
     addToCart.mutate(
-      { data: { productId, qty } },
-      { onSuccess: () => qc.invalidateQueries({ queryKey: getGetCartQueryKey() }) }
+      { data: { productId: item.productId, qty, selectedSize: item.selectedSize, selectedColor: item.selectedColor } },
+      {
+        onSuccess: () => qc.invalidateQueries({ queryKey: getGetCartQueryKey() }),
+        onError: (err: unknown) => toast({ title: getErrorMessage(err, "Could not update cart"), variant: "destructive" }),
+      }
     );
   };
 
@@ -97,20 +107,27 @@ export default function Cart() {
           </Button>
         </div>
         {cart?.store && (
-          <div className="flex items-center gap-2 p-3 bg-orange-50 rounded-lg text-sm">
-            <span className="font-medium">Ordering from:</span>
-            <Link href={`/store/${cart.storeId}`} className="text-primary hover:underline font-semibold">{(cart.store as any)?.name}</Link>
+          <div className={`flex flex-wrap items-center gap-2 rounded-lg p-3 text-sm ${sellerActive ? "bg-orange-50" : "border border-red-200 bg-red-50 text-red-700"}`}>
+            <span className="font-medium">{sellerActive ? "Ordering from:" : "Seller is not active:"}</span>
+            <Link href={`/store/${cart.storeId}`} className="font-semibold text-primary hover:underline">{(cart.store as any)?.name}</Link>
+            {!sellerActive && <span className="text-xs">This cart cannot be ordered right now.</span>}
           </div>
         )}
         {items.map((item: any) => (
           <div key={item.id} className="flex items-center gap-4 p-4 bg-white border rounded-xl shadow-sm">
             <div className="w-16 h-16 bg-gray-50 rounded-lg flex-shrink-0 overflow-hidden">
-              {item.product?.images?.[0] ? (
-                <img src={item.product.images[0]} alt={item.product.name} className="w-full h-full object-contain p-1" />
+              {(item.imageUrl || item.product?.images?.[0]) ? (
+                <img src={item.imageUrl || item.product.images[0]} alt={item.product.name} className="w-full h-full object-contain p-1" />
               ) : null}
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-medium text-sm line-clamp-2">{item.product?.name ?? `Product #${item.productId}`}</h3>
+              {(item.selectedSize || item.selectedColor) && (
+                <div className="mt-1 flex flex-wrap gap-1 text-[11px] font-semibold text-gray-600">
+                  {item.selectedSize && <span className="rounded-full bg-gray-100 px-2 py-0.5">Size: {item.selectedSize}</span>}
+                  {item.selectedColor && <span className="rounded-full bg-gray-100 px-2 py-0.5">Color: {item.selectedColor}</span>}
+                </div>
+              )}
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="font-bold text-sm">₹{Number(item.price).toFixed(0)}</span>
                 {item.product?.mrp && Number(item.product.mrp) > Number(item.price) && (
@@ -119,11 +136,11 @@ export default function Cart() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => handleQty(item.productId, item.qty - 1)} data-testid={`btn-dec-${item.productId}`}>
+              <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => handleQty(item, item.qty - 1)} data-testid={`btn-dec-${item.productId}`}>
                 {item.qty === 1 ? <Trash2 className="h-3 w-3 text-red-500" /> : <Minus className="h-3 w-3" />}
               </Button>
               <span className="w-6 text-center font-bold text-sm">{item.qty}</span>
-              <Button size="icon" className="h-8 w-8" onClick={() => handleQty(item.productId, item.qty + 1)} data-testid={`btn-inc-${item.productId}`}>
+              <Button size="icon" className="h-8 w-8" onClick={() => handleQty(item, item.qty + 1)} data-testid={`btn-inc-${item.productId}`}>
                 <Plus className="h-3 w-3" />
               </Button>
             </div>
@@ -177,14 +194,20 @@ export default function Cart() {
             <Separator />
             <div className="flex justify-between font-bold text-base"><span>Total</span><span>₹{total.toFixed(0)}</span></div>
           </div>
-          <Link
-            href={`/checkout${appliedCoupon ? `?coupon=${appliedCoupon.code}` : ""}`}
-            data-testid="btn-checkout"
-          >
-            <Button className="w-full" size="lg">
+          {sellerActive ? (
+            <Link
+              href={`/checkout${appliedCoupon ? `?coupon=${appliedCoupon.code}` : ""}`}
+              data-testid="btn-checkout"
+            >
+              <Button className="w-full" size="lg">
+                Proceed to Checkout <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
+          ) : (
+            <Button className="w-full" size="lg" onClick={() => toast({ title: "Seller is not active", description: "This seller is not accepting orders right now.", variant: "destructive" })}>
               Proceed to Checkout <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
-          </Link>
+          )}
           <Link href="/coupons" className="text-xs text-primary text-center block hover:underline">
             View all offers
           </Link>

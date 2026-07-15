@@ -26,7 +26,13 @@ app.use(
   }),
 );
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    if (req.url?.startsWith("/api/webhooks/razorpay")) {
+      (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);

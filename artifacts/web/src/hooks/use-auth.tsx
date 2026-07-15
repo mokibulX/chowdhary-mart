@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { useGetMe, getGetMeQueryKey, setAuthTokenGetter, UserProfile } from "@workspace/api-client-react";
+import { customFetch, useGetMe, getGetMeQueryKey, setAuthTokenGetter, UserProfile } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,15 +12,45 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+const TOKEN_KEY = "token";
+
+function isNativeApp() {
+  return Boolean((window as any).Capacitor?.isNativePlatform?.());
+}
+
+async function getStoredToken() {
+  if (!isNativeApp()) return localStorage.getItem(TOKEN_KEY);
+  try {
+    const { Preferences } = await import("@capacitor/preferences");
+    return (await Preferences.get({ key: TOKEN_KEY })).value;
+  } catch {
+    return localStorage.getItem(TOKEN_KEY);
+  }
+}
+
+async function setStoredToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+  if (!isNativeApp()) return;
+  const { Preferences } = await import("@capacitor/preferences");
+  await Preferences.set({ key: TOKEN_KEY, value: token });
+}
+
+async function clearStoredToken() {
+  localStorage.removeItem(TOKEN_KEY);
+  if (!isNativeApp()) return;
+  const { Preferences } = await import("@capacitor/preferences");
+  await Preferences.remove({ key: TOKEN_KEY });
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
+  const [token, setToken] = useState<string | null>(localStorage.getItem(TOKEN_KEY));
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   useEffect(() => {
-    setAuthTokenGetter(() => {
-      return localStorage.getItem("token");
+    setAuthTokenGetter(() => getStoredToken());
+    void getStoredToken().then((stored) => {
+      if (stored) setToken(stored);
     });
   }, []);
 
@@ -35,19 +65,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (error && token) {
       // Invalid token
-      localStorage.removeItem("token");
+      void clearStoredToken();
       setToken(null);
       setLocation("/login");
     }
   }, [error, token, setLocation]);
 
   const login = (newToken: string) => {
-    localStorage.setItem("token", newToken);
+    void setStoredToken(newToken);
     setToken(newToken);
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    void customFetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    void clearStoredToken();
     setToken(null);
     setLocation("/login");
     toast({

@@ -1,5 +1,8 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { validateRuntimeEnv } from "@workspace/db/env";
+
+validateRuntimeEnv({ requireDatabase: true, requireJwt: true });
 
 const rawPort = process.env["PORT"];
 

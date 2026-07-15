@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Check, Globe2 } from "lucide-react";
+import { LANGUAGE_STORAGE_KEY } from "@/lib/i18n";
 
 const LANGUAGES = [
   ["en", "English", "English"],
@@ -27,16 +28,16 @@ const LANGUAGES = [
   ["ja", "日本語", "Japanese"],
 ];
 
-const STORAGE_KEY = "ekart_language";
-
 export default function Language() {
   const { toast } = useToast();
-  const [selected, setSelected] = useState(() => localStorage.getItem(STORAGE_KEY) || "en");
+  const [selected, setSelected] = useState(() => localStorage.getItem(LANGUAGE_STORAGE_KEY) || "en");
   const current = LANGUAGES.find(([code]) => code === selected);
 
   const save = () => {
-    localStorage.setItem(STORAGE_KEY, selected);
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, selected);
+    window.dispatchEvent(new CustomEvent("language-change", { detail: selected }));
     toast({ title: "Language saved", description: `${current?.[1] ?? "English"} selected for your app preference.` });
+    window.setTimeout(() => window.location.reload(), 350);
   };
 
   return (

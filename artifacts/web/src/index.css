@@ -2,6 +2,29 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
+html.capacitor-native body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  overscroll-behavior-y: contain;
+}
+
+html.is-offline body::before {
+  content: "Unable to connect to ChowdharyMart server.";
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: calc(env(safe-area-inset-top) + 8px);
+  z-index: 9999;
+  border-radius: 12px;
+  background: #111827;
+  color: white;
+  padding: 10px 12px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 12px 30px rgba(0,0,0,.25);
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -221,8 +244,15 @@
   body,
   #root {
     width: 100%;
+    min-height: 100%;
     max-width: 100%;
     overflow-x: hidden;
+  }
+
+  html {
+    min-height: 100%;
+    height: auto;
+    scroll-behavior: smooth;
   }
 
   * {
@@ -232,6 +262,17 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    min-height: 100%;
+    margin: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: none;
+  }
+
+  #root {
+    display: flex;
+    min-height: 100dvh;
+    flex-direction: column;
   }
 
   img,
@@ -239,6 +280,93 @@
   canvas,
   svg {
     max-width: 100%;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    min-width: 0;
+  }
+
+  button,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      min-height: 48px;
+    }
+
+    button,
+    a[role="button"] {
+      min-height: 44px;
+    }
+
+    table {
+      min-width: 640px;
+    }
+  }
+}
+
+@layer components {
+  .app-shell {
+    display: flex;
+    min-height: 100svh;
+    min-height: 100dvh;
+    width: 100%;
+    max-width: 100%;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  .app-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-scroll-panel {
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-bottom-safe {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+
+  @media (min-width: 768px) {
+    .mobile-bottom-safe {
+      padding-bottom: 1.5rem;
+    }
+  }
+
+  .cm-mobile-card {
+    @apply rounded-2xl border bg-white shadow-sm;
+  }
+
+  .cm-touch-button {
+    @apply h-12 rounded-2xl;
+  }
+
+  .cm-status-badge {
+    @apply rounded-full px-2.5 py-1 text-xs font-bold;
   }
 }
 

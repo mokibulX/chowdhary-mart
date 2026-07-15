@@ -11,3 +11,6 @@ export * from "./wallet";
 export * from "./reviews";
 export * from "./notifications";
 export * from "./wishlist";
+export * from "./homepage";
+export * from "./payments";
+export * from "./finance";

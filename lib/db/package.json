@@ -5,11 +5,24 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./env": "./src/env.ts",
+    "./databases/auth": "./src/databases/auth.database.ts",
+    "./databases/marketplace": "./src/databases/marketplace.database.ts",
+    "./databases/order": "./src/databases/order.database.ts",
+    "./databases/delivery": "./src/databases/delivery.database.ts",
+    "./databases/analytics": "./src/databases/analytics.database.ts",
+    "./services/redis": "./src/services/redis.service.ts",
+    "./services/storage": "./src/services/storage.service.ts",
     "./schema": "./src/schema/index.ts"
   },
   "scripts": {
     "push": "drizzle-kit push --config ./drizzle.config.ts",
-    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
+    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
+    "push:auth": "drizzle-kit push --config ./drizzle.auth.config.ts",
+    "push:marketplace": "drizzle-kit push --config ./drizzle.marketplace.config.ts",
+    "push:order": "drizzle-kit push --config ./drizzle.order.config.ts",
+    "push:delivery": "drizzle-kit push --config ./drizzle.delivery.config.ts",
+    "push:analytics": "drizzle-kit push --config ./drizzle.analytics.config.ts"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",

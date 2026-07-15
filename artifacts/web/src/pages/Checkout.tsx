@@ -5,9 +5,11 @@ import {
   useGetCart,
   useListAddresses,
   usePlaceOrder,
+  useUpdateAddress,
   getGetCartQueryKey,
   getListAddressesQueryKey,
   getListOrdersQueryKey,
+  customFetch,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -16,13 +18,21 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, MapPin, Plus, ShieldCheck, Truck, Zap } from "lucide-react";
+import { Camera, CreditCard, MapPin, Plus, ShieldCheck, Truck, Zap } from "lucide-react";
 import { getSavedDeliveryLocation } from "@/lib/pincode";
+import { fileToDataUrl, getBrowserLocation } from "@/lib/live-location";
 
 const PAYMENT_METHODS = [
   { value: "cod", label: "Cash on Delivery", icon: Truck, desc: "Pay when delivered" },
-  { value: "upi", label: "UPI Payment", icon: CreditCard, desc: "PhonePe, GPay, Paytm or any UPI app" },
+  { value: "upi", label: "Online Payment", icon: CreditCard, desc: "UPI, cards, netbanking and wallets via Razorpay" },
 ] as const;
+const DEFAULT_DELIVERY_PHOTO = "https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=900&q=80";
+
+function getErrorMessage(err: unknown, fallback: string) {
+  return (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
+    ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+    ?? fallback;
+}
 
 export default function Checkout() {
   const { user } = useAuth();
@@ -35,12 +45,16 @@ export default function Checkout() {
 
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"cod" | "upi">("cod");
-  const [upiId, setUpiId] = useState("customer@upi");
-  const [upiPaid, setUpiPaid] = useState(false);
+  const [onlinePaid, setOnlinePaid] = useState(false);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [providerPaymentId, setProviderPaymentId] = useState("");
+  const [locationSaving, setLocationSaving] = useState(false);
+  const [deliveryPhoto, setDeliveryPhoto] = useState("");
 
   const { data: cart, isLoading: loadingCart } = useGetCart({ query: { enabled: !!user, queryKey: getGetCartQueryKey() } });
   const { data: addresses, isLoading: loadingAddresses } = useListAddresses({ query: { enabled: !!user, queryKey: getListAddressesQueryKey() } });
   const createAddress = useCreateAddress();
+  const updateAddress = useUpdateAddress();
   const placeOrder = usePlaceOrder();
 
   if (!user) {
@@ -57,17 +71,53 @@ export default function Checkout() {
 
   const defaultAddress = addresses?.find((address) => address.isDefault) ?? addresses?.[0];
   const activeAddressId = selectedAddressId ?? defaultAddress?.id ?? null;
+  const activeAddress = addresses?.find((address) => address.id === activeAddressId);
 
   const subtotal = Number(cart?.subtotal ?? 0);
   const deliveryFee = Number(cart?.deliveryFee ?? 0);
   const total = Math.max(0, subtotal + deliveryFee);
+  const sellerActive = !(cart as any)?.store || (cart as any).store?.isOpen !== false;
+  const activeAddressPhoto = activeAddress ? ((activeAddress as any).photoUrl as string | undefined) : "";
+  const visibleDeliveryPhoto = deliveryPhoto || activeAddressPhoto || "";
+  const orderDeliveryPhoto = visibleDeliveryPhoto || DEFAULT_DELIVERY_PHOTO;
+
+  const handleDeliveryPhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setDeliveryPhoto(dataUrl);
+      toast({ title: "Delivery place photo added" });
+    } catch (error) {
+      toast({ title: "Photo could not be added", description: (error as Error).message, variant: "destructive" });
+    }
+  };
 
   const handlePlaceOrder = async () => {
-    if (paymentMethod === "upi" && !upiPaid) {
-      toast({ title: "Complete UPI payment", description: "Enter UPI ID and tap Pay with UPI first.", variant: "destructive" });
+    if (!sellerActive) {
+      toast({ title: "Seller is not active", description: "This seller is not accepting orders right now.", variant: "destructive" });
+      return;
+    }
+    if (paymentMethod === "upi" && !onlinePaid) {
+      toast({ title: "Complete online payment", description: "Pay securely with Razorpay before placing this prepaid order.", variant: "destructive" });
       return;
     }
     let orderAddressId = activeAddressId;
+    setLocationSaving(true);
+
+    let liveLocation;
+    try {
+      liveLocation = await getBrowserLocation();
+    } catch (error) {
+      const savedLocation = getSavedDeliveryLocation();
+      liveLocation = {
+        lat: Number((activeAddress as any)?.lat ?? savedLocation.lat ?? 22.5726),
+        lng: Number((activeAddress as any)?.lng ?? savedLocation.lng ?? 88.3639),
+        accuracy: Number((activeAddress as any)?.locationAccuracy ?? 120),
+        capturedAt: new Date().toISOString(),
+      };
+      toast({ title: "GPS fallback used", description: "Saved pincode/address location diye order continue holo." });
+    }
 
     if (!orderAddressId) {
       try {
@@ -82,15 +132,46 @@ export default function Checkout() {
             city: savedLocation.city,
             state: savedLocation.state,
             pincode: savedLocation.pincode,
-            lat: savedLocation.lat,
-            lng: savedLocation.lng,
+            lat: liveLocation.lat,
+            lng: liveLocation.lng,
+            locationAccuracy: liveLocation.accuracy,
+            locationCapturedAt: liveLocation.capturedAt,
+            photoUrl: orderDeliveryPhoto,
             isDefault: true,
-          },
+          } as any,
         });
         orderAddressId = generatedAddress.id;
         qc.invalidateQueries({ queryKey: getListAddressesQueryKey() });
       } catch {
+        setLocationSaving(false);
         toast({ title: "Delivery address could not be prepared", variant: "destructive" });
+        return;
+      }
+    } else if (activeAddress) {
+      try {
+        await updateAddress.mutateAsync({
+          addressId: orderAddressId,
+          data: {
+            label: activeAddress.label ?? "home",
+            name: activeAddress.name,
+            phone: activeAddress.phone,
+            line1: activeAddress.line1,
+            line2: activeAddress.line2 ?? "",
+            city: activeAddress.city,
+            state: activeAddress.state,
+            pincode: activeAddress.pincode,
+            lat: liveLocation.lat,
+            lng: liveLocation.lng,
+            locationAccuracy: liveLocation.accuracy,
+            locationCapturedAt: liveLocation.capturedAt,
+            photoUrl: orderDeliveryPhoto,
+            isDefault: !!activeAddress.isDefault,
+          } as any,
+        });
+        qc.invalidateQueries({ queryKey: getListAddressesQueryKey() });
+      } catch {
+        setLocationSaving(false);
+        toast({ title: "Could not update live delivery location", variant: "destructive" });
         return;
       }
     }
@@ -99,19 +180,22 @@ export default function Checkout() {
       {
         data: {
           addressId: orderAddressId,
-          paymentMethod,
+          paymentMethod: paymentMethod === "upi" ? "online" : "cod",
           couponCode,
           useWallet: false,
-        },
+          providerPaymentId,
+        } as any,
       },
       {
         onSuccess: (order) => {
+          setLocationSaving(false);
           qc.invalidateQueries({ queryKey: getGetCartQueryKey() });
           qc.invalidateQueries({ queryKey: getListOrdersQueryKey() });
           setLocation(`/orders/${order.id}/confirmed`);
         },
         onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Order failed";
+          setLocationSaving(false);
+          const msg = getErrorMessage(err, "Order failed");
           toast({ title: "Order failed", description: msg, variant: "destructive" });
         },
       }
@@ -148,6 +232,7 @@ export default function Checkout() {
           </div>
         ) : (
           <div className="space-y-2">
+            <p className="rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">Fresh GPS location will be captured when you place the order.</p>
             {addresses.map((address) => (
               <label
                 key={address.id}
@@ -174,6 +259,20 @@ export default function Checkout() {
             ))}
           </div>
         )}
+        <div className="rounded-lg border bg-gray-50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">Delivery place photo</p>
+              <p className="text-xs text-muted-foreground">Gate, building, shop front or handover point.</p>
+            </div>
+            <label className="inline-flex cursor-pointer items-center rounded-md border bg-white px-3 py-2 text-sm font-medium">
+              <Camera className="mr-1.5 h-4 w-4" />
+              {visibleDeliveryPhoto ? "Change" : "Add"}
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleDeliveryPhotoChange} />
+            </label>
+          </div>
+          {visibleDeliveryPhoto && <img src={visibleDeliveryPhoto} alt="Delivery place" className="mt-3 h-32 w-full rounded-lg object-cover" />}
+        </div>
       </section>
 
       <section className="space-y-3 rounded-lg border bg-white p-5">
@@ -191,7 +290,8 @@ export default function Checkout() {
                 checked={paymentMethod === value}
                 onChange={() => {
                   setPaymentMethod(value);
-                  setUpiPaid(false);
+                  setOnlinePaid(false);
+                  setProviderPaymentId("");
                 }}
                 className="accent-primary"
                 data-testid={`radio-${value}`}
@@ -208,30 +308,43 @@ export default function Checkout() {
           <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
             <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
               <div>
-                <label className="text-xs font-semibold text-blue-900">UPI ID</label>
-                <input
-                  value={upiId}
-                  onChange={(event) => { setUpiId(event.target.value); setUpiPaid(false); }}
-                  placeholder="name@upi"
-                  className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-blue-200"
-                />
+                <label className="text-xs font-semibold text-blue-900">Razorpay secure checkout</label>
+                <p className="mt-1 text-sm text-blue-800">Amount is verified again on backend from your cart. Secret keys are never exposed in browser.</p>
+                {providerPaymentId && <p className="mt-1 text-xs font-semibold text-green-700">Payment verified: {providerPaymentId}</p>}
               </div>
               <Button
                 type="button"
                 className="self-end bg-[#0757ee] hover:bg-[#0647c7]"
-                onClick={() => {
-                  if (!/^[\w.-]+@[\w.-]+$/.test(upiId.trim())) {
-                    toast({ title: "Invalid UPI ID", description: "Example: customer@upi", variant: "destructive" });
-                    return;
+                disabled={paymentBusy || onlinePaid}
+                onClick={async () => {
+                  setPaymentBusy(true);
+                  try {
+                    const paymentOrder = await customFetch<any>("/api/payments/razorpay/order", { method: "POST", responseType: "json" });
+                    await openRazorpayCheckout({
+                      order: paymentOrder,
+                      user,
+                      onSuccess: async (response) => {
+                        const verified = await customFetch<any>("/api/payments/razorpay/verify", {
+                          method: "POST",
+                          body: JSON.stringify(response),
+                          responseType: "json",
+                        });
+                        setOnlinePaid(true);
+                        setProviderPaymentId(verified.providerPaymentId ?? response.razorpay_payment_id);
+                        toast({ title: "Payment verified", description: "You can now place the prepaid order." });
+                      },
+                    });
+                  } catch (error) {
+                    toast({ title: "Payment failed", description: getErrorMessage(error, "Razorpay payment could not be completed."), variant: "destructive" });
+                  } finally {
+                    setPaymentBusy(false);
                   }
-                  setUpiPaid(true);
-                  toast({ title: "UPI payment successful", description: `Paid Rs.${total.toFixed(0)} using ${upiId}` });
                 }}
               >
-                {upiPaid ? "UPI Paid" : `Pay Rs.${total.toFixed(0)}`}
+                {onlinePaid ? "Paid" : paymentBusy ? "Opening..." : `Pay Rs.${total.toFixed(0)}`}
               </Button>
             </div>
-            <p className="mt-2 text-xs text-blue-700">Demo direct UPI payment. Real payment gateway can be connected with production keys.</p>
+            <p className="mt-2 text-xs text-blue-700">Supports UPI/cards/netbanking/wallets enabled in your Razorpay account.</p>
           </div>
         )}
       </section>
@@ -247,6 +360,11 @@ export default function Checkout() {
         {cart?.store && (
           <p className="text-sm text-muted-foreground">From: <span className="font-medium text-foreground">{(cart.store as any).name}</span></p>
         )}
+        {!sellerActive && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+            Seller is not active. This order cannot be placed right now.
+          </div>
+        )}
         <div className="space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal ({cart?.itemCount} items)</span><span>Rs.{subtotal.toFixed(0)}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Delivery fee</span><span className={deliveryFee === 0 ? "text-green-600" : ""}>{deliveryFee === 0 ? "FREE" : `Rs.${deliveryFee.toFixed(0)}`}</span></div>
@@ -258,13 +376,55 @@ export default function Checkout() {
           className="w-full"
           size="lg"
           onClick={handlePlaceOrder}
-          disabled={placeOrder.isPending || createAddress.isPending || !cart?.items?.length}
+          disabled={placeOrder.isPending || createAddress.isPending || updateAddress.isPending || locationSaving || !cart?.items?.length}
           data-testid="btn-place-order"
         >
-          {placeOrder.isPending || createAddress.isPending ? "Placing Order..." : `Place order and track live - Rs.${total.toFixed(0)}`}
+          {placeOrder.isPending || createAddress.isPending || updateAddress.isPending || locationSaving ? "Capturing location..." : `Place order and track live - Rs.${total.toFixed(0)}`}
         </Button>
         <p className="text-center text-xs text-muted-foreground">No extra confirmation screen. You will go straight to live delivery tracking.</p>
       </section>
     </div>
   );
+}
+
+async function loadRazorpayScript() {
+  if ((window as any).Razorpay) return;
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Could not load Razorpay Checkout"));
+    document.body.appendChild(script);
+  });
+}
+
+async function openRazorpayCheckout({ order, user, onSuccess }: { order: any; user: any; onSuccess: (response: any) => Promise<void> }) {
+  await loadRazorpayScript();
+  await new Promise<void>((resolve, reject) => {
+    const Razorpay = (window as any).Razorpay;
+    if (!Razorpay || !order?.keyId) {
+      reject(new Error("Razorpay public key is missing"));
+      return;
+    }
+    const checkout = new Razorpay({
+      key: order.keyId,
+      amount: order.amount,
+      currency: order.currency,
+      name: order.name,
+      description: order.description,
+      order_id: order.providerOrderId,
+      prefill: { name: user?.name, email: user?.email, contact: user?.phone },
+      theme: { color: "#0757ee" },
+      handler: async (response: any) => {
+        try {
+          await onSuccess(response);
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      },
+      modal: { ondismiss: () => reject(new Error("Payment cancelled")) },
+    });
+    checkout.open();
+  });
 }

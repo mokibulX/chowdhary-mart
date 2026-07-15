@@ -61,6 +61,7 @@ export default function OrderDetail() {
   };
 
   const items = (order as any).items ?? [];
+  const deliveryAddress = (order as any).address ?? (order as any).addressSnapshot;
 
   return (
     <div className="max-w-xl mx-auto space-y-5">
@@ -121,6 +122,11 @@ export default function OrderDetail() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium line-clamp-1">{item.name}</p>
+              {(item.selectedSize || item.selectedColor) && (
+                <p className="text-xs text-muted-foreground">
+                  {[item.selectedSize ? `Size: ${item.selectedSize}` : "", item.selectedColor ? `Color: ${item.selectedColor}` : ""].filter(Boolean).join(" | ")}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">Qty: {item.qty} × ₹{Number(item.price).toFixed(0)}</p>
             </div>
             <p className="font-medium text-sm">₹{Number(item.total).toFixed(0)}</p>
@@ -146,11 +152,17 @@ export default function OrderDetail() {
       </div>
 
       {/* Delivery Address */}
-      {(order as any).address && (
+      {deliveryAddress && (
         <div className="bg-white border rounded-xl p-4">
           <h2 className="font-semibold flex items-center gap-2 mb-2"><MapPin className="w-4 h-4 text-primary" />Delivery Address</h2>
-          <p className="text-sm">{(order as any).address.name}</p>
-          <p className="text-sm text-muted-foreground">{(order as any).address.line1}, {(order as any).address.city} - {(order as any).address.pincode}</p>
+          {(deliveryAddress as any).photoUrl && (
+            <img src={(deliveryAddress as any).photoUrl} alt="Delivery place" className="mb-3 h-32 w-full rounded-lg object-cover" />
+          )}
+          <p className="text-sm">{deliveryAddress.name}</p>
+          <p className="text-sm text-muted-foreground">{deliveryAddress.line1}, {deliveryAddress.city} - {deliveryAddress.pincode}</p>
+          {deliveryAddress.lat && deliveryAddress.lng && (
+            <p className="mt-1 text-xs text-emerald-700">GPS: {Number(deliveryAddress.lat).toFixed(5)}, {Number(deliveryAddress.lng).toFixed(5)}</p>
+          )}
         </div>
       )}
 

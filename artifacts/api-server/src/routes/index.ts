@@ -16,6 +16,10 @@ import vendorRouter from "./vendor";
 import adminRouter from "./admin";
 import deliveryRouter from "./delivery";
 import bannersRouter from "./banners";
+import homepageRouter from "./homepage";
+import searchRouter from "./search";
+import paymentsRouter from "./payments";
+import razorpayWebhookRouter from "./razorpay-webhook";
 
 const router: IRouter = Router();
 
@@ -36,5 +40,9 @@ router.use("/vendor", vendorRouter);
 router.use("/admin", adminRouter);
 router.use("/delivery", deliveryRouter);
 router.use("/banners", bannersRouter);
+router.use("/homepage", homepageRouter);
+router.use("/search", searchRouter);
+router.use("/payments", paymentsRouter);
+router.use("/webhooks", razorpayWebhookRouter);
 
 export default router;

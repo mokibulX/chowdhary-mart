@@ -1,7 +1,8 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { getJwtSecret } from "@workspace/db/env";
 
-const JWT_SECRET = process.env.SESSION_SECRET || "chowdhary-mart-secret-2024";
+const JWT_SECRET = getJwtSecret();
 const JWT_EXPIRES_IN = "7d";
 
 export interface JwtPayload {

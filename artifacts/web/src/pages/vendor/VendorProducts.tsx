@@ -18,7 +18,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ImagePlus, Plus, Pencil, Trash2, Package, AlertTriangle, X } from "lucide-react";
+import { BadgePercent, CheckCircle2, ImagePlus, Plus, Pencil, Trash2, Package, AlertTriangle, X } from "lucide-react";
+import { fileToDataUrl } from "@/lib/live-location";
 
 const schema = z.object({
   name: z.string().min(2, "Name required"),
@@ -29,11 +30,78 @@ const schema = z.object({
   stock: z.coerce.number().min(0),
   weight: z.string().optional().or(z.literal("")),
   unit: z.string().optional().or(z.literal("")),
-  imageUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  imageUrl: z.string().optional().or(z.literal("")),
+  sizes: z.string().optional().or(z.literal("")),
+  colors: z.string().optional().or(z.literal("")),
+  returnWindow: z.string().optional().or(z.literal("")),
+  warranty: z.string().optional().or(z.literal("")),
+  paymentOptions: z.string().optional().or(z.literal("")),
+  deliveryNote: z.string().optional().or(z.literal("")),
   isAvailable: z.boolean(),
   isFeatured: z.boolean(),
 });
 type FormData = z.infer<typeof schema>;
+
+const CLOTHING_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL", "28", "30", "32", "34", "36", "38", "40", "42", "Free Size"];
+const FOOTWEAR_SIZES = ["UK 5", "UK 6", "UK 7", "UK 8", "UK 9", "UK 10", "UK 11"];
+const PRODUCT_COLORS = ["Black", "White", "Blue", "Red", "Green", "Yellow", "Brown", "Grey", "Navy", "Pink", "Purple", "Orange", "Beige", "Gold", "Silver"];
+const PRODUCT_STEPS = ["Basics", "Variants", "Media", "Policy", "Preview"];
+const PRODUCT_PLACEHOLDER_IMAGE = "https://images.unsplash.com/photo-1607082349566-187342175e2f?auto=format&fit=crop&w=900&q=80";
+const COLOR_SWATCHES: Record<string, string> = {
+  black: "#111827",
+  white: "#ffffff",
+  blue: "#2563eb",
+  red: "#dc2626",
+  green: "#16a34a",
+  yellow: "#facc15",
+  brown: "#92400e",
+  grey: "#9ca3af",
+  gray: "#9ca3af",
+  navy: "#1e3a8a",
+  pink: "#ec4899",
+  purple: "#9333ea",
+  orange: "#f97316",
+  beige: "#d6b98c",
+  gold: "#d4af37",
+  silver: "#c0c0c0",
+};
+
+function measurementOptions(categoryName = "") {
+  const lower = categoryName.toLowerCase();
+  if (lower.includes("grocery") || lower.includes("tea") || lower.includes("snack") || lower.includes("pet")) {
+    return [
+      { label: "1 kg", weight: "1", unit: "kg" },
+      { label: "500 g", weight: "500", unit: "g" },
+      { label: "1 L", weight: "1", unit: "L" },
+      { label: "12 pcs", weight: "12", unit: "pcs" },
+    ];
+  }
+  if (lower.includes("fashion")) {
+    return [
+      { label: "Shirt/T-shirt size", weight: "M", unit: "size" },
+      { label: "Jeans waist", weight: "32", unit: "waist" },
+      { label: "Footwear number", weight: "UK 8", unit: "pair" },
+      { label: "Free size", weight: "Free", unit: "size" },
+    ];
+  }
+  if (lower.includes("mobile") || lower.includes("electronic")) {
+    return [
+      { label: "128 GB unit", weight: "128 GB", unit: "unit" },
+      { label: "8 GB RAM", weight: "8 GB", unit: "RAM" },
+      { label: "1 pc", weight: "1", unit: "pc" },
+    ];
+  }
+  return [
+    { label: "1 pc", weight: "1", unit: "pc" },
+    { label: "500 ml", weight: "500", unit: "ml" },
+    { label: "1 set", weight: "1", unit: "set" },
+  ];
+}
+
+function normalizeSizes(value: string | string[] | undefined | null) {
+  const source = Array.isArray(value) ? value : String(value ?? "").split(",");
+  return Array.from(new Set(source.map((item) => item.trim()).filter(Boolean)));
+}
 
 export default function VendorProducts() {
   const { user } = useAuth();
@@ -42,6 +110,10 @@ export default function VendorProducts() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [colorImageUrls, setColorImageUrls] = useState<Record<string, string>>({});
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [productStep, setProductStep] = useState(0);
 
   const { data: products, isLoading } = useListVendorProducts({
     query: { enabled: !!user, queryKey: getListVendorProductsQueryKey() },
@@ -53,32 +125,86 @@ export default function VendorProducts() {
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema as any),
-    defaultValues: { isAvailable: true, isFeatured: false, stock: 0 },
+    defaultValues: { isAvailable: true, isFeatured: false, stock: 10 },
   });
   const isAvailable = watch("isAvailable");
   const isFeatured = watch("isFeatured");
+  const selectedCategoryId = watch("categoryId");
+  const selectedCategory = (categories as any[] | undefined)?.find((item) => Number(item.id) === Number(selectedCategoryId));
+  const isFashionCategory = selectedCategory?.name?.toLowerCase().includes("fashion") || selectedCategory?.name?.toLowerCase().includes("cloth");
+  const isFootwearProduct = watch("name")?.toLowerCase().includes("shoe") || watch("name")?.toLowerCase().includes("sandal") || watch("name")?.toLowerCase().includes("chappal");
+  const activeSizeOptions = isFootwearProduct ? FOOTWEAR_SIZES : CLOTHING_SIZES;
 
-  const openCreate = () => {
+  const openCreate = (asOffer = false) => {
     setEditId(null);
     setImageUrls([]);
-    reset({ isAvailable: true, isFeatured: false, stock: 0 });
+    setColorImageUrls({});
+    setSelectedSizes([]);
+    setSelectedColors([]);
+    setProductStep(0);
+    reset({
+      categoryId: Number((categories as any[] | undefined)?.[0]?.id ?? 2),
+      price: 99,
+      mrp: 120,
+      isAvailable: true,
+      isFeatured: asOffer,
+      stock: 10,
+      weight: "1",
+      unit: "pc",
+      returnWindow: "Damaged items only",
+      warranty: "Seller assured",
+      paymentOptions: "Cash on Delivery, UPI",
+      deliveryNote: "40 minute local target",
+    });
     setDialogOpen(true);
   };
 
   const openEdit = (p: any) => {
     setEditId(p.id);
+    setProductStep(0);
     setImageUrls(Array.isArray(p.images) ? p.images : []);
+    setColorImageUrls(p.colorImages && typeof p.colorImages === "object" ? p.colorImages : {});
+    setSelectedSizes(normalizeSizes(p.sizes ?? p.specifications?.Sizes ?? p.specifications?.Size));
+    setSelectedColors(normalizeSizes(p.colors ?? p.specifications?.Colors ?? p.specifications?.Color));
     reset({
       name: p.name, description: p.description ?? "",
       categoryId: p.categoryId, price: Number(p.price), mrp: Number(p.mrp),
       stock: p.stock, weight: p.weight ?? "", unit: p.unit ?? "",
-      imageUrl: p.images?.[0] ?? "", isAvailable: !!p.isAvailable, isFeatured: !!p.isFeatured,
+      imageUrl: p.images?.[0] ?? "", sizes: normalizeSizes(p.sizes ?? p.specifications?.Sizes ?? p.specifications?.Size).join(", "),
+      colors: normalizeSizes(p.colors ?? p.specifications?.Colors ?? p.specifications?.Color).join(", "),
+      returnWindow: p.returnWindow ?? p.returnPolicy ?? p.specifications?.Return ?? "Damaged items only",
+      warranty: p.warranty ?? p.specifications?.Warranty ?? "Seller assured",
+      paymentOptions: p.paymentOptions ?? p.specifications?.Payment ?? "Cash on Delivery, UPI",
+      deliveryNote: p.deliveryNote ?? p.specifications?.Delivery ?? "40 minute local target",
+      isAvailable: !!p.isAvailable, isFeatured: !!p.isFeatured,
     });
     setDialogOpen(true);
   };
 
   const onSubmit = (data: FormData) => {
     const cleanImages = imageUrls.map(url => url.trim()).filter(Boolean);
+    const duplicate = (products as any[] | undefined)?.some((product) => product.id !== editId && String(product.name).trim().toLowerCase() === data.name.trim().toLowerCase());
+    if (duplicate) {
+      toast({ title: "Duplicate product title", description: "Ei product already apnar inventory-te ache. Existing product edit korun.", variant: "destructive" });
+      setProductStep(0);
+      return;
+    }
+    if (!cleanImages.length) cleanImages.push(PRODUCT_PLACEHOLDER_IMAGE);
+    const sizes = normalizeSizes([...selectedSizes, ...normalizeSizes(data.sizes)]);
+    const colors = normalizeSizes([...selectedColors, ...normalizeSizes(data.colors)]);
+    const colorImages = Object.fromEntries(
+      colors
+        .map((color) => [color, String(colorImageUrls[color] ?? "").trim()])
+        .filter(([, url]) => Boolean(url))
+    );
+    const specifications = {
+      ...(sizes.length ? { Sizes: sizes.join(", ") } : {}),
+      ...(colors.length ? { Colors: colors.join(", ") } : {}),
+      Return: data.returnWindow || "Damaged items only",
+      Warranty: data.warranty || "Seller assured",
+      Payment: data.paymentOptions || "Cash on Delivery, UPI",
+      Delivery: data.deliveryNote || "40 minute local target",
+    };
     const payload = {
       name: data.name,
       description: data.description,
@@ -89,6 +215,14 @@ export default function VendorProducts() {
       weight: data.weight,
       unit: data.unit,
       images: cleanImages,
+      colorImages,
+      sizes,
+      colors,
+      returnWindow: data.returnWindow || "Damaged items only",
+      warranty: data.warranty || "Seller assured",
+      paymentOptions: data.paymentOptions || "Cash on Delivery, UPI",
+      deliveryNote: data.deliveryNote || "40 minute local target",
+      specifications,
       isAvailable: data.isAvailable,
       isFeatured: data.isFeatured,
     };
@@ -97,7 +231,12 @@ export default function VendorProducts() {
       setDialogOpen(false);
       toast({ title: editId ? "Product updated" : "Product created" });
     };
-    const onError = () => toast({ title: "Operation failed", variant: "destructive" });
+    const onError = (err: unknown) => {
+      const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
+        ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+        ?? "Operation failed";
+      toast({ title: msg, variant: "destructive" });
+    };
     if (editId) {
       update.mutate({ productId: editId, data: payload }, { onSuccess, onError });
     } else {
@@ -122,28 +261,91 @@ export default function VendorProducts() {
   const removeImageField = (index: number) => {
     setImageUrls(prev => prev.filter((_, i) => i !== index));
   };
+  const toggleSize = (size: string) => {
+    setSelectedSizes((prev) => prev.includes(size) ? prev.filter((item) => item !== size) : [...prev, size]);
+  };
+  const toggleColor = (color: string) => {
+    setSelectedColors((prev) => prev.includes(color) ? prev.filter((item) => item !== color) : [...prev, color]);
+  };
+  const updateColorImage = (color: string, value: string) => {
+    setColorImageUrls((prev) => ({ ...prev, [color]: value }));
+  };
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []).filter(file => file.type.startsWith("image/"));
     if (!files.length) return;
 
-    Promise.all(files.map(file => new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-      reader.readAsDataURL(file);
-    }))).then(urls => {
+    Promise.all(files.map(fileToDataUrl)).then(urls => {
       setImageUrls(prev => [...prev, ...urls.filter(Boolean)]);
       toast({ title: `${urls.length} photo added` });
+    }).catch((error) => {
+      toast({ title: "Photo upload failed", description: error instanceof Error ? error.message : "Try another image", variant: "destructive" });
     });
+  };
+
+  const goNextStep = async () => {
+    if (productStep === 0 && (!watch("name")?.trim() || !selectedCategoryId || !watch("price") || !watch("mrp"))) {
+      toast({ title: "Basic details required", description: "Name, category, price and MRP fill korun.", variant: "destructive" });
+      return;
+    }
+    setProductStep((step) => Math.min(PRODUCT_STEPS.length - 1, step + 1));
   };
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Products ({products?.length ?? 0})</h1>
-        <Button onClick={openCreate} data-testid="btn-add-product">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Products</h1>
+          <p className="text-sm text-muted-foreground">Manage stock, pricing, photos and offer placement from one place.</p>
+        </div>
+        <Button onClick={() => openCreate(false)} data-testid="btn-add-product">
           <Plus className="w-4 h-4 mr-2" />Add Product
         </Button>
       </div>
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <p className="text-sm text-muted-foreground">Total products</p>
+          <p className="mt-1 text-2xl font-bold">{products?.length ?? 0}</p>
+        </div>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <p className="text-sm text-muted-foreground">Live products</p>
+          <p className="mt-1 text-2xl font-bold">{(products as any[] | undefined)?.filter((item) => item.isAvailable).length ?? 0}</p>
+        </div>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <p className="text-sm text-muted-foreground">Offer products</p>
+          <p className="mt-1 text-2xl font-bold">{(products as any[] | undefined)?.filter((item) => item.isFeatured).length ?? 0}</p>
+        </div>
+      </section>
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-bold"><BadgePercent className="h-5 w-5 text-primary" />Offer products</h2>
+            <p className="text-sm text-muted-foreground">Products marked as offer appear in Flash Deals and promotional rows on the home page.</p>
+          </div>
+          <Button variant="outline" onClick={() => openCreate(true)} data-testid="btn-add-offer-product">
+            <Plus className="mr-2 h-4 w-4" />Add Offer Product
+          </Button>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {(products as any[] | undefined)?.filter((item) => item.isFeatured).slice(0, 4).map((p) => (
+            <button key={p.id} type="button" onClick={() => openEdit(p)} className="flex items-center gap-3 rounded-lg border bg-orange-50/60 p-3 text-left transition-colors hover:border-primary/40">
+              <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-md bg-white">
+                {p.images?.[0] ? <img src={p.images[0]} alt={p.name} className="h-full w-full object-contain p-1" /> : <Package className="m-4 h-6 w-6 text-gray-300" />}
+              </div>
+              <div className="min-w-0">
+                <p className="line-clamp-1 text-sm font-semibold">{p.name}</p>
+                <p className="text-xs text-muted-foreground">Rs.{Number(p.price).toFixed(0)} · {Number(p.discountPercent ?? 0).toFixed(0)}% off</p>
+              </div>
+            </button>
+          ))}
+          {!((products as any[] | undefined)?.some((item) => item.isFeatured)) && (
+            <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground sm:col-span-2 lg:col-span-4">
+              No offer product selected yet. Add a new offer product or edit any product and turn on Featured.
+            </div>
+          )}
+        </div>
+      </section>
 
       {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -152,7 +354,7 @@ export default function VendorProducts() {
       ) : !products?.length ? (
         <div className="text-center py-16 text-muted-foreground">
           <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p>No products yet. Add your first product!</p>
+          <p>No products yet. Add your first product to start selling.</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -169,6 +371,13 @@ export default function VendorProducts() {
                     <Badge variant="destructive" className="text-xs">Unavailable</Badge>
                   </div>
                 )}
+                {p.isFeatured && (
+                  <div className="absolute left-2 top-2">
+                    <Badge className="bg-primary text-white">
+                      <BadgePercent className="mr-1 h-3 w-3" />Offer
+                    </Badge>
+                  </div>
+                )}
                 {p.stock <= 5 && p.stock >= 0 && (
                   <div className="absolute top-2 right-2">
                     <Badge variant="outline" className="text-xs bg-white text-orange-600 border-orange-200">
@@ -180,11 +389,30 @@ export default function VendorProducts() {
               <div className="p-3">
                 <p className="font-medium text-sm line-clamp-2 mb-1">{p.name}</p>
                 <div className="flex items-baseline gap-1 mb-2">
-                  <span className="font-bold text-sm">â‚¹{Number(p.price).toFixed(0)}</span>
+                  <span className="font-bold text-sm">Rs.{Number(p.price).toFixed(0)}</span>
                   {p.mrp && Number(p.mrp) > Number(p.price) && (
-                    <span className="text-xs text-muted-foreground line-through">â‚¹{Number(p.mrp).toFixed(0)}</span>
+                    <span className="text-xs text-muted-foreground line-through">Rs.{Number(p.mrp).toFixed(0)}</span>
                   )}
                 </div>
+                {Array.isArray(p.sizes) && p.sizes.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1">
+                    {p.sizes.slice(0, 5).map((size: string) => (
+                      <span key={size} className="rounded-full border bg-gray-50 px-2 py-0.5 text-[10px] font-semibold text-gray-700">{size}</span>
+                    ))}
+                    {p.sizes.length > 5 && <span className="text-[10px] text-muted-foreground">+{p.sizes.length - 5}</span>}
+                  </div>
+                )}
+                {Array.isArray(p.colors) && p.colors.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1">
+                    {p.colors.slice(0, 5).map((color: string) => (
+                      <span key={color} className="inline-flex items-center gap-1 rounded-full border bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-700">
+                        <span className="h-2.5 w-2.5 rounded-full border" style={{ backgroundColor: COLOR_SWATCHES[color.toLowerCase()] ?? color }} />
+                        {color}
+                      </span>
+                    ))}
+                    {p.colors.length > 5 && <span className="text-[10px] text-muted-foreground">+{p.colors.length - 5}</span>}
+                  </div>
+                )}
                 <div className="flex gap-1.5">
                   <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => openEdit(p)} data-testid={`btn-edit-${p.id}`}>
                     <Pencil className="w-3 h-3 mr-1" />Edit
@@ -200,42 +428,280 @@ export default function VendorProducts() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Product" : "Add New Product"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
-            <div className="space-y-1">
-              <Label>Product Name *</Label>
-              <Input {...register("name")} data-testid="input-name" />
-              {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+            <div className="grid grid-cols-5 gap-1 rounded-xl border bg-gray-50 p-2">
+              {PRODUCT_STEPS.map((step, index) => (
+                <button
+                  key={step}
+                  type="button"
+                  onClick={() => setProductStep(index)}
+                  className={`rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors ${productStep === index ? "bg-primary text-white shadow-sm" : index < productStep ? "bg-green-50 text-green-700" : "bg-white text-gray-600"}`}
+                >
+                  <span className="mx-auto mb-1 flex h-5 w-5 items-center justify-center rounded-full bg-current/10">
+                    {index < productStep ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+                  </span>
+                  {step}
+                </button>
+              ))}
             </div>
-            <div className="space-y-1">
-              <Label>Description</Label>
-              <Textarea {...register("description")} rows={2} data-testid="input-description" />
-            </div>
-            <div className="space-y-1">
-              <Label>Category *</Label>
-              <Select onValueChange={v => setValue("categoryId", Number(v))}>
-                <SelectTrigger data-testid="select-category"><SelectValue placeholder="Select category" /></SelectTrigger>
-                <SelectContent>
-                  {categories?.map((c: any) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              {errors.categoryId && <p className="text-xs text-red-500">{errors.categoryId.message}</p>}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Selling Price (â‚¹) *</Label>
-                <Input type="number" step="0.01" {...register("price")} data-testid="input-price" />
-                {errors.price && <p className="text-xs text-red-500">{errors.price.message}</p>}
-              </div>
-              <div className="space-y-1">
-                <Label>MRP (â‚¹) *</Label>
-                <Input type="number" step="0.01" {...register("mrp")} data-testid="input-mrp" />
-                {errors.mrp && <p className="text-xs text-red-500">{errors.mrp.message}</p>}
-              </div>
-            </div>
+
+            {productStep === 0 && (
+              <section className="space-y-3">
+                <div className="space-y-1">
+                  <Label>Product Name *</Label>
+                  <Input {...register("name")} data-testid="input-name" />
+                  {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+                </div>
+                <div className="space-y-1">
+                  <Label>Description</Label>
+                  <Textarea {...register("description")} rows={2} data-testid="input-description" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Category *</Label>
+                  <Select value={selectedCategoryId ? String(selectedCategoryId) : undefined} onValueChange={v => setValue("categoryId", Number(v))}>
+                    <SelectTrigger data-testid="select-category"><SelectValue placeholder="Select category" /></SelectTrigger>
+                    <SelectContent>
+                      {categories?.map((c: any) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {errors.categoryId && <p className="text-xs text-red-500">{errors.categoryId.message}</p>}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Selling Price (Rs.) *</Label>
+                    <Input type="number" step="0.01" {...register("price")} data-testid="input-price" />
+                    {errors.price && <p className="text-xs text-red-500">{errors.price.message}</p>}
+                  </div>
+                  <div className="space-y-1">
+                    <Label>MRP (Rs.) *</Label>
+                    <Input type="number" step="0.01" {...register("mrp")} data-testid="input-mrp" />
+                    {errors.mrp && <p className="text-xs text-red-500">{errors.mrp.message}</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label>Stock</Label>
+                    <Input type="number" {...register("stock")} data-testid="input-stock" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Weight</Label>
+                    <Input placeholder="e.g. 500" {...register("weight")} data-testid="input-weight" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Unit</Label>
+                    <Input placeholder="g, ml, pcs" {...register("unit")} data-testid="input-unit" />
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {productStep === 1 && (
+              <section className="space-y-3">
+                <div className="rounded-lg border bg-blue-50 p-3">
+                  <Label>Category-wise measurement</Label>
+                  <p className="mb-2 text-xs text-blue-700">Je item je bhabe hisab hoy, tar shortcut select korun.</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {measurementOptions(selectedCategory?.name).map((option) => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        onClick={() => {
+                          setValue("weight", option.weight, { shouldDirty: true });
+                          setValue("unit", option.unit, { shouldDirty: true });
+                        }}
+                        className="rounded-full border bg-white px-3 py-1 text-xs font-semibold text-blue-800 hover:border-primary"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2 rounded-lg border bg-gray-50 p-3">
+                  <div>
+                    <Label>Available clothing sizes</Label>
+                    <p className="text-xs text-muted-foreground">Fashion/kapor product hole size select korun. Custom size comma diye add korte parben.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {activeSizeOptions.map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => toggleSize(size)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${selectedSizes.includes(size) ? "border-primary bg-primary text-white" : "bg-white text-gray-700 hover:border-primary/50"}`}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                  <Input
+                    {...register("sizes")}
+                    placeholder="Custom sizes: 44, 46, Kids 6Y"
+                    onBlur={(event) => setSelectedSizes(normalizeSizes([...selectedSizes, ...normalizeSizes(event.target.value)]))}
+                    data-testid="input-sizes"
+                  />
+                  {!isFashionCategory && <p className="text-xs text-muted-foreground">Non-fashion product hole eta optional.</p>}
+                </div>
+                <div className="space-y-2 rounded-lg border bg-gray-50 p-3">
+                  <div>
+                    <Label>Available colors</Label>
+                    <p className="text-xs text-muted-foreground">Je product-e color option ache, customer order korar age ekhane theke color select korbe.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PRODUCT_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => toggleColor(color)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${selectedColors.includes(color) ? "border-primary bg-primary text-white" : "bg-white text-gray-700 hover:border-primary/50"}`}
+                      >
+                        <span className="h-3 w-3 rounded-full border" style={{ backgroundColor: COLOR_SWATCHES[color.toLowerCase()] ?? color }} />
+                        {color}
+                      </button>
+                    ))}
+                  </div>
+                  <Input
+                    {...register("colors")}
+                    placeholder="Custom colors: Maroon, Sky Blue, Cream"
+                    onBlur={(event) => setSelectedColors(normalizeSizes([...selectedColors, ...normalizeSizes(event.target.value)]))}
+                    data-testid="input-colors"
+                  />
+                  {selectedColors.length > 0 && (
+                    <div className="space-y-2 rounded-lg border bg-white p-2">
+                      <p className="text-xs font-semibold text-gray-700">Color-wise product image</p>
+                      {selectedColors.map((color) => (
+                        <div key={color} className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold">
+                            <span className="h-3 w-3 rounded-full border" style={{ backgroundColor: COLOR_SWATCHES[color.toLowerCase()] ?? color }} />
+                            {color}
+                          </span>
+                          <Input
+                            value={colorImageUrls[color] ?? ""}
+                            onChange={(event) => updateColorImage(color, event.target.value)}
+                            placeholder={`${color} image URL`}
+                            data-testid={`input-color-image-${color}`}
+                          />
+                        </div>
+                      ))}
+                      <p className="text-[11px] text-muted-foreground">Customer color select korle ei color-er image detail, cart, order-e show hobe.</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {productStep === 2 && (
+              <section className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Product Photos</Label>
+                  <div className="flex gap-2">
+                    <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs font-medium hover:bg-muted">
+                      <ImagePlus className="mr-1 h-3.5 w-3.5" />
+                      Upload
+                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} data-testid="input-product-images" />
+                    </label>
+                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addImageField}>
+                      <Plus className="mr-1 h-3 w-3" />URL
+                    </Button>
+                  </div>
+                </div>
+                {!imageUrls.length ? (
+                  <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+                    Add one or more product photos. Main image will be the first image.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {imageUrls.map((url, index) => (
+                      <div key={`${index}-${url.slice(0, 12)}`} className="flex items-center gap-2">
+                        <div className="h-12 w-12 overflow-hidden rounded-md border bg-gray-50">
+                          {url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
+                        </div>
+                        <Input
+                          value={url}
+                          onChange={(event) => updateImageField(index, event.target.value)}
+                          placeholder="https://... or uploaded image"
+                          data-testid={`input-image-${index}`}
+                        />
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => removeImageField(index)}>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {productStep === 3 && (
+              <section className="space-y-3">
+                <div className="space-y-3 rounded-lg border bg-white p-3">
+                  <div>
+                    <Label>Return / warranty / payment policy</Label>
+                    <p className="text-xs text-muted-foreground">Ei details product detail page-e customer dekhte pabe.</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label>Return window</Label>
+                      <Input placeholder="Damaged items only" {...register("returnWindow")} data-testid="input-return-window" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Warranty</Label>
+                      <Input placeholder="1 Year warranty / Seller assured" {...register("warranty")} data-testid="input-warranty" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Payment options</Label>
+                      <Input placeholder="Cash on Delivery, UPI" {...register("paymentOptions")} data-testid="input-payment-options" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Delivery note</Label>
+                      <Input placeholder="40 minute local target" {...register("deliveryNote")} data-testid="input-delivery-note" />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border bg-gray-50 p-3">
+                  <div className="flex items-center gap-2">
+                    <Switch checked={isAvailable} onCheckedChange={v => setValue("isAvailable", v)} data-testid="switch-available" />
+                    <Label>Available for purchase</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={isFeatured} onCheckedChange={v => setValue("isFeatured", v)} data-testid="switch-featured" />
+                    <Label>Featured</Label>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {productStep === 4 && (
+              <section className="space-y-3">
+                <div className="rounded-xl border bg-white p-3 shadow-sm">
+                  <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Customer preview</p>
+                  <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+                    <div className="aspect-square overflow-hidden rounded-lg bg-gray-50">
+                      {imageUrls[0] ? <img src={imageUrls[0]} alt="" className="h-full w-full object-contain p-3" /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No image</div>}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="line-clamp-2 text-lg font-bold">{watch("name") || "Product title"}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">{selectedCategory?.name ?? "Category"} · {watch("weight") || "1"} {watch("unit") || "pc"}</p>
+                      <div className="mt-3 flex items-baseline gap-2">
+                        <span className="text-2xl font-bold">Rs.{Number(watch("price") || 0).toFixed(0)}</span>
+                        <span className="text-sm text-muted-foreground line-through">Rs.{Number(watch("mrp") || 0).toFixed(0)}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-green-700">{watch("deliveryNote") || "40 minute local target"}</p>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        {[...selectedSizes, ...normalizeSizes(watch("sizes"))].slice(0, 6).map((size) => <Badge key={size} variant="outline">{size}</Badge>)}
+                        {[...selectedColors, ...normalizeSizes(watch("colors"))].slice(0, 6).map((color) => <Badge key={color} variant="outline">{color}</Badge>)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {false && (
+              <>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label>Stock</Label>
@@ -248,6 +714,119 @@ export default function VendorProducts() {
               <div className="space-y-1">
                 <Label>Unit</Label>
                 <Input placeholder="g, ml, pcs" {...register("unit")} data-testid="input-unit" />
+              </div>
+            </div>
+            <div className="rounded-lg border bg-blue-50 p-3">
+              <Label>Category-wise measurement</Label>
+              <p className="mb-2 text-xs text-blue-700">Je item je bhabe hisab hoy, tar shortcut select korun.</p>
+              <div className="flex flex-wrap gap-1.5">
+                {measurementOptions(selectedCategory?.name).map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    onClick={() => {
+                      setValue("weight", option.weight, { shouldDirty: true });
+                      setValue("unit", option.unit, { shouldDirty: true });
+                    }}
+                    className="rounded-full border bg-white px-3 py-1 text-xs font-semibold text-blue-800 hover:border-primary"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2 rounded-lg border bg-gray-50 p-3">
+              <div>
+                <Label>Available clothing sizes</Label>
+                <p className="text-xs text-muted-foreground">Fashion/kapor product hole size select korun. Custom size comma diye add korte parben.</p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {activeSizeOptions.map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => toggleSize(size)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${selectedSizes.includes(size) ? "border-primary bg-primary text-white" : "bg-white text-gray-700 hover:border-primary/50"}`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+              <Input
+                {...register("sizes")}
+                placeholder="Custom sizes: 44, 46, Kids 6Y"
+                onBlur={(event) => setSelectedSizes(normalizeSizes([...selectedSizes, ...normalizeSizes(event.target.value)]))}
+                data-testid="input-sizes"
+              />
+              {!isFashionCategory && <p className="text-xs text-muted-foreground">Non-fashion product hole eta optional.</p>}
+            </div>
+            <div className="space-y-2 rounded-lg border bg-gray-50 p-3">
+              <div>
+                <Label>Available colors</Label>
+                <p className="text-xs text-muted-foreground">Je product-e color option ache, customer order korar age ekhane theke color select korbe.</p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {PRODUCT_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => toggleColor(color)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${selectedColors.includes(color) ? "border-primary bg-primary text-white" : "bg-white text-gray-700 hover:border-primary/50"}`}
+                  >
+                    <span className="h-3 w-3 rounded-full border" style={{ backgroundColor: COLOR_SWATCHES[color.toLowerCase()] ?? color }} />
+                    {color}
+                  </button>
+                ))}
+              </div>
+              <Input
+                {...register("colors")}
+                placeholder="Custom colors: Maroon, Sky Blue, Cream"
+                onBlur={(event) => setSelectedColors(normalizeSizes([...selectedColors, ...normalizeSizes(event.target.value)]))}
+                data-testid="input-colors"
+              />
+              {selectedColors.length > 0 && (
+                <div className="space-y-2 rounded-lg border bg-white p-2">
+                  <p className="text-xs font-semibold text-gray-700">Color-wise product image</p>
+                  {selectedColors.map((color) => (
+                    <div key={color} className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-2">
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold">
+                        <span className="h-3 w-3 rounded-full border" style={{ backgroundColor: COLOR_SWATCHES[color.toLowerCase()] ?? color }} />
+                        {color}
+                      </span>
+                      <Input
+                        value={colorImageUrls[color] ?? ""}
+                        onChange={(event) => updateColorImage(color, event.target.value)}
+                        placeholder={`${color} image URL`}
+                        data-testid={`input-color-image-${color}`}
+                      />
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-muted-foreground">Customer color select korle ei color-er image detail, cart, order-e show hobe.</p>
+                </div>
+              )}
+            </div>
+            <div className="space-y-3 rounded-lg border bg-white p-3">
+              <div>
+                <Label>Return / warranty / payment policy</Label>
+                <p className="text-xs text-muted-foreground">Ei details product detail page-e customer dekhte pabe.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label>Return window</Label>
+                  <Input placeholder="Damaged items only" {...register("returnWindow")} data-testid="input-return-window" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Warranty</Label>
+                  <Input placeholder="1 Year warranty / Seller assured" {...register("warranty")} data-testid="input-warranty" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Payment options</Label>
+                  <Input placeholder="Cash on Delivery, UPI" {...register("paymentOptions")} data-testid="input-payment-options" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Delivery note</Label>
+                  <Input placeholder="40 minute local target" {...register("deliveryNote")} data-testid="input-delivery-note" />
+                </div>
               </div>
             </div>
             <div className="space-y-2">
@@ -299,11 +878,19 @@ export default function VendorProducts() {
                 <Label>Featured</Label>
               </div>
             </div>
+              </>
+            )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={create.isPending || update.isPending} data-testid="btn-save">
-                {create.isPending || update.isPending ? "Saving..." : "Save Product"}
+              <Button type="button" variant="outline" onClick={() => productStep === 0 ? setDialogOpen(false) : setProductStep((step) => Math.max(0, step - 1))}>
+                {productStep === 0 ? "Cancel" : "Back"}
               </Button>
+              {productStep < PRODUCT_STEPS.length - 1 ? (
+                <Button type="button" onClick={goNextStep}>Continue</Button>
+              ) : (
+                <Button type="submit" disabled={create.isPending || update.isPending} data-testid="btn-save">
+                  {create.isPending || update.isPending ? "Saving..." : "Publish Product"}
+                </Button>
+              )}
             </DialogFooter>
           </form>
         </DialogContent>

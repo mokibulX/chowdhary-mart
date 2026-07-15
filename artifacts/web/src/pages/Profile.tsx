@@ -70,7 +70,7 @@ export default function Profile() {
     );
   }
 
-  const showSoon = (title: string) => toast({ title, description: "This option is ready in demo mode and will connect to a full backend setting later." });
+  const showSoon = (title: string) => toast({ title, description: "Settings are saved locally for this marketplace build." });
 
   const sections: { title: string; rows: RowAction[] }[] = [
     {
@@ -91,7 +91,7 @@ export default function Profile() {
         { label: "Payment Methods", desc: "Cash on Delivery and UPI options", icon: CreditCard, color: "text-[#0757ee]", href: "/wallet" },
         { label: "Change Password", desc: "Update your account password", icon: Lock, color: "text-green-600", href: "/login" },
         { label: "Notification Preferences", desc: "Manage your notification settings", icon: Bell, color: "text-yellow-500", href: "/notifications" },
-        { label: "Privacy Settings", desc: "Manage privacy and data settings", icon: ShieldCheck, color: "text-[#0757ee]", action: () => showSoon("Privacy settings") },
+        { label: "Privacy Settings", desc: "Manage privacy and data settings", icon: ShieldCheck, color: "text-[#0757ee]", href: "/privacy" },
         { label: "Language", desc: "Change app language", icon: Globe2, color: "text-purple-600", value: localStorage.getItem("ekart_language") || "English", href: "/language" },
       ],
     },

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Chowdhary Mart</string>
+    <string name="title_activity_main">Chowdhary Mart</string>
+    <string name="package_name">com.chowdharymart.app</string>
+    <string name="custom_url_scheme">com.chowdharymart.app</string>
+</resources>
