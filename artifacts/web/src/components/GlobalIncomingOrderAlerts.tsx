@@ -149,8 +149,8 @@ export function GlobalIncomingOrderAlerts() {
   if (!active) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex min-h-[100dvh] items-stretch justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true">
-      <div className="relative flex w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-[32px]">
+    <div className="fixed inset-0 z-[100] flex h-[100dvh] items-stretch justify-center overflow-y-auto bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true">
+      <div className="relative flex min-h-0 w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-[32px]">
         <div className="relative overflow-hidden bg-gray-950 px-4 pb-5 pt-5 text-white">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(249,115,22,.55),transparent_30%),radial-gradient(circle_at_80%_15%,rgba(34,197,94,.3),transparent_25%)]" />
           <div className="relative z-10 flex items-start justify-between gap-3">
@@ -186,7 +186,7 @@ export function GlobalIncomingOrderAlerts() {
           )}
         </div>
 
-        <div className="grid gap-2 border-t bg-white p-4">
+        <div className="grid gap-2 border-t bg-white p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
           {rejecting ? (
             <div className="grid grid-cols-2 gap-2">
               <Button className="h-12 rounded-2xl" variant="outline" onClick={() => setRejecting(false)} disabled={busy}>Back</Button>
@@ -267,7 +267,7 @@ function RiderAlertBody({ order }: { order: any }) {
 function AlertItem({ item }: { item: any }) {
   const variant = [item.variantName, item.size && `Size ${item.size}`, (item.colour || item.color) && `Color ${item.colour ?? item.color}`, item.weight && `${item.weight} ${item.unit ?? ""}`].filter(Boolean).join(" · ") || "Standard";
   return (
-    <div className="grid grid-cols-[56px_1fr_auto] gap-3 rounded-xl border bg-gray-50 p-2">
+    <div className="grid grid-cols-[56px_minmax(0,1fr)_auto] gap-3 rounded-xl border bg-gray-50 p-2">
       <div className="h-14 w-14 overflow-hidden rounded-lg bg-white">
         {item.productImage || item.imageUrl ? <img src={item.productImage ?? item.imageUrl} alt={item.productName ?? item.name} className="h-full w-full object-cover" /> : <Package className="m-4 h-6 w-6 text-gray-300" />}
       </div>

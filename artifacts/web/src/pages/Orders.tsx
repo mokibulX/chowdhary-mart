@@ -44,38 +44,48 @@ export default function Orders() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-bold">My Orders</h1>
+    <div className="mx-auto w-full max-w-5xl space-y-4 overflow-x-hidden pb-6 sm:space-y-5">
+      <div className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">My Orders</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Track current orders, delivery progress and past purchases.</p>
+      </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {FILTERS.map(f => (
-          <Button
-            key={f}
-            variant={filter === f ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFilter(f)}
-            className="whitespace-nowrap"
-            data-testid={`filter-${f}`}
-          >
-            {f === "all" ? "All Orders" : STATUS_LABELS[f] ?? f}
-          </Button>
-        ))}
+      <div className="-mx-3 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
+        <div className="flex w-max min-w-full gap-2 rounded-2xl border bg-white p-2 shadow-sm">
+          {FILTERS.map(f => {
+            const active = filter === f;
+            return (
+              <Button
+                key={f}
+                variant={active ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setFilter(f)}
+                className={`h-10 flex-none whitespace-nowrap rounded-xl px-4 text-sm font-semibold transition-all ${
+                  active ? "bg-primary text-white shadow-sm hover:bg-primary/90" : "text-gray-700 hover:bg-orange-50 hover:text-primary"
+                }`}
+                data-testid={`filter-${f}`}
+              >
+                {f === "all" ? "All Orders" : STATUS_LABELS[f] ?? f}
+              </Button>
+            );
+          })}
+        </div>
       </div>
 
       {isLoading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-xl" />)}</div>
       ) : !orders?.length ? (
-        <div className="text-center py-16 space-y-3">
+        <div className="rounded-2xl border bg-white px-4 py-16 text-center shadow-sm">
           <Package className="w-14 h-14 mx-auto text-muted-foreground opacity-40" />
-          <p className="font-medium text-muted-foreground">No orders yet</p>
-          <Link href="/search"><Button>Start Shopping</Button></Link>
+          <p className="mt-3 font-medium text-muted-foreground">No orders yet</p>
+          <Link href="/search"><Button className="mt-3 rounded-xl">Start Shopping</Button></Link>
         </div>
       ) : (
         <div className="space-y-3">
           {orders.map((order: any) => (
             <Link key={order.id} href={`/orders/${order.id}`}>
-              <div className="bg-white border rounded-xl p-4 hover:shadow-sm transition-shadow cursor-pointer" data-testid={`order-${order.id}`}>
+              <div className="cursor-pointer rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md sm:p-5" data-testid={`order-${order.id}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -90,7 +100,7 @@ export default function Orders() {
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="font-bold">₹{Number(order.total).toFixed(0)}</p>
+                    <p className="font-bold">Rs.{Number(order.total).toFixed(0)}</p>
                     <p className="text-xs text-muted-foreground">{order.paymentMethod?.toUpperCase()}</p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground mt-1 flex-shrink-0" />

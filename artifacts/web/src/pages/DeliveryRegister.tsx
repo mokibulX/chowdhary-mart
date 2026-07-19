@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { fileToDataUrl, getBrowserLocation } from "@/lib/live-location";
+import { testMode } from "@/lib/test-mode";
 import {
   Bike,
   Camera,
@@ -52,6 +53,7 @@ type DeliveryForm = {
   pincode: string;
   lat: string;
   lng: string;
+  selectedZoneId: string;
   addressProofType: string;
   addressProofImage: string;
   vehicleType: string;
@@ -131,6 +133,7 @@ const initialForm: DeliveryForm = {
   pincode: "",
   lat: "",
   lng: "",
+  selectedZoneId: "",
   addressProofType: "Aadhaar",
   addressProofImage: "",
   vehicleType: "Bike",
@@ -181,6 +184,7 @@ export default function DeliveryRegister() {
   const [, setLocation] = useLocation();
   const { login } = useAuth();
   const { toast } = useToast();
+  const authToast = (options: Parameters<typeof toast>[0]) => toast({ duration: 2000, ...options });
   const registerMutation = useRegister();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<DeliveryForm>(() => {
@@ -196,10 +200,21 @@ export default function DeliveryRegister() {
   const [gpsBusy, setGpsBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [zones, setZones] = useState<any[]>([]);
+  const [zoneBusy, setZoneBusy] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(draftKey, JSON.stringify({ ...form, otp: "" }));
   }, [form]);
+
+  useEffect(() => {
+    if (!form.lat || !form.lng) return;
+    setZoneBusy(true);
+    customFetch<{ items: any[] }>(`/api/public/service-zones?type=rider&lat=${encodeURIComponent(form.lat)}&lng=${encodeURIComponent(form.lng)}`)
+      .then((res) => setZones(res.items ?? []))
+      .catch(() => setZones([]))
+      .finally(() => setZoneBusy(false));
+  }, [form.lat, form.lng]);
 
   const passwordScore = useMemo(() => {
     return [
@@ -228,7 +243,7 @@ export default function DeliveryRegister() {
       if (file.size > 5 * 1024 * 1024) throw new Error("Image must be under 5 MB.");
       update(key, await fileToDataUrl(file) as any);
     } catch (error) {
-      toast({ title: "Photo upload failed", description: error instanceof Error ? error.message : "Try another image.", variant: "destructive" });
+      authToast({ title: "Photo upload failed", description: error instanceof Error ? error.message : "Try another image.", variant: "destructive" });
     }
   };
 
@@ -238,9 +253,9 @@ export default function DeliveryRegister() {
       const gps = await getBrowserLocation();
       update("lat", String(gps.lat));
       update("lng", String(gps.lng));
-      toast({ title: "Live location added", description: "GPS location saved with your address." });
+      authToast({ title: "Live location added", description: "GPS location saved with your address." });
     } catch (error) {
-      toast({ title: "GPS permission needed", description: error instanceof Error ? error.message : "Could not get location.", variant: "destructive" });
+      authToast({ title: "GPS permission needed", description: error instanceof Error ? error.message : "Could not get location.", variant: "destructive" });
     } finally {
       setGpsBusy(false);
     }
@@ -248,7 +263,7 @@ export default function DeliveryRegister() {
 
   const sendOtp = async () => {
     if (!/^\d{10}$/.test(form.phone)) {
-      toast({ title: "Valid mobile required", variant: "destructive" });
+      authToast({ title: "Valid mobile required", variant: "destructive" });
       return;
     }
     setOtpBusy(true);
@@ -256,9 +271,9 @@ export default function DeliveryRegister() {
       await customFetch("/api/auth/delivery-otp/send", { method: "POST", body: JSON.stringify({ phone: form.phone }) });
       setOtpSent(true);
       setStep(1);
-      toast({ title: "OTP sent", description: "Enter the code from your mobile. It expires in 5 minutes." });
+      authToast({ title: "OTP sent", description: testMode.allowDemoOtp ? `Demo OTP: ${testMode.demoOtpCode}` : "Enter the code from your mobile. It expires in 5 minutes." });
     } catch (error) {
-      toast({ title: "OTP failed", description: errorMessage(error), variant: "destructive" });
+      authToast({ title: "OTP failed", description: errorMessage(error), variant: "destructive" });
     } finally {
       setOtpBusy(false);
     }
@@ -269,10 +284,10 @@ export default function DeliveryRegister() {
     try {
       await customFetch("/api/auth/delivery-otp/verify", { method: "POST", body: JSON.stringify({ phone: form.phone, otp: form.otp }) });
       setOtpVerified(true);
-      toast({ title: "Mobile verified" });
+      authToast({ title: "Mobile verified" });
       setStep(1);
     } catch (error) {
-      toast({ title: "OTP verification failed", description: errorMessage(error), variant: "destructive" });
+      authToast({ title: "OTP verification failed", description: errorMessage(error), variant: "destructive" });
     } finally {
       setOtpBusy(false);
     }
@@ -294,7 +309,12 @@ export default function DeliveryRegister() {
       if (form.password !== form.confirmPassword) return "Passwords do not match.";
       return required(["dob", "emergencyName", "emergencyPhone"], "Date of birth and emergency contact required.");
     }
-    if (targetStep === 3) return required(["fullAddress", "pincode", "lat", "lng", "addressProofImage"], "Address, pincode, GPS and address proof required.");
+    if (targetStep === 3) {
+      const base = required(["fullAddress", "pincode", "lat", "lng", "selectedZoneId", "addressProofImage"], "Address, pincode, GPS, service zone and address proof required.");
+      if (base) return base;
+      const selected = zones.find((zone) => String(zone.id) === form.selectedZoneId);
+      if (selected && !selected.insideServiceZone) return "Your current location is outside the selected service zone.";
+    }
     if (targetStep === 4) return required(["vehicleType", "vehicleNumber", "vehicleBrand", "vehicleFrontImage", "numberPlateImage"], "Vehicle details and photos required.");
     if (targetStep === 5) {
       if (!licenceRequired) return "";
@@ -314,7 +334,7 @@ export default function DeliveryRegister() {
   const next = () => {
     const error = validateStep();
     if (error) {
-      toast({ title: "Step incomplete", description: error, variant: "destructive" });
+      authToast({ title: "Step incomplete", description: error, variant: "destructive" });
       return;
     }
     setStep((current) => {
@@ -330,7 +350,7 @@ export default function DeliveryRegister() {
       const error = validateStep(index);
       if (error) {
         setStep(index);
-        toast({ title: "Registration incomplete", description: error, variant: "destructive" });
+        authToast({ title: "Registration incomplete", description: error, variant: "destructive" });
         return;
       }
     }
@@ -340,28 +360,32 @@ export default function DeliveryRegister() {
           ...form,
           email: form.email || undefined,
           phone: form.phone.replace(/\D/g, ""),
+          otp: form.otp,
           panNumber: form.panNumber.toUpperCase(),
           vehicleNumber: form.vehicleNumber.toUpperCase(),
           licenseNumber: form.licenseNumber.toUpperCase(),
           ifsc: form.ifsc.toUpperCase(),
           role: "delivery_partner",
           selfieUrl: form.profileSelfie,
+          selectedZoneId: Number(form.selectedZoneId),
+          currentLatitude: Number(form.lat),
+          currentLongitude: Number(form.lng),
         } as any,
       },
       {
         onSuccess: (res) => {
           localStorage.removeItem(draftKey);
           login(res.token);
-          toast({ title: "Application submitted", description: "Admin review pending. Approval hole delivery panel active hobe." });
+          authToast({ title: "Application submitted", description: "Admin review pending. Approval hole delivery panel active hobe." });
           setLocation("/delivery");
         },
-        onError: (error: unknown) => toast({ title: "Registration failed", description: errorMessage(error), variant: "destructive" }),
+        onError: (error: unknown) => authToast({ title: "Registration failed", description: errorMessage(error), variant: "destructive" }),
       },
     );
   };
 
   return (
-    <div className="min-h-[100dvh] overflow-x-hidden bg-gray-50 pb-28 lg:pb-0">
+    <div className="native-page-scroll min-h-[100dvh] bg-gray-50 pb-28 lg:pb-0">
       <header className="sticky top-0 z-30 border-b bg-white/95 px-3 py-3 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between gap-3">
           <button type="button" className="flex h-11 w-11 items-center justify-center rounded-full border bg-white" onClick={() => step > 0 ? setStep((current) => current - 1) : window.history.back()} aria-label="Back">
@@ -371,7 +395,7 @@ export default function DeliveryRegister() {
             <p className="truncate text-xs font-semibold text-primary">ChowdharyMart Rider</p>
             <h1 className="truncate text-base font-bold">{stepTitles[step]}</h1>
           </div>
-          <button type="button" className="h-11 rounded-full border bg-white px-3 text-xs font-bold" onClick={() => toast({ title: "Draft saved", description: "You can resume this registration later." })}>
+          <button type="button" className="h-11 rounded-full border bg-white px-3 text-xs font-bold" onClick={() => authToast({ title: "Draft saved", description: "You can resume this registration later." })}>
             Save
           </button>
         </div>
@@ -381,7 +405,7 @@ export default function DeliveryRegister() {
         <p className="mt-1 text-xs text-muted-foreground">Step {step + 1} of {stepTitles.length}</p>
       </header>
 
-      <div className="mx-auto grid min-h-[100dvh] max-w-6xl gap-0 lg:grid-cols-[0.78fr_1.22fr] lg:gap-5 lg:px-4 lg:py-6">
+      <div className="mx-auto grid min-h-[100dvh] max-w-6xl gap-3 px-3 py-3 lg:grid-cols-[0.78fr_1.22fr] lg:gap-5 lg:px-4 lg:py-6">
         <section className="hidden rounded-2xl bg-gray-950 p-5 text-white shadow-lg sm:p-6 lg:block">
           <Link href="/" className="inline-flex items-center gap-2 text-sm text-white/75 hover:text-white">
             <ChevronLeft className="h-4 w-4" /> Chowdhary Mart
@@ -401,8 +425,8 @@ export default function DeliveryRegister() {
           </div>
         </section>
 
-        <Card className="min-w-0 rounded-none border-0 shadow-none lg:rounded-2xl lg:border lg:shadow-sm">
-          <CardContent className="min-w-0 px-3 pb-28 pt-4 sm:p-6 lg:pb-6">
+        <Card className="min-w-0 rounded-[26px] border bg-white shadow-sm lg:rounded-2xl">
+          <CardContent className="min-w-0 p-4 pb-28 sm:p-6 lg:pb-6">
             <div className="mb-5 hidden lg:block">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -430,7 +454,10 @@ export default function DeliveryRegister() {
                   <Field label="Mobile number" value={form.phone} onChange={(value) => update("phone", value.replace(/\D/g, "").slice(0, 10))} inputMode="tel" disabled={otpVerified} />
                 </div>
                 <Button className="h-12 w-full rounded-2xl" type="button" onClick={sendOtp} disabled={otpBusy || otpVerified}>{otpVerified ? "Mobile verified" : otpSent ? "Resend OTP" : "Send OTP"}</Button>
-                <p className="text-sm text-muted-foreground">OTP server-side verify hobe. Same mobile diye duplicate rider account create hobe na.</p>
+                <p className="text-sm text-muted-foreground">
+                  OTP server-side verify hobe. Same mobile diye duplicate rider account create hobe na.
+                  {testMode.allowDemoOtp ? <span className="ml-1 font-bold text-amber-700">Demo OTP: {testMode.demoOtpCode}</span> : null}
+                </p>
               </Panel>
             )}
 
@@ -440,6 +467,7 @@ export default function DeliveryRegister() {
                   OTP sent to <b>{form.countryCode} {form.phone || "your mobile"}</b>. Code expires in 5 minutes.
                 </div>
                 <Field label="OTP code" value={form.otp} onChange={(value) => update("otp", value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" />
+                {testMode.allowDemoOtp && <p className="text-xs font-semibold text-amber-700">Demo OTP: {testMode.demoOtpCode}</p>}
                 <Button className="h-12 w-full rounded-2xl" type="button" onClick={verifyOtp} disabled={otpBusy || otpVerified}>{otpVerified ? "Verified" : "Verify OTP"}</Button>
               </Panel>
             )}
@@ -487,6 +515,31 @@ export default function DeliveryRegister() {
                   <Field label="Longitude" value={form.lng} onChange={(value) => update("lng", value)} />
                 </div>
                 <Button type="button" variant="outline" onClick={captureGps} disabled={gpsBusy}><LocateFixed className="mr-2 h-4 w-4" /> Use current GPS location</Button>
+                <div className="rounded-2xl border bg-emerald-50 p-4">
+                  <div className="mb-3">
+                    <p className="font-bold text-emerald-950">Primary working zone</p>
+                    <p className="text-xs text-emerald-800">Only admin-created active delivery zones can be selected.</p>
+                  </div>
+                  {!form.lat || !form.lng ? (
+                    <p className="rounded-xl bg-white p-3 text-sm text-muted-foreground">Use current GPS first to load rider zones.</p>
+                  ) : zoneBusy ? (
+                    <p className="rounded-xl bg-white p-3 text-sm">Loading rider zones...</p>
+                  ) : zones.length === 0 ? (
+                    <p className="rounded-xl bg-white p-3 text-sm text-red-700">No active delivery zone found near this GPS.</p>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {zones.map((zone) => (
+                        <button key={zone.id} type="button" onClick={() => update("selectedZoneId", String(zone.id))} className={`rounded-xl border bg-white p-3 text-left transition ${form.selectedZoneId === String(zone.id) ? "border-primary ring-2 ring-primary/20" : "hover:border-primary/40"}`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold">{zone.name}</p>
+                            <Badge className={zone.insideServiceZone ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>{zone.insideServiceZone ? "Inside" : "Outside"}</Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">{zone.code} - {zone.distanceKm ?? "--"} km - Delivery enabled</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <CheckRow checked={form.sameAddress} onChange={(value) => update("sameAddress", value)} label="Permanent address same as current address" />
                 {!form.sameAddress && <Textarea value={form.permanentAddress} onChange={(event) => update("permanentAddress", event.target.value)} placeholder="Permanent address" rows={3} />}
                 <ImageInput label="Address proof photo *" value={form.addressProofImage} onFile={(file) => setImage("addressProofImage", file)} />
@@ -640,7 +693,7 @@ export default function DeliveryRegister() {
               </Panel>
             )}
 
-            <div className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-[1fr_1fr] gap-2 border-t bg-white/95 p-3 shadow-2xl backdrop-blur lg:static lg:mt-6 lg:flex lg:flex-row lg:justify-between lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
+            <div className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-[1fr_1fr] gap-2 border-t bg-white/95 p-3 pb-[calc(12px+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur lg:static lg:mt-6 lg:flex lg:flex-row lg:justify-between lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
               <Button className="h-12 rounded-2xl" type="button" variant="outline" onClick={() => setStep((current) => current === 6 && !licenceRequired ? 4 : Math.max(0, current - 1))} disabled={step === 0}>Previous</Button>
               {step < stepTitles.length - 1 ? (
                 <Button className="h-12 rounded-2xl" type="button" onClick={next}>Continue</Button>
@@ -649,7 +702,7 @@ export default function DeliveryRegister() {
                   {registerMutation.isPending ? "Submitting..." : "Submit for admin review"}
                 </Button>
               )}
-              <Button className="col-span-2 h-11 rounded-2xl lg:hidden" type="button" variant="ghost" onClick={() => toast({ title: "Draft saved", description: "Registration data saved on this device." })}>Save Draft</Button>
+              <Button className="col-span-2 h-11 rounded-2xl lg:hidden" type="button" variant="ghost" onClick={() => authToast({ title: "Draft saved", description: "Registration data saved on this device." })}>Save Draft</Button>
             </div>
           </CardContent>
         </Card>

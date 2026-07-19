@@ -1,8 +1,35 @@
 import { Badge } from "@/components/ui/badge";
-import { Bike, CheckCircle2, Clock, Crosshair, Home, MapPin, MessageCircle, Navigation, Package, Phone, ShieldCheck, Store, UserRound, ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Bike, Clock, Crosshair, Home, MapPin, MessageCircle, Navigation, Package, Phone, Route, ShieldCheck, Store, UserRound } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { io, type Socket } from "socket.io-client";
 
-const STEP_LABELS: Record<string, string> = {
+declare global {
+  interface Window {
+    google?: any;
+    __cmGoogleMapsPromise?: Promise<any>;
+  }
+}
+
+type Point = {
+  lat?: number | string | null;
+  lng?: number | string | null;
+  label?: string;
+  address?: string;
+  speed?: number | string | null;
+  heading?: number | string | null;
+  accuracy?: number | string | null;
+  updatedAt?: string | Date | null;
+};
+
+type LiveDeliveryMapProps = {
+  tracking?: any;
+  compact?: boolean;
+  role?: "customer" | "partner" | "admin";
+  className?: string;
+};
+
+const STATUS_LABELS: Record<string, string> = {
   pending: "Order placed",
   confirmed: "Seller accepted",
   preparing: "Preparing",
@@ -13,537 +40,484 @@ const STEP_LABELS: Record<string, string> = {
   delivered: "Delivered",
 };
 
-type Point = { lat: number; lng: number; label?: string; address?: string };
-const SATELLITE_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile";
-const STANDARD_TILE_URL = "https://tile.openstreetmap.org";
-const DELIVERY_BOY_BIKE_IMAGE = "/delivery-partner-bike.png";
-const routeCache = new Map<string, Point[]>();
-
-type LiveDeliveryMapProps = {
-  tracking?: any;
-  compact?: boolean;
-  role?: "customer" | "partner" | "admin";
-  className?: string;
+const STATUS_RING: Record<string, string> = {
+  online: "#22c55e",
+  waiting: "#f59e0b",
+  arriving: "#2563eb",
+  delivering: "#0ea5e9",
+  offline: "#94a3b8",
+  delivered: "#16a34a",
 };
 
+let sharedSocket: Socket | null = null;
+
+function getEnv(name: string) {
+  const env = import.meta.env as Record<string, string | undefined>;
+  return env[`VITE_${name}`] || env[name] || "";
+}
+
+function loadGoogleMaps() {
+  const apiKey = getEnv("MAPS_API_KEY") || getEnv("GOOGLE_MAPS_API_KEY");
+  const mapStyleId = getEnv("MAP_STYLE_ID");
+  if (!apiKey) return Promise.reject(new Error("Google Maps API key missing"));
+  if (window.google?.maps) return Promise.resolve(window.google);
+  if (window.__cmGoogleMapsPromise) return window.__cmGoogleMapsPromise;
+
+  window.__cmGoogleMapsPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>("script[data-cm-google-maps]");
+    if (existing) {
+      existing.addEventListener("load", () => resolve(window.google));
+      existing.addEventListener("error", () => reject(new Error("Google Maps failed to load")));
+      return;
+    }
+
+    const script = document.createElement("script");
+    const params = new URLSearchParams({
+      key: apiKey,
+      libraries: "places,geometry",
+      v: "weekly",
+    });
+    if (mapStyleId) params.set("map_ids", mapStyleId);
+    script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+    script.async = true;
+    script.defer = true;
+    script.dataset.cmGoogleMaps = "true";
+    script.onload = () => resolve(window.google);
+    script.onerror = () => reject(new Error("Google Maps failed to load"));
+    document.head.appendChild(script);
+  });
+  return window.__cmGoogleMapsPromise;
+}
+
+type LatLng = { lat: number; lng: number };
+
+function pointFrom(value: Point | undefined | null): LatLng | null {
+  const lat = Number(value?.lat);
+  const lng = Number(value?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+function maskVehicle(value?: string | null) {
+  const text = String(value ?? "").trim();
+  if (!text) return "Vehicle verified";
+  return text.length > 4 ? `${text.slice(0, 2)}••••${text.slice(-2)}` : "••••";
+}
+
+function fallbackAvatar() {
+  return "/delivery-partner-bike.png";
+}
+
+function createRiderOverlay(google: any, options: {
+  position: LatLng;
+  map: any;
+  photoUrl?: string;
+  name: string;
+  status: string;
+  heading: number;
+  onClick: () => void;
+}) {
+  class RiderOverlay extends google.maps.OverlayView {
+    div?: HTMLButtonElement;
+    position = options.position;
+    heading = options.heading;
+    status = options.status;
+    photoUrl = options.photoUrl;
+
+    onAdd() {
+      const div = document.createElement("button");
+      div.type = "button";
+      div.className = "cm-rider-marker";
+      div.setAttribute("aria-label", `Open ${options.name} rider card`);
+      div.innerHTML = markerHtml(this.photoUrl, this.status, this.heading);
+      div.addEventListener("click", options.onClick);
+      this.div = div;
+      this.getPanes().overlayMouseTarget.appendChild(div);
+    }
+
+    draw() {
+      if (!this.div) return;
+      const projection = this.getProjection();
+      const point = projection.fromLatLngToDivPixel(new google.maps.LatLng(this.position.lat, this.position.lng));
+      if (!point) return;
+      this.div.style.transform = `translate(${point.x - 34}px, ${point.y - 56}px)`;
+      this.div.innerHTML = markerHtml(this.photoUrl, this.status, this.heading);
+    }
+
+    onRemove() {
+      this.div?.remove();
+    }
+
+    update(next: { position: LatLng; heading: number; status: string; photoUrl?: string }) {
+      this.position = next.position;
+      this.heading = next.heading;
+      this.status = next.status;
+      this.photoUrl = next.photoUrl;
+      this.draw();
+    }
+  }
+
+  const overlay = new RiderOverlay();
+  overlay.setMap(options.map);
+  return overlay;
+}
+
+function markerHtml(photoUrl: string | undefined, status: string, heading: number) {
+  const ring = STATUS_RING[status] ?? STATUS_RING.waiting;
+  const safePhoto = photoUrl || fallbackAvatar();
+  return `
+    <span class="cm-rider-photo" style="border-color:${ring}">
+      <img src="${safePhoto}" alt="" onerror="this.src='${fallbackAvatar()}'" />
+    </span>
+    <span class="cm-rider-bike" style="transform:translate(-50%, 0) rotate(${heading}deg)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 17.5A2.5 2.5 0 1 1 5 12.5a2.5 2.5 0 0 1 0 5Zm14 0a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5ZM7.5 14h5.2l-1.6-3H8.7l-1.2 3Zm9.1-1.5h1.1l-2.2-4.4h-2.8v1.6h1.8l.7 1.4-2.5 2.9h2.1l1.8-1.5ZM5 16.2a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4Zm14 0a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4Z"/></svg>
+    </span>
+  `;
+}
+
 export function LiveDeliveryMap({ tracking, compact = false, role = "customer", className = "" }: LiveDeliveryMapProps) {
-  const status = tracking?.status ?? "confirmed";
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const mapInstance = useRef<any>(null);
+  const directionRenderer = useRef<any>(null);
+  const trafficLayer = useRef<any>(null);
+  const riderOverlay = useRef<any>(null);
+  const staticMarkers = useRef<any[]>([]);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
+  const [riderCardOpen, setRiderCardOpen] = useState(false);
+  const [mapType, setMapType] = useState<"roadmap" | "satellite">("roadmap");
+  const [trafficOn, setTrafficOn] = useState(false);
+  const [liveGps, setLiveGps] = useState<any>(null);
+
+  const status = String(tracking?.status ?? "pending");
   const isDelivered = status === "delivered";
   const beforePickup = ["pending", "confirmed", "preparing", "packed"].includes(status);
-  const afterPickup = ["picked_up", "on_the_way", "arriving", "delivered"].includes(status);
-  const etaMins = isDelivered ? 0 : Math.min(40, Math.max(3, Number(tracking?.estimatedMins ?? 40)));
-  const distanceKm = Number(tracking?.distanceKm ?? 3.2);
-  const store: Point = tracking?.storeLocation ?? { lat: 22.5726, lng: 88.3639, label: "Pickup store", address: "Seller pickup point" };
-  const customer: Point = tracking?.customerLocation ?? { lat: 22.6006, lng: 88.3949, label: "Customer", address: "Delivery address" };
-  const rawPartner = tracking?.partnerLocation ?? tracking?.deliveryPartner?.location ?? { lat: 22.579, lng: 88.369 };
+  const storeLocation = tracking?.storeLocation as Point | undefined;
+  const customerLocation = tracking?.customerLocation as Point | undefined;
+  const rawPartner = (liveGps ?? tracking?.partnerLocation ?? tracking?.deliveryPartner?.location) as Point | undefined;
   const partnerInfo = tracking?.deliveryPartner ?? {};
-  const lastLocationUpdatedAt = tracking?.lastLocationUpdatedAt ?? rawPartner?.updatedAt ?? partnerInfo?.location?.updatedAt;
-  const lastUpdatedMs = lastLocationUpdatedAt ? Date.now() - new Date(lastLocationUpdatedAt).getTime() : null;
-  const isStale = !isDelivered && lastUpdatedMs !== null && lastUpdatedMs > 30000;
-  const lowAccuracy = !isDelivered && Number(tracking?.locationAccuracy ?? rawPartner?.accuracy ?? 0) > 80;
-  const locationNote = isDelivered
-    ? "Tracking stopped after delivery"
-    : isStale
-      ? "Rider location temporarily unavailable"
-      : lastUpdatedMs !== null
-        ? `Location updated ${Math.max(0, Math.round(lastUpdatedMs / 1000))} seconds ago`
-        : "Waiting for rider GPS";
-  const [animatedPartner, setAnimatedPartner] = useState({ lat: Number(rawPartner.lat), lng: Number(rawPartner.lng) });
-  const [roadRoute, setRoadRoute] = useState<Point[]>([]);
-  const [routeMode, setRouteMode] = useState<"road" | "fallback" | "loading">("loading");
-  const [zoomLevel, setZoomLevel] = useState(compact ? 14 : 15);
-  const [mapMode, setMapMode] = useState<"standard" | "satellite">("standard");
-  const [riderCardOpen, setRiderCardOpen] = useState(false);
-
-  const partner = animatedPartner;
+  const store = pointFrom(storeLocation);
+  const customer = pointFrom(customerLocation);
+  const partner = pointFrom(rawPartner);
+  const origin = isDelivered ? null : partner;
   const destination = beforePickup ? store : customer;
-  const nextAction = isDelivered
-    ? "Completed"
-    : beforePickup
-      ? "Go to pickup store"
-      : status === "picked_up"
-        ? "Start customer delivery"
-        : status === "arriving"
-          ? "Collect customer OTP"
-          : "Ride to customer";
-  const title = isDelivered ? "Order delivered" : beforePickup ? "Partner is heading to seller" : `Arriving in ${etaMins} mins`;
-  const heightClass = compact ? "h-[310px] sm:h-[340px]" : "h-[76dvh] min-h-[560px] sm:h-[700px]";
-  const mapHeight = compact ? 340 : 720;
-  const mapWidth = 820;
-  const zoom = zoomLevel;
+  const etaMins = isDelivered ? 0 : Math.max(1, Number(tracking?.estimatedMins ?? 40));
+  const distanceKm = Number(tracking?.distanceKm ?? 0);
+  const speed = Number(tracking?.speed ?? rawPartner?.["speed"] ?? partnerInfo?.location?.speed ?? 0);
+  const accuracy = Number(tracking?.locationAccuracy ?? rawPartner?.["accuracy"] ?? partnerInfo?.location?.accuracy ?? 0);
+  const heading = Number(tracking?.riderHeading ?? rawPartner?.["heading"] ?? partnerInfo?.location?.heading ?? 0);
+  const riderStatus = isDelivered ? "delivered" : status === "arriving" ? "arriving" : ["picked_up", "on_the_way"].includes(status) ? "delivering" : partnerInfo?.status ?? "waiting";
+  const lastUpdated = tracking?.lastLocationUpdatedAt ?? rawPartner?.["updatedAt"] ?? partnerInfo?.location?.updatedAt;
+  const title = isDelivered ? "Order delivered" : beforePickup ? "Rider heading to seller" : `Arriving in ${etaMins} mins`;
+  const googleKeyMissing = !(getEnv("MAPS_API_KEY") || getEnv("GOOGLE_MAPS_API_KEY"));
+  const routeUnavailable = !origin || !destination;
+
+  const boundsPoints = useMemo(() => [store, customer, partner].filter(Boolean) as LatLng[], [store?.lat, store?.lng, customer?.lat, customer?.lng, partner?.lat, partner?.lng]);
 
   useEffect(() => {
-    const target = { lat: Number(rawPartner.lat), lng: Number(rawPartner.lng) };
-    if (!Number.isFinite(target.lat) || !Number.isFinite(target.lng)) return;
-    let frame = 0;
-    const start = animatedPartner;
-    const steps = 20;
-    const timer = window.setInterval(() => {
-      frame += 1;
-      const ease = 1 - Math.pow(1 - frame / steps, 3);
-      setAnimatedPartner({
-        lat: start.lat + (target.lat - start.lat) * ease,
-        lng: start.lng + (target.lng - start.lng) * ease,
+    const orderId = tracking?.orderId;
+    if (!orderId || isDelivered) return;
+    const websocketUrl = getEnv("WEBSOCKET_URL") || getEnv("API_URL") || window.location.origin;
+    if (!sharedSocket) {
+      sharedSocket = io(websocketUrl, {
+        transports: ["websocket", "polling"],
+        withCredentials: true,
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
       });
-      if (frame >= steps) window.clearInterval(timer);
-    }, 42);
-    return () => window.clearInterval(timer);
-  }, [rawPartner.lat, rawPartner.lng]);
-
-  const activeWaypoints = useMemo(() => {
-    const start = isDelivered ? customer : { lat: Number(rawPartner.lat), lng: Number(rawPartner.lng) };
-    const end = isDelivered ? customer : destination;
-    return [start, end].filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-  }, [customer, destination, isDelivered, rawPartner.lat, rawPartner.lng]);
+    }
+    sharedSocket.emit("join:order", orderId);
+    const onTracking = (payload: any) => {
+      if (Number(payload?.orderId) === Number(orderId)) setLiveGps(payload);
+    };
+    sharedSocket.on("delivery:tracking", onTracking);
+    return () => {
+      sharedSocket?.off("delivery:tracking", onTracking);
+    };
+  }, [tracking?.orderId, isDelivered]);
 
   useEffect(() => {
-    if (activeWaypoints.length < 2) {
-      setRoadRoute(activeWaypoints);
-      setRouteMode("fallback");
+    if (!mapRef.current || googleKeyMissing) {
+      if (googleKeyMissing) setError("Google Maps API key missing. Set VITE_MAPS_API_KEY / MAPS_API_KEY in .env.");
       return;
     }
-    const controller = new AbortController();
-    const coords = activeWaypoints.map((point) => `${point.lng.toFixed(6)},${point.lat.toFixed(6)}`).join(";");
-    const cacheKey = `${status}:${coords}`;
-    const cachedRoute = routeCache.get(cacheKey);
-    if (cachedRoute?.length) {
-      setRoadRoute(cachedRoute);
-      setRouteMode("road");
-      return;
-    }
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`;
-    setRouteMode("loading");
-    window.fetch(url, { signal: controller.signal })
-      .then((res) => res.ok ? res.json() : Promise.reject(new Error("Route unavailable")))
-      .then((data) => {
-        const coordinates = data?.routes?.[0]?.geometry?.coordinates;
-        if (!Array.isArray(coordinates) || !coordinates.length) throw new Error("Route unavailable");
-        const nextRoute = coordinates.map(([lng, lat]: [number, number]) => ({ lat, lng }));
-        routeCache.set(cacheKey, nextRoute);
-        setRoadRoute(nextRoute);
-        setRouteMode("road");
+
+    let cancelled = false;
+    loadGoogleMaps()
+      .then((google) => {
+        if (cancelled || !mapRef.current) return;
+        const center = partner ?? store ?? customer;
+        if (!center) {
+          setError("Live map needs a real customer, store or rider GPS coordinate.");
+          return;
+        }
+        mapInstance.current = new google.maps.Map(mapRef.current, {
+          center,
+          zoom: compact ? 14 : 15,
+          mapTypeId: mapType,
+          mapId: getEnv("MAP_STYLE_ID") || undefined,
+          disableDefaultUI: true,
+          clickableIcons: false,
+          gestureHandling: "greedy",
+          backgroundColor: "#f8fafc",
+          styles: getEnv("MAP_STYLE_ID") ? undefined : CLEAN_MAP_STYLE,
+        });
+        directionRenderer.current = new google.maps.DirectionsRenderer({
+          map: mapInstance.current,
+          suppressMarkers: true,
+          preserveViewport: true,
+          polylineOptions: {
+            strokeColor: "#0757ee",
+            strokeOpacity: 0.95,
+            strokeWeight: compact ? 5 : 7,
+          },
+        });
+        trafficLayer.current = new google.maps.TrafficLayer();
+        setReady(true);
+        setError("");
       })
-      .catch(() => {
-        setRoadRoute(activeWaypoints);
-        setRouteMode("fallback");
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Google Maps failed to load");
       });
-    return () => controller.abort();
-  }, [activeWaypoints, status]);
+    return () => { cancelled = true; };
+  }, [compact, googleKeyMissing]);
 
-  const map = useMemo(() => {
-    const points = [
-      ...roadRoute,
-      store,
-      customer,
-      { lat: partner.lat, lng: partner.lng },
-    ];
-    return buildRealMap({ points, mapWidth, mapHeight, zoom });
-  }, [customer, mapHeight, partner.lat, partner.lng, roadRoute, store, zoom]);
+  useEffect(() => {
+    if (!ready || !mapInstance.current || !window.google?.maps) return;
+    mapInstance.current.setMapTypeId(mapType);
+  }, [mapType, ready]);
 
-  const storePoint = map.point(Number(store.lat), Number(store.lng));
-  const customerPoint = map.point(Number(customer.lat), Number(customer.lng));
-  const partnerPoint = map.point(Number(partner.lat), Number(partner.lng));
-  const destinationPoint = map.point(Number(destination.lat), Number(destination.lng));
-  const partnerBearing = Number.isFinite(Number(tracking?.riderHeading ?? rawPartner?.heading))
-    ? Number(tracking?.riderHeading ?? rawPartner?.heading)
-    : bearingDegrees(partner, destination);
-  const riderStatus = isDelivered
-    ? "delivered"
-    : status === "arriving"
-      ? "arriving"
-      : ["picked_up", "on_the_way"].includes(status)
-        ? "delivering"
-        : partnerInfo?.status ?? "waiting";
-  const routePoints = (roadRoute.length ? roadRoute : activeWaypoints).map((point) => map.point(point.lat, point.lng)).map((point) => `${point.x},${point.y}`).join(" ");
-  const ghostRoutePoints = [store, customer].map((point) => map.point(point.lat, point.lng)).map((point) => `${point.x},${point.y}`).join(" ");
-  const pickupDirectionUrl = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${Number(partner.lat).toFixed(6)}%2C${Number(partner.lng).toFixed(6)}%3B${Number(store.lat).toFixed(6)}%2C${Number(store.lng).toFixed(6)}`;
-  const dropDirectionUrl = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${Number(partner.lat).toFixed(6)}%2C${Number(partner.lng).toFixed(6)}%3B${Number(customer.lat).toFixed(6)}%2C${Number(customer.lng).toFixed(6)}`;
+  useEffect(() => {
+    if (!ready || !trafficLayer.current || !mapInstance.current) return;
+    trafficLayer.current.setMap(trafficOn ? mapInstance.current : null);
+  }, [trafficOn, ready]);
+
+  useEffect(() => {
+    if (!ready || !mapInstance.current || !window.google?.maps) return;
+    const google = window.google;
+    staticMarkers.current.forEach((marker) => marker.setMap(null));
+    staticMarkers.current = [];
+
+    if (store) staticMarkers.current.push(new google.maps.Marker({
+      position: store,
+      map: mapInstance.current,
+      title: storeLocation?.label ?? "Pickup store",
+      icon: svgIcon(storeMarkerSvg(), 42, 42),
+    }));
+    if (customer) staticMarkers.current.push(new google.maps.Marker({
+      position: customer,
+      map: mapInstance.current,
+      title: customerLocation?.label ?? "Delivery address",
+      icon: svgIcon(customerMarkerSvg(), 42, 42),
+    }));
+
+    if (partner && !isDelivered) {
+      const photoUrl = partnerInfo.publicProfilePhotoUrl || partnerInfo.photoUrl || partnerInfo.profilePhotoUrl;
+      if (!riderOverlay.current) {
+        riderOverlay.current = createRiderOverlay(google, {
+          position: partner,
+          map: mapInstance.current,
+          photoUrl,
+          name: partnerInfo.name ?? "Delivery partner",
+          status: riderStatus,
+          heading,
+          onClick: () => setRiderCardOpen((value) => !value),
+        });
+      } else {
+        riderOverlay.current.update({ position: partner, photoUrl, status: riderStatus, heading });
+      }
+    } else {
+      riderOverlay.current?.setMap(null);
+      riderOverlay.current = null;
+    }
+
+    if (boundsPoints.length) {
+      const bounds = new google.maps.LatLngBounds();
+      boundsPoints.forEach((point) => bounds.extend(point));
+      mapInstance.current.fitBounds(bounds, compact ? 48 : 84);
+    }
+  }, [ready, store?.lat, store?.lng, customer?.lat, customer?.lng, partner?.lat, partner?.lng, isDelivered, heading, riderStatus, boundsPoints.length]);
+
+  useEffect(() => {
+    if (!ready || !window.google?.maps || !directionRenderer.current) return;
+    if (routeUnavailable || isDelivered) {
+      directionRenderer.current.setDirections({ routes: [] });
+      return;
+    }
+    const google = window.google;
+    const service = new google.maps.DirectionsService();
+    service.route({
+      origin,
+      destination,
+      travelMode: google.maps.TravelMode.DRIVING,
+      drivingOptions: { departureTime: new Date(), trafficModel: google.maps.TrafficModel.BEST_GUESS },
+      provideRouteAlternatives: false,
+    }, (result: any, routeStatus: string) => {
+      if (routeStatus === "OK" && result) {
+        directionRenderer.current.setDirections(result);
+        setError("");
+      } else {
+        directionRenderer.current.setDirections({ routes: [] });
+        setError(`Google Directions unavailable: ${routeStatus}. No fake route is shown.`);
+      }
+    });
+  }, [ready, origin?.lat, origin?.lng, destination?.lat, destination?.lng, status, routeUnavailable, isDelivered]);
 
   return (
     <div className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${className}`}>
       <style>{`
-        @keyframes cm-pulse { 0% { transform: scale(.72); opacity: .5; } 100% { transform: scale(2.25); opacity: 0; } }
-        @keyframes cm-bike { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-3px) rotate(4deg); } }
-        @keyframes cm-flow { to { stroke-dashoffset: -56; } }
-        .cm-pulse { animation: cm-pulse 2s ease-out infinite; transform-origin: center; }
-        .cm-bike { animation: cm-bike 1.8s ease-in-out infinite; }
-        .cm-flow { animation: cm-flow 1.25s linear infinite; }
+        .cm-rider-marker { position:absolute; z-index:5; height:78px; width:68px; border:0; background:transparent; padding:0; cursor:pointer; }
+        .cm-rider-photo { position:absolute; left:50%; top:0; display:block; height:48px; width:48px; transform:translateX(-50%); overflow:hidden; border:4px solid #22c55e; border-radius:999px; background:#fff; box-shadow:0 12px 24px rgba(15,23,42,.28); }
+        .cm-rider-photo img { height:100%; width:100%; object-fit:cover; }
+        .cm-rider-bike { position:absolute; left:50%; bottom:0; display:flex; height:34px; width:34px; align-items:center; justify-content:center; border-radius:999px; background:#0757ee; color:white; box-shadow:0 10px 20px rgba(7,87,238,.35); transform-origin:center; transition:transform .45s ease; }
+        .cm-rider-bike svg { height:23px; width:23px; }
       `}</style>
 
-      <div className={`relative overflow-hidden bg-[#17251d] ${heightClass}`}>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_40%_20%,rgba(34,197,94,.25),transparent_28%),linear-gradient(180deg,rgba(2,6,23,.25),rgba(2,6,23,.72))]" />
-        <div
-          className="absolute left-1/2 top-[-5%] h-[112%] overflow-hidden rounded-[28px] shadow-2xl"
-          style={{
-            width: mapWidth,
-            transform: `translateX(-50%) perspective(1000px) rotateX(${compact ? 11 : 15}deg) scale(${compact ? 1.06 : 1.12})`,
-            transformOrigin: "center center",
-          }}
-        >
-          {map.tiles.map((tile) => (
-            <img
-              key={`${tile.x}-${tile.y}`}
-              src={mapMode === "satellite" ? `${SATELLITE_TILE_URL}/${zoom}/${tile.y}/${tile.x}` : `${STANDARD_TILE_URL}/${zoom}/${tile.x}/${tile.y}.png`}
-              alt=""
-              className="absolute h-64 w-64 select-none"
-              draggable={false}
-              style={{ left: tile.left, top: tile.top }}
-            />
-          ))}
-          <div className={`absolute inset-0 ${mapMode === "satellite" ? "bg-[linear-gradient(180deg,rgba(15,23,42,.08),rgba(15,23,42,.38)),radial-gradient(circle_at_center,transparent,rgba(2,6,23,.4))]" : "bg-[linear-gradient(180deg,rgba(255,255,255,.04),rgba(15,23,42,.12))]"}`} />
+      <div className={`relative bg-slate-100 ${compact ? "h-[330px]" : "h-[76dvh] min-h-[560px] sm:h-[700px]"}`}>
+        <div ref={mapRef} className="h-full w-full" />
 
-          <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${mapWidth} ${mapHeight}`} preserveAspectRatio="none" aria-hidden="true">
-            <polyline points={ghostRoutePoints} fill="none" stroke="#111827" strokeWidth={compact ? 3 : 4} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="5 14" opacity="0.18" />
-            <polyline points={routePoints} fill="none" stroke="#0f172a" strokeWidth={compact ? 22 : 30} strokeLinecap="round" strokeLinejoin="round" opacity="0.34" />
-            <polyline points={routePoints} fill="none" stroke="#ffffff" strokeWidth={compact ? 16 : 22} strokeLinecap="round" strokeLinejoin="round" opacity="0.92" />
-            <polyline className="cm-flow" points={routePoints} fill="none" stroke={beforePickup ? "#16a34a" : "#2563eb"} strokeWidth={compact ? 6 : 8} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="18 10" />
-          </svg>
-
-          <DestinationHalo x={destinationPoint.x} y={destinationPoint.y} />
-          <MapMarker x={storePoint.x} y={storePoint.y} icon="store" active={beforePickup} label="Pickup" compact={compact} />
-          <MapMarker x={customerPoint.x} y={customerPoint.y} icon="home" active={afterPickup} label="Drop" compact={compact} />
-          {!isDelivered && (
-            <PartnerMarker
-              x={partnerPoint.x}
-              y={partnerPoint.y}
-              compact={compact}
-              bearing={partnerBearing}
-              partnerInfo={partnerInfo}
-              status={riderStatus}
-              onClick={() => setRiderCardOpen((open) => !open)}
-            />
-          )}
-          {!isDelivered && riderCardOpen && (
-            <RiderPopup
-              x={partnerPoint.x}
-              y={partnerPoint.y}
-              partnerInfo={partnerInfo}
-              status={riderStatus}
-              etaMins={etaMins}
-              compact={compact}
-              onClose={() => setRiderCardOpen(false)}
-            />
-          )}
-
-          <div className="absolute bottom-2 right-2 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white shadow">{mapMode === "satellite" ? "Satellite" : "OpenStreetMap roads"}</div>
-        </div>
-
-        <div className="absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-2">
-          <div className="max-w-[72%] rounded-2xl bg-white/95 p-3 shadow-lg backdrop-blur">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{role === "admin" ? "Admin live monitor" : role === "partner" ? "Partner navigation" : "Live delivery"}</p>
-            <h2 className="mt-0.5 text-base font-bold leading-tight">{title}</h2>
-            <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{destination.address ?? destination.label ?? "Destination"}</p>
-          </div>
-          <Badge className={routeMode === "road" ? "bg-blue-100 text-blue-700 hover:bg-blue-100" : routeMode === "loading" ? "bg-gray-100 text-gray-700 hover:bg-gray-100" : "bg-amber-100 text-amber-700 hover:bg-amber-100"}>
-            {routeMode === "road" ? "Road route" : routeMode === "loading" ? "Routing" : "Fallback"}
-          </Badge>
-        </div>
-
-        <div className="absolute right-3 top-20 z-10 flex flex-col gap-2">
-          <MapButton icon={ZoomIn} label="Zoom in" onClick={() => setZoomLevel((value) => Math.min(17, value + 1))} />
-          <MapButton icon={ZoomOut} label="Zoom out" onClick={() => setZoomLevel((value) => Math.max(12, value - 1))} />
-          <MapButton icon={Crosshair} label="Recenter" active onClick={() => setZoomLevel(compact ? 14 : 15)} />
-        </div>
-        <div className="absolute left-3 top-24 z-10 flex overflow-hidden rounded-full border bg-white/95 p-1 text-xs font-semibold shadow-lg backdrop-blur">
-          <button type="button" className={`rounded-full px-3 py-1 ${mapMode === "standard" ? "bg-primary text-white" : "text-gray-700"}`} onClick={() => setMapMode("standard")}>Road</button>
-          <button type="button" className={`rounded-full px-3 py-1 ${mapMode === "satellite" ? "bg-primary text-white" : "text-gray-700"}`} onClick={() => setMapMode("satellite")}>Satellite</button>
-        </div>
-
-        {!compact && (
-          <div className="absolute bottom-3 left-3 right-3 z-10 rounded-3xl bg-white p-4 shadow-2xl">
-            <div className="mb-3 grid grid-cols-3 gap-2 text-center text-xs font-semibold">
-              <FlowStep active={beforePickup} done={afterPickup || isDelivered} label="Pickup" />
-              <FlowStep active={afterPickup && !isDelivered} done={isDelivered} label="On trip" />
-              <FlowStep active={status === "arriving"} done={isDelivered} label="OTP handover" />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10">
-                {partnerInfo.photoUrl ? <img src={partnerInfo.photoUrl} alt={partnerInfo.name} className="h-full w-full object-cover" /> : <Bike className="h-7 w-7 text-primary" />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-bold">{partnerInfo.name ?? "Delivery partner assigning"}</p>
-                <p className="truncate text-xs capitalize text-muted-foreground">{partnerInfo.vehicleType ?? "bike"} {partnerInfo.vehicleNumber ? `- ${partnerInfo.vehicleNumber}` : ""}</p>
-                <p className="mt-1 text-xs font-semibold text-primary">{nextAction}</p>
-              </div>
-              {partnerInfo.phone && (
-                <a href={`tel:${partnerInfo.phone}`} className="flex h-10 w-10 items-center justify-center rounded-full border bg-white text-primary shadow-sm">
-                  <Phone className="h-4 w-4" />
-                </a>
-              )}
-            </div>
-
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <MapStat icon={Clock} label="ETA" value={isDelivered ? "Done" : `${etaMins} min`} />
-              <MapStat icon={Navigation} label="Distance" value={`${distanceKm.toFixed(1)} km`} />
-              <MapStat icon={ShieldCheck} label={isDelivered ? "OTP" : "OTP"} value={isDelivered ? "Cleared" : tracking?.deliveryOtp ?? "----"} />
-            </div>
-            <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${isStale || lowAccuracy ? "border-amber-200 bg-amber-50 text-amber-700" : "bg-gray-50 text-muted-foreground"}`}>
-              {locationNote}{lowAccuracy ? " · low GPS accuracy" : ""}
-            </div>
+        {(error || routeUnavailable) && (
+          <div className="absolute inset-x-3 top-3 z-20 rounded-2xl border border-amber-200 bg-white/95 p-3 text-sm shadow-xl backdrop-blur">
+            <p className="font-bold text-amber-700">{error || "Waiting for real GPS coordinates"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Google map never shows fake route. Seller GPS, customer pin and rider live GPS are required.
+            </p>
           </div>
         )}
-      </div>
 
-      {compact ? (
-        <div className="grid grid-cols-3 gap-2 border-t bg-white p-3">
-          <MapStat icon={Clock} label="ETA" value={isDelivered ? "Done" : `${etaMins} min`} />
-          <MapStat icon={Package} label="Status" value={STEP_LABELS[status] ?? status} />
-          <MapStat icon={Navigation} label="Left" value={`${distanceKm.toFixed(1)} km`} />
-          <div className={`col-span-3 rounded-xl border px-3 py-2 text-xs ${isStale || lowAccuracy ? "border-amber-200 bg-amber-50 text-amber-700" : "bg-gray-50 text-muted-foreground"}`}>
-            {locationNote}{lowAccuracy ? " · low GPS accuracy" : ""}
+        <div className="absolute bottom-3 left-3 right-3 z-10 rounded-3xl bg-white/95 p-4 shadow-2xl backdrop-blur">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Badge className="mb-2 bg-blue-100 text-blue-700 hover:bg-blue-100">
+                {role === "admin" ? "Admin live map" : role === "partner" ? "Partner navigation" : "Customer live tracking"}
+              </Badge>
+              <h2 className="text-lg font-black">{title}</h2>
+              <p className="text-xs text-muted-foreground">
+                {lastUpdated ? `GPS updated ${new Date(lastUpdated).toLocaleTimeString("en-IN")}` : "Waiting for rider GPS"}
+                {accuracy ? ` · accuracy ${Math.round(accuracy)}m` : ""}
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <MapStat icon={Clock} label="ETA" value={isDelivered ? "Done" : `${etaMins} min`} />
+              <MapStat icon={Navigation} label="Distance" value={distanceKm ? `${distanceKm.toFixed(1)} km` : "Live"} />
+              <MapStat icon={Route} label="Speed" value={speed ? `${Math.round(speed)} km/h` : "GPS"} />
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setMapType((value) => value === "roadmap" ? "satellite" : "roadmap")}>
+              <MapPin className="mr-2 h-4 w-4" /> {mapType === "roadmap" ? "Satellite" : "Road"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setTrafficOn((value) => !value)}>
+              <Navigation className="mr-2 h-4 w-4" /> {trafficOn ? "Hide traffic" : "Traffic"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => {
+              if (!mapInstance.current || !window.google?.maps || !boundsPoints.length) return;
+              const bounds = new window.google.maps.LatLngBounds();
+              boundsPoints.forEach((point) => bounds.extend(point));
+              mapInstance.current.fitBounds(bounds, compact ? 48 : 84);
+            }}>
+              <Crosshair className="mr-2 h-4 w-4" /> Recenter
+            </Button>
+            {origin && destination && (
+              <a href={`https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&travelmode=driving`} target="_blank" rel="noreferrer">
+                <Button size="sm" className="bg-[#0757ee] hover:bg-[#0648c7]">
+                  <Navigation className="mr-2 h-4 w-4" /> Directions
+                </Button>
+              </a>
+            )}
           </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2 border-t p-3">
-          <a href={pickupDirectionUrl} target="_blank" rel="noreferrer" className="rounded-xl border bg-white px-3 py-2 text-center text-sm font-semibold text-primary hover:bg-blue-50">
-            Pickup directions
-          </a>
-          <a href={dropDirectionUrl} target="_blank" rel="noreferrer" className="rounded-xl border bg-white px-3 py-2 text-center text-sm font-semibold text-primary hover:bg-blue-50">
-            Drop directions
-          </a>
-        </div>
-      )}
-    </div>
-  );
-}
 
-function MapButton({ icon: Icon, label, active = false, onClick }: { icon: any; label: string; active?: boolean; onClick?: () => void }) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur ${active ? "border-primary bg-white text-primary" : "border-white/40 bg-white/90 text-gray-700"}`}
-    >
-      <Icon className="h-4 w-4" />
-    </button>
-  );
-}
-
-function project(lat: number, lng: number, zoom: number) {
-  const sinLat = Math.sin((lat * Math.PI) / 180);
-  const scale = 256 * 2 ** zoom;
-  return {
-    x: ((lng + 180) / 360) * scale,
-    y: (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale,
-  };
-}
-
-function buildRealMap({ points, mapWidth, mapHeight, zoom }: { points: Point[]; mapWidth: number; mapHeight: number; zoom: number }) {
-  const validPoints = points.filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-  const centerLat = validPoints.reduce((sum, point) => sum + point.lat, 0) / Math.max(1, validPoints.length);
-  const centerLng = validPoints.reduce((sum, point) => sum + point.lng, 0) / Math.max(1, validPoints.length);
-  const center = project(centerLat || 22.5726, centerLng || 88.3639, zoom);
-  const topLeft = { x: center.x - mapWidth / 2, y: center.y - mapHeight / 2 };
-  const startX = Math.floor(topLeft.x / 256) - 1;
-  const endX = Math.floor((topLeft.x + mapWidth) / 256) + 1;
-  const startY = Math.floor(topLeft.y / 256) - 1;
-  const endY = Math.floor((topLeft.y + mapHeight) / 256) + 1;
-  const maxTile = 2 ** zoom;
-  const tiles = [];
-
-  for (let x = startX; x <= endX; x += 1) {
-    for (let y = startY; y <= endY; y += 1) {
-      if (y < 0 || y >= maxTile) continue;
-      const wrappedX = ((x % maxTile) + maxTile) % maxTile;
-      tiles.push({ x: wrappedX, y, left: x * 256 - topLeft.x, top: y * 256 - topLeft.y });
-    }
-  }
-
-  return {
-    tiles,
-    point: (lat: number, lng: number) => {
-      const pixel = project(lat, lng, zoom);
-      return { x: pixel.x - topLeft.x, y: pixel.y - topLeft.y };
-    },
-  };
-}
-
-function DestinationHalo({ x, y }: { x: number; y: number }) {
-  return (
-    <div className="absolute h-20 w-20 rounded-full border-2 border-primary/40 bg-primary/10" style={{ left: x - 40, top: y - 40 }}>
-      <div className="cm-pulse absolute inset-0 rounded-full bg-primary/30" />
-    </div>
-  );
-}
-
-function PartnerMarker({
-  x,
-  y,
-  compact,
-  bearing,
-  partnerInfo,
-  status,
-  onClick,
-}: {
-  x: number;
-  y: number;
-  compact: boolean;
-  bearing: number;
-  partnerInfo: any;
-  status: string;
-  onClick: () => void;
-}) {
-  const size = compact ? 58 : 74;
-  const avatarSize = compact ? 34 : 42;
-  const ring = riderRingClass(status);
-  return (
-    <button
-      type="button"
-      aria-label="Open delivery partner card"
-      className="absolute rounded-full text-left transition-[left,top] duration-500 ease-out"
-      style={{ left: x - size / 2, top: y - size / 2 - (compact ? 10 : 16) }}
-      onClick={onClick}
-    >
-      <div className="cm-pulse absolute inset-0 rounded-full bg-primary/45" />
-      <div className="relative" style={{ width: size, height: size + avatarSize / 2 }}>
-        <div
-          className={`absolute left-1/2 z-10 -translate-x-1/2 overflow-hidden rounded-full bg-white shadow-xl ring-4 ${ring}`}
-          style={{ width: avatarSize, height: avatarSize, top: 0 }}
-        >
-          <RiderPhoto src={partnerInfo?.photoUrl} name={partnerInfo?.name} />
-        </div>
-        <div
-          className="absolute bottom-0 left-1/2 overflow-hidden rounded-full bg-white/95 shadow-2xl ring-4 ring-white/90"
-          style={{ width: size, height: size, transform: "translateX(-50%)" }}
-        >
-          <div className="h-full w-full" style={{ transform: `rotate(${bearing}deg)` }}>
-            <img src={DELIVERY_BOY_BIKE_IMAGE} alt="Delivery bike" className="cm-bike h-full w-full scale-125 object-cover" />
-          </div>
-        </div>
+        {riderCardOpen && !isDelivered && (
+          <RiderCard
+            partnerInfo={partnerInfo}
+            status={riderStatus}
+            etaMins={etaMins}
+            onClose={() => setRiderCardOpen(false)}
+          />
+        )}
       </div>
-      {!compact && <div className="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-[11px] font-bold capitalize shadow">{status}</div>}
-    </button>
-  );
-}
-
-function RiderPopup({
-  x,
-  y,
-  partnerInfo,
-  status,
-  etaMins,
-  compact,
-  onClose,
-}: {
-  x: number;
-  y: number;
-  partnerInfo: any;
-  status: string;
-  etaMins: number;
-  compact: boolean;
-  onClose: () => void;
-}) {
-  const left = Math.min(Math.max(12, x - 132), 820 - 276);
-  const top = Math.max(12, y - (compact ? 180 : 220));
-  const vehicleNumber = maskVehicleNumber(partnerInfo?.vehicleNumber);
-  return (
-    <div className="absolute z-20 w-[264px] rounded-2xl border bg-white p-3 shadow-2xl" style={{ left, top }}>
-      <button type="button" className="absolute right-2 top-2 rounded-full px-2 text-sm text-muted-foreground hover:bg-gray-100" onClick={onClose} aria-label="Close rider card">x</button>
-      <div className="flex items-center gap-3 pr-6">
-        <div className={`h-14 w-14 overflow-hidden rounded-full bg-gray-100 ring-4 ${riderRingClass(status)}`}>
-          <RiderPhoto src={partnerInfo?.photoUrl} name={partnerInfo?.name} />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate font-bold">{partnerInfo?.name ?? "Delivery partner"}</p>
-          <p className="text-xs text-muted-foreground">{partnerInfo?.partnerId ?? (partnerInfo?.id ? `CM-DP-${String(partnerInfo.id).padStart(5, "0")}` : "Verified rider")}</p>
-          <p className="text-xs font-semibold capitalize text-primary">{status}</p>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        <InfoPill label="Rating" value={partnerInfo?.rating ? `${Number(partnerInfo.rating).toFixed(1)} star` : "4.8 star"} />
-        <InfoPill label="ETA" value={`${etaMins} min`} />
-        <InfoPill label="Vehicle" value={partnerInfo?.vehicleType ?? "Bike"} />
-        <InfoPill label="Number" value={vehicleNumber} />
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <a href={partnerInfo?.phone ? `tel:${partnerInfo.phone}` : undefined} className="flex items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-primary">
-          <Phone className="mr-2 h-4 w-4" /> Call
-        </a>
-        <a href={partnerInfo?.phone ? `sms:${partnerInfo.phone}` : undefined} className="flex items-center justify-center rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-primary">
-          <MessageCircle className="mr-2 h-4 w-4" /> Chat
-        </a>
-      </div>
-    </div>
-  );
-}
-
-function RiderPhoto({ src, name }: { src?: string | null; name?: string }) {
-  const [broken, setBroken] = useState(false);
-  if (src && !broken) {
-    return <img src={src} alt={name ? `${name} verified profile` : "Verified rider profile"} className="h-full w-full object-cover" onError={() => setBroken(true)} />;
-  }
-  return (
-    <div className="flex h-full w-full items-center justify-center bg-primary/10 text-primary">
-      <UserRound className="h-5 w-5" />
-    </div>
-  );
-}
-
-function InfoPill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-gray-50 p-2">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="truncate font-bold">{value}</p>
-    </div>
-  );
-}
-
-function riderRingClass(status: string) {
-  if (status === "offline") return "ring-gray-300";
-  if (status === "arriving") return "ring-amber-400";
-  if (status === "waiting" || status === "packed") return "ring-blue-400";
-  if (status === "delivering" || status === "picked_up" || status === "on_the_way") return "ring-green-500";
-  return "ring-primary";
-}
-
-function maskVehicleNumber(value?: string) {
-  const clean = String(value ?? "").replace(/\s+/g, "").toUpperCase();
-  if (!clean) return "Hidden";
-  return `${clean.slice(0, 2)}••••${clean.slice(-4)}`;
-}
-
-function MapMarker({ x, y, icon, active, label, compact }: { x: number; y: number; icon: "store" | "home"; active: boolean; label: string; compact: boolean }) {
-  const Icon = icon === "store" ? Store : Home;
-  const tone = icon === "store" ? "bg-emerald-600 text-white" : "bg-blue-600 text-white";
-  return (
-    <div className="absolute" style={{ left: x - 18, top: y - 18 }}>
-      <div className={`flex h-9 w-9 items-center justify-center rounded-full shadow-lg ring-4 ${active ? "ring-yellow-300" : "ring-white"} ${tone}`}>
-        <Icon className="h-4 w-4" />
-      </div>
-      {!compact && <div className="absolute left-1/2 top-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-[11px] font-bold shadow">{label}</div>}
-    </div>
-  );
-}
-
-function FlowStep({ active, done, label }: { active: boolean; done: boolean; label: string }) {
-  return (
-    <div className={`rounded-xl border px-2 py-2 ${done ? "border-green-200 bg-green-50 text-green-700" : active ? "border-blue-200 bg-blue-50 text-blue-700" : "bg-white text-gray-500"}`}>
-      <div className="mx-auto mb-1 flex h-5 w-5 items-center justify-center rounded-full bg-current/10">
-        {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full bg-current" />}
-      </div>
-      {label}
     </div>
   );
 }
 
 function MapStat({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
   return (
-    <div className="rounded-xl border bg-white/95 p-2 shadow-sm">
-      <Icon className="mb-1 h-4 w-4 text-primary" />
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className="truncate text-sm font-bold">{value}</p>
+    <div className="min-w-[72px] rounded-2xl bg-slate-50 px-3 py-2">
+      <Icon className="mx-auto mb-1 h-4 w-4 text-primary" />
+      <p className="font-black">{value}</p>
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
     </div>
   );
 }
 
-function bearingDegrees(from: Point, to: Point) {
-  const lat1 = Number(from.lat) * Math.PI / 180;
-  const lat2 = Number(to.lat) * Math.PI / 180;
-  const deltaLng = (Number(to.lng) - Number(from.lng)) * Math.PI / 180;
-  const y = Math.sin(deltaLng) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLng);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+function RiderCard({ partnerInfo, status, etaMins, onClose }: { partnerInfo: any; status: string; etaMins: number; onClose: () => void }) {
+  const phone = partnerInfo?.phone;
+  const photoUrl = partnerInfo?.publicProfilePhotoUrl || partnerInfo?.photoUrl || partnerInfo?.profilePhotoUrl || fallbackAvatar();
+  return (
+    <div className="absolute right-3 top-3 z-30 w-[min(330px,calc(100%-24px))] rounded-3xl border bg-white p-4 shadow-2xl">
+      <button type="button" className="absolute right-3 top-2 text-sm text-muted-foreground" onClick={onClose}>Close</button>
+      <div className="flex gap-3 pr-10">
+        <div className="h-16 w-16 overflow-hidden rounded-full bg-slate-100 ring-4" style={{ ["--tw-ring-color" as string]: STATUS_RING[status] ?? STATUS_RING.waiting }}>
+          <img src={photoUrl} alt={partnerInfo?.name ?? "Delivery partner"} className="h-full w-full object-cover" onError={(event) => { event.currentTarget.src = fallbackAvatar(); }} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-black">{partnerInfo?.name ?? "Delivery partner"}</p>
+          <p className="text-xs text-muted-foreground">ID: DP-{partnerInfo?.id ?? "ASSIGNED"}</p>
+          <p className="mt-1 text-sm capitalize">{status.replace(/_/g, " ")} · ETA {etaMins} min</p>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <InfoTile label="Rating" value={partnerInfo?.rating ? `${Number(partnerInfo.rating).toFixed(1)} ★` : "Verified"} />
+        <InfoTile label="Vehicle" value={partnerInfo?.vehicleType ?? "Bike"} />
+        <InfoTile label="Number" value={maskVehicle(partnerInfo?.vehicleNumber)} />
+        <InfoTile label="Status" value={status.replace(/_/g, " ")} />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <a href={phone ? `tel:${phone}` : undefined}>
+          <Button className="w-full" disabled={!phone}><Phone className="mr-2 h-4 w-4" /> Call</Button>
+        </a>
+        <Button variant="outline"><MessageCircle className="mr-2 h-4 w-4" /> Chat</Button>
+      </div>
+    </div>
+  );
 }
+
+function InfoTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 p-3">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="truncate font-bold capitalize">{value}</p>
+    </div>
+  );
+}
+
+function svgIcon(svg: string, width: number, height: number) {
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new window.google.maps.Size(width, height),
+    anchor: new window.google.maps.Point(width / 2, height),
+  };
+}
+
+function storeMarkerSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><filter id="s" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#0f172a" flood-opacity=".28"/></filter><g filter="url(#s)"><path fill="#16a34a" d="M24 3c8.3 0 15 6.4 15 14.4 0 11.2-15 27.6-15 27.6S9 28.6 9 17.4C9 9.4 15.7 3 24 3Z"/><circle cx="24" cy="18" r="10" fill="#fff"/><path fill="#16a34a" d="M18 17h12v9H18zM20 13h8l3 4H17z"/></g></svg>`;
+}
+
+function customerMarkerSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><filter id="s" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#0f172a" flood-opacity=".28"/></filter><g filter="url(#s)"><path fill="#ef4444" d="M24 3c8.3 0 15 6.4 15 14.4 0 11.2-15 27.6-15 27.6S9 28.6 9 17.4C9 9.4 15.7 3 24 3Z"/><circle cx="24" cy="18" r="10" fill="#fff"/><path fill="#ef4444" d="m16 20 8-7 8 7h-2v8h-5v-5h-2v5h-5v-8z"/></g></svg>`;
+}
+
+const CLEAN_MAP_STYLE = [
+  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.medical", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.school", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ saturation: -20 }, { lightness: 20 }] },
+  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "water", stylers: [{ color: "#dbeafe" }] },
+  { featureType: "landscape", stylers: [{ color: "#f8fafc" }] },
+];

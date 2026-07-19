@@ -6,6 +6,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Users, ShoppingBag, TrendingUp, Store, Clock, Bike, Image, Grid3X3, BadgePercent, ShieldCheck } from "lucide-react";
 import { Link } from "wouter";
 import { WalletSummaryCard } from "@/components/WalletSummaryCard";
+import { customFetch } from "@workspace/api-client-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 const STATUS_COLORS: Record<string, string> = {
   delivered: "bg-green-100 text-green-700", cancelled: "bg-red-100 text-red-700",
@@ -15,8 +19,31 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const { data: dashboard, isLoading } = useGetAdminDashboard({
     query: { enabled: !!user, queryKey: getGetAdminDashboardQueryKey() },
+  });
+  const { data: testControls } = useQuery({
+    queryKey: ["/api/admin/test-controls"],
+    queryFn: () => customFetch<any>("/api/admin/test-controls"),
+    enabled: !!user,
+  });
+  const seedDemo = useMutation({
+    mutationFn: () => customFetch<any>("/api/admin/test-controls/seed", { method: "POST" }),
+    onSuccess: (data) => {
+      toast({ title: "Demo mode ready", description: data.message });
+      qc.invalidateQueries();
+    },
+    onError: (err: any) => toast({ title: "Demo seed failed", description: err?.data?.error ?? "Enable APP_TEST_MODE first.", variant: "destructive" }),
+  });
+  const clearDemo = useMutation({
+    mutationFn: () => customFetch<any>("/api/admin/test-controls/data", { method: "DELETE" }),
+    onSuccess: (data) => {
+      toast({ title: "Demo data cleared", description: data.message });
+      qc.invalidateQueries();
+    },
+    onError: (err: any) => toast({ title: "Cleanup failed", description: err?.data?.error ?? "Unable to clear demo data.", variant: "destructive" }),
   });
 
   const stats = [
@@ -38,6 +65,36 @@ export default function AdminDashboard() {
       </div>
 
       <WalletSummaryCard href="/admin/wallet" title="Admin wallet" tone="dark" />
+
+      {testControls?.testMode && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center justify-between text-base">
+              Demo/Test Controls
+              <Badge className="bg-amber-600 text-white">DEMO MODE</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-2 text-xs sm:grid-cols-4">
+              <InfoPill label="OTP" value={testControls.demoOtpEnabled ? "Demo 123456" : "Off"} />
+              <InfoPill label="Payment" value={testControls.demoPaymentEnabled ? "Mock" : "Real only"} />
+              <InfoPill label="Payout" value={testControls.demoPayoutEnabled ? "Mock" : "Real only"} />
+              <InfoPill label="GPS" value={testControls.requireRealGps ? "Real required" : "Optional"} />
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-white p-3 text-xs text-amber-950">
+              OTP, KYC, payment and payout are simulated. Customer, seller and rider GPS must still come from the device.
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="button" onClick={() => seedDemo.mutate()} disabled={seedDemo.isPending}>
+                {seedDemo.isPending ? "Preparing..." : "Create demo users, shop, rider & products"}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => clearDemo.mutate()} disabled={clearDemo.isPending}>
+                {clearDemo.isPending ? "Clearing..." : "Clear demo data"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {stats.map(({ label, value, icon: Icon, color, href }) => (
@@ -130,6 +187,15 @@ export default function AdminDashboard() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function InfoPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-amber-200 bg-white p-3">
+      <p className="font-semibold text-muted-foreground">{label}</p>
+      <p className="mt-1 font-black text-amber-950">{value}</p>
     </div>
   );
 }

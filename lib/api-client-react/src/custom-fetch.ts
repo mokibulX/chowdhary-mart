@@ -1968,6 +1968,35 @@ function resolveServiceZone(state: MockRecord, lat?: number, lng?: number) {
     .sort((a: MockRecord, b: MockRecord) => Number(a.distanceKm) - Number(b.distanceKm))[0] ?? null;
 }
 
+function eligiblePublicZones(state: MockRecord, type: "seller" | "rider", lat?: number, lng?: number) {
+  return (state.serviceZones ?? [])
+    .filter((zone: MockRecord) => (zone.status ?? (zone.isActive === false ? "paused" : "active")) === "active" && zone.archivedAt == null)
+    .filter((zone: MockRecord) => zone.registrationEnabled !== false)
+    .filter((zone: MockRecord) => type === "seller" ? zone.sellerRegistrationEnabled !== false : zone.riderRegistrationEnabled !== false && zone.deliveryEnabled !== false)
+    .map((zone: MockRecord) => {
+      const distance = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+        ? mockDistanceKm(Number(lat), Number(lng), Number(zone.centreLatitude), Number(zone.centreLongitude))
+        : null;
+      return {
+        id: zone.id,
+        code: zone.code ?? zone.zoneCode,
+        name: zone.name ?? zone.zoneName,
+        city: zone.city,
+        state: zone.state,
+        approximateArea: `${zone.city ?? "Local area"} service zone`,
+        radiusMeters: zone.radiusMeters ?? 5000,
+        deliveryMinutes: zone.deliveryMinutes ?? zone.defaultDeliveryTime ?? 40,
+        minimumOrderAmount: zone.minimumOrderAmount ?? 99,
+        registrationAvailable: true,
+        acceptingOrders: zone.acceptingOrders !== false,
+        deliveryEnabled: zone.deliveryEnabled !== false,
+        distanceKm: distance === null ? null : Number(distance.toFixed(2)),
+        insideServiceZone: distance === null ? false : distance * 1000 <= Number(zone.radiusMeters ?? 5000),
+      };
+    })
+    .sort((a: MockRecord, b: MockRecord) => Number(a.distanceKm ?? 9999) - Number(b.distanceKm ?? 9999));
+}
+
 function assignZoneIds(state: MockRecord) {
   state.serviceZones = state.serviceZones?.length ? state.serviceZones : defaultServiceZones();
   state.stores.forEach((store: MockRecord) => {
@@ -2138,6 +2167,22 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
   const ok = (data: unknown) => data as T;
 
   if (path === "/api/healthz") return ok({ ok: true, status: "ok" });
+  if (path === "/api/auth/otp/send" && method === "POST") {
+    const phone = String(body.phone ?? "").replace(/\D/g, "");
+    const email = String(body.email ?? "").trim().toLowerCase();
+    if (!phone && !email) makeMockError(400, "Email or mobile number is required", method, path);
+    if (phone && !/^\d{10}$/.test(phone)) makeMockError(400, "Valid 10 digit mobile number required", method, path);
+    state.otpCodes = state.otpCodes ?? {};
+    const target = phone || email;
+    state.otpCodes[target] = {
+      otp: "123456",
+      purpose: body.purpose ?? "login",
+      expiresAt: Date.now() + 5 * 60 * 1000,
+      attempts: 0,
+    };
+    saveMockState(state);
+    return ok({ message: "OTP sent", verificationMode: "DEMO", expiresInSeconds: 300 });
+  }
   if (path === "/api/auth/delivery-otp/send" && method === "POST") {
     const phone = String(body.phone ?? "").replace(/\D/g, "");
     if (!/^\d{10}$/.test(phone)) makeMockError(400, "Valid 10 digit mobile number required", method, path);
@@ -2164,11 +2209,12 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     const otp = String(body.otp ?? "").replace(/\D/g, "");
     const record = state.deliveryOtp?.[phone];
     const nowMs = Date.now();
+    if (!record && otp === "123456") return ok({ message: "Mobile verified" });
     if (!record) makeMockError(400, "Please send OTP first", method, path);
     if (record.blockedUntil && nowMs < Number(record.blockedUntil)) makeMockError(429, "OTP verification temporarily blocked", method, path);
     if (nowMs > Number(record.expiresAt)) makeMockError(400, "OTP expired. Please resend.", method, path);
     record.attempts = Number(record.attempts ?? 0) + 1;
-    if (record.otp !== otp) {
+    if (record.otp !== otp && otp !== "123456") {
       if (record.attempts >= 5) record.blockedUntil = nowMs + 10 * 60 * 1000;
       saveMockState(state);
       makeMockError(401, record.attempts >= 5 ? "Too many wrong OTP attempts. Try after 10 minutes." : "Invalid OTP. Please try again.", method, path);
@@ -2180,8 +2226,37 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
   }
   if (path === "/api/auth/register" && method === "POST") {
     if (!body.name || !body.password || (!body.email && !body.phone)) makeMockError(400, "Name, password and email or phone are required", method, path);
-    const role = ["customer", "vendor", "delivery_partner"].includes(body.role) ? body.role : "customer";
-    const existing = state.users.find((user: MockRecord) => (body.email && user.email === body.email) || (body.phone && user.phone === body.phone));
+    const requestedRole = String(body.role ?? "customer").trim().toLowerCase();
+    if (!["customer", "vendor", "delivery_partner"].includes(requestedRole)) {
+      makeMockError(403, "This account type cannot be created from the public application.", method, path);
+    }
+    const role = requestedRole;
+    if (role === "vendor" || role === "delivery_partner") {
+      const selectedZoneId = Number(body.selectedZoneId ?? body.zoneId);
+      const lat = Number(role === "vendor" ? body.shopLatitude ?? body.lat : body.currentLatitude ?? body.lat);
+      const lng = Number(role === "vendor" ? body.shopLongitude ?? body.lng : body.currentLongitude ?? body.lng);
+      const zone = eligiblePublicZones(state, role === "vendor" ? "seller" : "rider", lat, lng).find((item: MockRecord) => Number(item.id) === selectedZoneId);
+      if (!zone) makeMockError(400, "Please select an active service zone.", method, path);
+      if (!zone.insideServiceZone) makeMockError(400, role === "vendor" ? "Your shop location is outside the selected service zone." : "Your current location is outside the selected service zone.", method, path);
+      body.zoneId = selectedZoneId;
+      body.lat = lat;
+      body.lng = lng;
+      if (role === "delivery_partner") body.currentZoneId = selectedZoneId;
+    }
+    if (body.email && state.users.some((user: MockRecord) => user.email === body.email)) {
+      makeMockError(400, "User with this email already exists", method, path);
+    }
+    const samePhoneUsers = body.phone ? state.users.filter((user: MockRecord) => user.phone === body.phone) : [];
+    if (samePhoneUsers.length >= 3) makeMockError(400, "Maximum 3 accounts are allowed with one mobile number", method, path);
+    if (samePhoneUsers.some((user: MockRecord) => user.role === role)) {
+      makeMockError(400, "This mobile number already has this account type", method, path);
+    }
+    const target = String(body.phone ?? body.email ?? "").replace(/\D/g, "") || String(body.email ?? "").trim().toLowerCase();
+    const savedOtp = state.otpCodes?.[target];
+    if ((!savedOtp || Number(savedOtp.expiresAt ?? 0) < Date.now() || savedOtp.otp !== body.otp) && String(body.otp ?? "") !== "123456") {
+      makeMockError(400, "Valid OTP is required", method, path);
+    }
+    const existing = state.users.find((user: MockRecord) => body.email && user.email === body.email);
     if (existing) {
       if (role !== "vendor") makeMockError(400, "User with this email or phone already exists", method, path);
       existing.role = "vendor";
@@ -2190,6 +2265,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
       existing.phone = body.phone ?? existing.phone;
       existing.email = body.email ?? existing.email;
       if (body.password) existing.password = body.password;
+      if (body.zoneId) existing.zoneIds = Array.from(new Set([...(existing.zoneIds ?? []), Number(body.zoneId)]));
       upsertVendorApplication(state, existing, body);
       state.notifications[String(existing.id)] = [{ id: Date.now(), title: "Shop registration submitted", body: "Admin approval pending. You can add products after approval.", isRead: false, createdAt: mockNow() }, ...(state.notifications[String(existing.id)] ?? [])];
       const token = createSessionToken(state, existing);
@@ -2198,7 +2274,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     }
     if (role === "delivery_partner") {
       const phone = String(body.phone ?? "").replace(/\D/g, "");
-      if (!state.deliveryOtp?.[phone]?.verified) makeMockError(400, "Mobile OTP must be verified before delivery partner registration", method, path);
+    if (!state.deliveryOtp?.[phone]?.verified && String(body.otp ?? "") !== "123456") makeMockError(400, "Mobile OTP must be verified before delivery partner registration", method, path);
       if (mockRequiresDrivingLicence(String(body.vehicleType ?? ""))) {
         const duplicateLicense = state.users.find((item: MockRecord) => item.role === "delivery_partner" && String(item.licenseNumber ?? "").toUpperCase() === String(body.licenseNumber ?? "").toUpperCase());
         if (duplicateLicense) makeMockError(400, "Driving licence is already used by another delivery partner", method, path);
@@ -2214,6 +2290,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
       role,
       vendorStatus: role === "vendor" ? "pending" : undefined,
       deliveryStatus: role === "delivery_partner" ? "pending" : undefined,
+      zoneIds: body.zoneId ? [Number(body.zoneId)] : undefined,
     });
     state.users.push(user);
     state.addresses[String(user.id)] = [];
@@ -2265,12 +2342,14 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
       authState.loginAuditLog.unshift({ id: Date.now(), identifier, roleHint: body.roleHint ?? null, reason, success: false, createdAt: mockNow() });
       saveMockState(state);
     };
+    const genericAuthMessage = "Invalid credentials or account unavailable.";
+    const requestedRole = String(body.roleHint ?? body.requestedRole ?? "").trim().toLowerCase();
     if (!user || user.password !== body.password) {
       recordFailure("invalid_credentials");
-      makeMockError(401, "Invalid email/mobile or password.", method, path);
+      makeMockError(401, genericAuthMessage, method, path);
     }
-    if (user.isActive === false) makeMockError(403, "Account is inactive. Contact support.", method, path);
-    if (body.roleHint && body.roleHint !== "customer" && body.roleHint !== user.role) makeMockError(403, "This account does not match the selected login role.", method, path);
+    if (user.isActive === false) makeMockError(401, genericAuthMessage, method, path);
+    if (requestedRole && requestedRole !== user.role) makeMockError(401, genericAuthMessage, method, path);
     if (user.role === "vendor" && user.vendorStatus && user.vendorStatus !== "approved") makeMockError(403, "Seller account is pending admin approval.", method, path);
     if (user.role === "delivery_partner" && user.deliveryStatus && user.deliveryStatus !== "approved") makeMockError(403, "Delivery partner account is pending admin approval.", method, path);
     delete authState.loginFailures[identifier];
@@ -2281,20 +2360,28 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
   }
   if (path === "/api/auth/otp-login" && method === "POST") {
     const user = state.users.find((item: MockRecord) => (body.email && item.email === body.email) || (body.phone && item.phone === body.phone));
-    if (!user || body.otp !== "123456") makeMockError(401, "Invalid OTP. Please try again.", method, path);
-    if (user.isActive === false) makeMockError(403, "Account is inactive. Contact support.", method, path);
+    const genericAuthMessage = "Invalid credentials or account unavailable.";
+    const requestedRole = String(body.roleHint ?? body.requestedRole ?? "").trim().toLowerCase();
+    const target = String(body.phone ?? body.email ?? "").replace(/\D/g, "") || String(body.email ?? "").trim().toLowerCase();
+    const savedOtp = state.otpCodes?.[target];
+    if (!user || ((savedOtp?.otp !== body.otp || Number(savedOtp?.expiresAt ?? 0) < Date.now()) && String(body.otp ?? "") !== "123456")) makeMockError(401, genericAuthMessage, method, path);
+    if (user.isActive === false) makeMockError(401, genericAuthMessage, method, path);
+    if (requestedRole && requestedRole !== user.role) makeMockError(401, genericAuthMessage, method, path);
     const token = createSessionToken(state, user);
     saveMockState(state);
     return ok({ token, user: publicUser(user) });
   }
   if (path === "/api/auth/forgot-password" && method === "POST") {
     const user = state.users.find((item: MockRecord) => (body.email && item.email === body.email) || (body.phone && item.phone === body.phone));
-    if (!user) makeMockError(404, "Account not found", method, path);
-    if (body.otp !== "123456" || !body.password || String(body.password).length < 6) makeMockError(400, "Valid OTP and 6-character password required", method, path);
+    const genericForgotMessage = "If an eligible account exists, recovery instructions have been sent.";
+    if (!user) return ok({ message: genericForgotMessage });
+    const target = String(body.phone ?? body.email ?? "").replace(/\D/g, "") || String(body.email ?? "").trim().toLowerCase();
+    const savedOtp = state.otpCodes?.[target];
+    if (((savedOtp?.otp !== body.otp || Number(savedOtp?.expiresAt ?? 0) < Date.now()) && String(body.otp ?? "") !== "123456") || !body.password || String(body.password).length < 6) makeMockError(400, "Valid OTP and 6-character password required", method, path);
     user.password = body.password;
     user.updatedAt = mockNow();
     saveMockState(state);
-    return ok({ message: "Password updated successfully", user: publicUser(user) });
+    return ok({ message: genericForgotMessage, user: publicUser(user) });
   }
   if (path === "/api/auth/logout" && method === "POST") {
     if (token && state.sessions?.[token]) {
@@ -2311,7 +2398,29 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     }
     return ok(publicUser(user));
   }
+  if (path === "/api/notifications/push-token" && method === "POST") {
+    const user = requireUser();
+    state.pushTokens = state.pushTokens ?? {};
+    state.pushTokens[String(user.id)] = Array.from(new Set([...(state.pushTokens[String(user.id)] ?? []), String(body.token ?? "")].filter(Boolean)));
+    saveMockState(state);
+    return ok({ message: "Push token registered" });
+  }
 
+  if (path === "/api/public/service-zones") {
+    const type = url.searchParams.get("type") === "rider" ? "rider" : "seller";
+    const lat = Number(url.searchParams.get("lat") ?? "");
+    const lng = Number(url.searchParams.get("lng") ?? "");
+    return ok({ items: eligiblePublicZones(state, type, lat, lng) });
+  }
+  const publicZoneValidateMatch = path.match(/^\/api\/public\/service-zones\/(\d+)\/validate$/);
+  if (publicZoneValidateMatch) {
+    const type = url.searchParams.get("type") === "rider" ? "rider" : "seller";
+    const lat = Number(url.searchParams.get("lat") ?? "");
+    const lng = Number(url.searchParams.get("lng") ?? "");
+    const zone = eligiblePublicZones(state, type, lat, lng).find((item: MockRecord) => Number(item.id) === Number(publicZoneValidateMatch[1]));
+    if (!zone) return ok({ serviceable: false, error: "Please select an active service zone." });
+    return ok({ serviceable: Boolean(zone.insideServiceZone), zone, error: zone.insideServiceZone ? undefined : type === "seller" ? "Your shop location is outside the selected service zone." : "Your current location is outside the selected service zone." });
+  }
   if (path === "/api/service-zones") return ok((state as MockRecord).serviceZones ?? []);
   if (path === "/api/service-zones/resolve") {
     const lat = Number(url.searchParams.get("lat") ?? body.lat);
@@ -2434,6 +2543,58 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
       pageSize: limit,
       zone: customerZone ? { id: customerZone.id, zoneCode: customerZone.zoneCode, zoneName: customerZone.zoneName, serviceable: customerZone.serviceable } : null,
     });
+  }
+  const productRelatedMatch = path.match(/^\/api\/products\/(\d+)\/related$/);
+  if (productRelatedMatch) {
+    const productId = Number(productRelatedMatch[1]);
+    const current = state.products.find((item: MockRecord) => item.id === productId);
+    if (!current) makeMockError(404, "Product not found", method, path);
+    const limit = Math.max(1, Math.min(30, Number(url.searchParams.get("limit") ?? 16)));
+    const cursor = Math.max(0, Number(url.searchParams.get("cursor") ?? 0));
+    const excluded = new Set([productId, ...String(url.searchParams.get("excludeIds") ?? "").split(",").map((item) => Number(item)).filter(Boolean)]);
+    const customerLat = Number(url.searchParams.get("lat") ?? "");
+    const customerLng = Number(url.searchParams.get("lng") ?? "");
+    const radiusKm = Math.min(8, Number(url.searchParams.get("radiusKm") ?? "5"));
+    const currentPrice = Number(current.price ?? 0);
+    const currentTags = Array.isArray(current.tags) ? current.tags.map((item: unknown) => String(item).toLowerCase()) : [];
+    const ranked = state.products
+      .filter((product: MockRecord) => !excluded.has(Number(product.id)) && product.isAvailable !== false && Number(product.stock ?? product.stockQty ?? 0) > 0)
+      .map((product: MockRecord) => {
+        const enriched = productWithStore(state, product);
+        const distanceKm = Number.isFinite(customerLat) && Number.isFinite(customerLng) && enriched.store
+          ? mockDistanceKm(customerLat, customerLng, Number(enriched.store.lat), Number(enriched.store.lng))
+          : 0;
+        const tags = Array.isArray(product.tags) ? product.tags.map((item: unknown) => String(item).toLowerCase()) : [];
+        const tagMatches = tags.filter((tag: string) => currentTags.includes(tag)).length;
+        const similarPrice = currentPrice > 0 ? Math.max(0, 1 - Math.abs(Number(product.price ?? 0) - currentPrice) / currentPrice) : 0;
+        const score =
+          (product.categoryId === current.categoryId ? 60 : 0) +
+          (product.brandId && product.brandId === current.brandId ? 25 : 0) +
+          tagMatches * 12 +
+          similarPrice * 20 +
+          Number(product.rating ?? 0) * 4 +
+          (Number(product.stock ?? 0) > 10 ? 6 : 0) +
+          (Number(enriched.store?.estimatedDeliveryMins ?? 40) <= 40 ? 8 : 0) -
+          (Number.isFinite(distanceKm) ? Math.min(distanceKm, 20) : 0);
+        return {
+          ...enriched,
+          shopName: enriched.store?.name,
+          shopRating: enriched.store?.rating,
+          deliveryEtaMins: enriched.store?.estimatedDeliveryMins ?? 40,
+          distanceKm: Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(2)) : undefined,
+          _score: score,
+        };
+      })
+      .filter((product: MockRecord) => {
+        if (!sellerIsActive(state, product.store)) return false;
+        if (Number.isFinite(customerLat) && Number.isFinite(customerLng)) return Number(product.distanceKm ?? 999) <= radiusKm;
+        return true;
+      })
+      .sort((a: MockRecord, b: MockRecord) => Number(b._score) - Number(a._score) || Number(b.rating ?? 0) - Number(a.rating ?? 0));
+    const unique = Array.from(new Map(ranked.map((item: MockRecord) => [item.id, item])).values());
+    const items = unique.slice(cursor, cursor + limit).map(({ _score, ...item }: MockRecord) => item);
+    const nextCursor = cursor + limit < unique.length ? String(cursor + limit) : null;
+    return ok({ items, nextCursor, hasMore: Boolean(nextCursor) });
   }
   const productReviewMatch = path.match(/^\/api\/products\/(\d+)\/reviews$/);
   if (productReviewMatch) return ok(state.reviews.filter((item: MockRecord) => item.productId === Number(productReviewMatch[1])));
@@ -3059,6 +3220,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
       maxDiscount: body.maxDiscount !== undefined && body.maxDiscount !== "" ? Number(body.maxDiscount).toFixed(2) : undefined,
       usageLimit: body.usageLimit !== undefined && body.usageLimit !== "" ? Number(body.usageLimit) : undefined,
       perUserLimit: body.perUserLimit !== undefined && body.perUserLimit !== "" ? Number(body.perUserLimit) : undefined,
+      isSpecial: Boolean(body.isSpecial),
       createdAt: mockNow(),
     };
     state.coupons.unshift(coupon);
@@ -4022,11 +4184,11 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     if (order.deliveryPartnerId && order.deliveryPartnerId !== user.id && user.role !== "admin") makeMockError(403, "Order is assigned to another partner", method, path);
     if (body.status === "picked_up") {
       const expectedPickupOtp = String(order.tracking?.pickupOtp ?? generateOrderOtp(order.id, 431));
-      if (String(body.pickupOtp ?? body.otp ?? "") !== expectedPickupOtp) makeMockError(400, "Valid seller pickup OTP required", method, path);
+      if (![expectedPickupOtp, "123456"].includes(String(body.pickupOtp ?? body.otp ?? ""))) makeMockError(400, "Valid seller pickup OTP required", method, path);
     }
     if (body.status === "delivered") {
       const expectedOtp = String(order.tracking?.deliveryOtp ?? generateOrderOtp(order.id, 0));
-      if (String(body.otp ?? "") !== expectedOtp) makeMockError(400, "Valid customer delivery OTP required", method, path);
+      if (![expectedOtp, "123456"].includes(String(body.otp ?? ""))) makeMockError(400, "Valid customer delivery OTP required", method, path);
     }
     order.status = body.status ?? order.status;
     order.tracking.status = order.status;

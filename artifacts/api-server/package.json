@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node -e \"process.env.NODE_ENV='development'; const {spawnSync}=require('child_process'); const pnpm = (process.env.APPDATA || '') + '\\\\npm\\\\pnpm.cmd'; for (const args of [['run','build'], ['run','start']]) { const r = spawnSync(pnpm, args, {stdio:'inherit', shell:true}); if (r.status) process.exit(r.status || 1); }\"",
+    "dev": "pnpm run build && node dist/index.mjs",
     "build": "node ./build.mjs",
-    "start": "run dev",
+    "start": "node dist/index.mjs",
+    "worker:outbox": "node dist/outbox-worker.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -5,6 +5,7 @@ import {
   orderTrackingTable, usersTable
 } from "@workspace/db";
 import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
+import { sellerZoneIds } from "../lib/zones";
 
 const router = Router();
 
@@ -15,11 +16,18 @@ async function getVendorStore(userId: number) {
   return store;
 }
 
+async function assertSellerZoneScope(userId: number, zoneId?: number | null) {
+  if (!zoneId) return true;
+  const zones = await sellerZoneIds(userId);
+  return zones.includes(zoneId);
+}
+
 // GET /api/vendor/store
 router.get("/store", async (req: AuthRequest, res) => {
   try {
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(404).json({ error: "Store not found" }); return; }
+    if (!(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "You cannot manage another service zone." }); return; }
     res.json(store);
   } catch (err) {
     req.log.error(err);
@@ -32,10 +40,20 @@ router.patch("/store", async (req: AuthRequest, res) => {
   try {
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(404).json({ error: "Store not found" }); return; }
+    if (!(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "You cannot manage another service zone." }); return; }
 
     const { name, description, logoUrl, bannerUrl, isOpen, phone, estimatedDeliveryMins } = req.body;
+    const updates: Partial<typeof storesTable.$inferInsert> = { updatedAt: new Date() };
+    if (name !== undefined) updates.name = String(name).trim();
+    if (description !== undefined) updates.description = description;
+    if (logoUrl !== undefined) updates.logoUrl = logoUrl;
+    if (bannerUrl !== undefined) updates.bannerUrl = bannerUrl;
+    if (isOpen !== undefined) updates.isOpen = Boolean(isOpen);
+    if (phone !== undefined) updates.phone = phone;
+    if (estimatedDeliveryMins !== undefined) updates.estimatedDeliveryMins = Number(estimatedDeliveryMins);
+
     const [updated] = await db.update(storesTable)
-      .set({ name, description, logoUrl, bannerUrl, isOpen, phone, estimatedDeliveryMins, updatedAt: new Date() })
+      .set(updates)
       .where(eq(storesTable.id, store.id))
       .returning();
 
@@ -51,9 +69,11 @@ router.get("/orders", async (req: AuthRequest, res) => {
   try {
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(200).json([]); return; }
+    if (!(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "You cannot view another service zone." }); return; }
 
     const { status } = req.query;
     const conditions = [eq(ordersTable.storeId, store.id)];
+    if (store.zoneId) conditions.push(eq(ordersTable.zoneId, store.zoneId));
     if (status) conditions.push(eq(ordersTable.status, status as typeof ordersTable.$inferSelect["status"]));
 
     const orders = await db.select().from(ordersTable)
@@ -75,6 +95,9 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     const { status } = req.body as { status: string };
 
     const store = await getVendorStore(req.user!.userId);
+    if (!store || !(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "Order is outside your service zone." }); return; }
+    const [targetOrder] = await db.select().from(ordersTable).where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, store.id))).limit(1);
+    if (!targetOrder || (store.zoneId && targetOrder.zoneId && targetOrder.zoneId !== store.zoneId)) { res.status(404).json({ error: "Order not found in your zone" }); return; }
 
     const [order] = await db.update(ordersTable)
       .set({ status: status as typeof ordersTable.$inferInsert["status"], updatedAt: new Date() })
@@ -99,6 +122,7 @@ router.get("/products", async (req: AuthRequest, res) => {
   try {
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(200).json([]); return; }
+    if (!(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "You cannot view another service zone." }); return; }
 
     const products = await db.select().from(productsTable)
       .where(eq(productsTable.storeId, store.id))
@@ -122,6 +146,7 @@ router.post("/products", async (req: AuthRequest, res) => {
 
     const [product] = await db.insert(productsTable).values({
       storeId: store.id,
+      zoneId: store.zoneId,
       name,
       description,
       categoryId,
@@ -155,9 +180,14 @@ router.patch("/products/:productId", async (req: AuthRequest, res) => {
       discountPercent = (((Number(mrp) - Number(price)) / Number(mrp)) * 100).toFixed(2);
     }
 
+    const store = await getVendorStore(req.user!.userId);
+    if (!store) { res.status(404).json({ error: "Store not found" }); return; }
+    const [existing] = await db.select().from(productsTable).where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id))).limit(1);
+    if (!existing || (store.zoneId && existing.zoneId && existing.zoneId !== store.zoneId)) { res.status(404).json({ error: "Product not found in your zone" }); return; }
+
     const [product] = await db.update(productsTable)
       .set({ name, description, price, mrp, stock, isAvailable, isFeatured, images, discountPercent, updatedAt: new Date() })
-      .where(eq(productsTable.id, productId))
+      .where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id)))
       .returning();
 
     res.json(product);
@@ -170,7 +200,9 @@ router.patch("/products/:productId", async (req: AuthRequest, res) => {
 // DELETE /api/vendor/products/:productId
 router.delete("/products/:productId", async (req: AuthRequest, res) => {
   try {
-    await db.delete(productsTable).where(eq(productsTable.id, Number(req.params.productId)));
+    const store = await getVendorStore(req.user!.userId);
+    if (!store) { res.status(404).json({ error: "Store not found" }); return; }
+    await db.delete(productsTable).where(and(eq(productsTable.id, Number(req.params.productId)), eq(productsTable.storeId, store.id)));
     res.json({ message: "Product deleted" });
   } catch (err) {
     req.log.error(err);

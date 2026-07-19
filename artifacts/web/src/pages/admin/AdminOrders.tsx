@@ -112,6 +112,7 @@ export default function AdminOrders() {
                 <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Order</th>
                 <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Store</th>
                 <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Status</th>
+                <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Pickup Location</th>
                 <th className="px-4 py-3 text-left font-semibold text-muted-foreground">Payment</th>
                 <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Total</th>
                 <th className="px-4 py-3 text-right font-semibold text-muted-foreground">Date</th>
@@ -127,6 +128,14 @@ export default function AdminOrders() {
                     <Badge className={`text-xs border-0 ${STATUS_COLORS[order.status] ?? "bg-gray-100 text-gray-700"}`}>
                       {STATUS_LABEL[order.status] ?? order.status}
                     </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    <div className="max-w-[220px] truncate">{order.pickupAddress ?? order.addressSnapshot?.line1 ?? "Not set"}</div>
+                    {order.pickupLatitude && order.pickupLongitude && (
+                      <a className="font-semibold text-primary" href={`https://www.google.com/maps/search/?api=1&query=${order.pickupLatitude},${order.pickupLongitude}`} target="_blank" rel="noreferrer">
+                        Open map
+                      </a>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant="outline" className="text-xs capitalize">{order.paymentMethod}</Badge>

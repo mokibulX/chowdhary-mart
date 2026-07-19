@@ -3,8 +3,6 @@
 @plugin "@tailwindcss/typography";
 
 html.capacitor-native body {
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
   overscroll-behavior-y: contain;
 }
 
@@ -275,6 +273,27 @@ html.is-offline body::before {
     flex-direction: column;
   }
 
+  html.capacitor-native,
+  html.capacitor-native body,
+  html.capacitor-native #root {
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;
+  }
+
+  html.capacitor-native body {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    overscroll-behavior-y: contain;
+  }
+
+  html.capacitor-native #root {
+    display: flex;
+    flex-direction: column;
+    touch-action: pan-y pinch-zoom;
+  }
+
   img,
   video,
   canvas,
@@ -314,7 +333,15 @@ html.is-offline body::before {
     }
 
     table {
-      min-width: 640px;
+      max-width: 100%;
+    }
+
+    .table-scroll,
+    .cm-responsive-table {
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
   }
 }
@@ -330,6 +357,12 @@ html.is-offline body::before {
     overflow-x: hidden;
   }
 
+  html.capacitor-native .app-shell {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
   .app-content {
     flex: 1 1 auto;
     min-height: 0;
@@ -340,6 +373,34 @@ html.is-offline body::before {
     -webkit-overflow-scrolling: touch;
   }
 
+  html.capacitor-native .app-content {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y pinch-zoom;
+  }
+
+  .native-page-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  html.capacitor-native .native-page-scroll {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y pinch-zoom;
+  }
+
   .app-scroll-panel {
     min-height: 0;
     overflow-x: hidden;
@@ -348,7 +409,27 @@ html.is-offline body::before {
   }
 
   .mobile-bottom-safe {
-    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  }
+
+  .cm-mobile-safe-fixed {
+    bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+
+  .cm-mobile-modal {
+    max-height: calc(100dvh - 1rem);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  @media (max-width: 767px) {
+    .app-content {
+      min-width: 0;
+    }
+
+    .cm-mobile-safe-fixed {
+      bottom: calc(5.25rem + env(safe-area-inset-bottom));
+    }
   }
 
   @media (min-width: 768px) {

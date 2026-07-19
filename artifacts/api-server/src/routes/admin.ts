@@ -1,12 +1,16 @@
 import { Router } from "express";
 import { eq, desc, ilike, and, sql, inArray } from "drizzle-orm";
 import {
-  db, usersTable, ordersTable, storesTable, couponsTable, bannersTable,
+  db, usersTable, ordersTable, storesTable, couponsTable, couponUsesTable, bannersTable,
   deliveryPartnersTable, productsTable, categoriesTable,
-  homepageSectionsTable, homepageSectionProductsTable
+  homepageSectionsTable, homepageSectionProductsTable, walletTransactionsTable,
+  serviceZonesTable, sellerZoneAssignmentsTable, riderZoneAssignmentsTable, zoneChangeRequestsTable,
 } from "@workspace/db";
 import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
+import { generateReferralCode, hashPassword } from "../lib/auth";
 import { HOMEPAGE_PERMISSIONS, getHomepageSections, slugify } from "../lib/homepage";
+import { assertTestModeFeature, testMode } from "../lib/test-mode";
+import { auditZone, validCoordinate } from "../lib/zones";
 
 const router = Router();
 
@@ -23,6 +27,69 @@ function auditHomepage(req: AuthRequest, action: string, payload: Record<string,
     timestamp: new Date().toISOString(),
   });
   if (homepageAuditLog.length > 500) homepageAuditLog.length = 500;
+}
+
+const demoAccounts = [
+  { role: "customer" as const, name: "Demo Customer", email: "customer.demo@chowdharymart.test", phone: "9876543210", password: "Demo@Customer123", wallet: "0.00" },
+  { role: "vendor" as const, name: "Demo Seller", email: "seller.demo@chowdharymart.test", phone: "9876500002", password: "Demo@Seller123", wallet: "5000.00" },
+  { role: "delivery_partner" as const, name: "Demo Rider", email: "rider.demo@chowdharymart.test", phone: "9876500004", password: "Demo@Rider123", wallet: "1500.00" },
+  { role: "admin" as const, name: "Demo Admin", email: "admin.demo@chowdharymart.test", phone: "9876500001", password: "Demo@Admin123", wallet: "0.00" },
+];
+
+function zonePayload(body: Record<string, unknown>, adminId?: number) {
+  const code = String(body.code ?? body.zoneCode ?? "").trim().toUpperCase();
+  const name = String(body.name ?? body.zoneName ?? "New Service Zone").trim();
+  const centreLatitude = Number(body.centreLatitude ?? body.lat);
+  const centreLongitude = Number(body.centreLongitude ?? body.lng);
+  if (!code) throw new Error("Zone code is required");
+  if (!validCoordinate(centreLatitude, centreLongitude)) throw new Error("Valid zone centre GPS is required");
+  return {
+    code,
+    name,
+    city: body.city ? String(body.city) : null,
+    state: body.state ? String(body.state) : null,
+    centreLatitude,
+    centreLongitude,
+    radiusMeters: Math.max(500, Math.min(25000, Number(body.radiusMeters ?? 5000))),
+    boundaryGeometry: body.boundaryGeometry ? body.boundaryGeometry as Record<string, unknown> : null,
+    deliveryMinutes: Math.max(10, Math.min(180, Number(body.deliveryMinutes ?? body.defaultDeliveryTime ?? 40))),
+    minimumOrderAmount: String(body.minimumOrderAmount ?? "99"),
+    isActive: body.isActive !== undefined ? Boolean(body.isActive) : body.status !== "paused",
+    acceptingOrders: body.acceptingOrders !== false,
+    deliveryEnabled: body.deliveryEnabled !== false,
+    registrationEnabled: body.registrationEnabled !== false,
+    sellerRegistrationEnabled: body.sellerRegistrationEnabled !== false,
+    riderRegistrationEnabled: body.riderRegistrationEnabled !== false,
+    updatedByAdminId: adminId ?? null,
+  };
+}
+
+async function ensureDemoUser(account: typeof demoAccounts[number]) {
+  const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, account.email)).limit(1);
+  if (existing) return { ...existing, created: false };
+  const [user] = await db.insert(usersTable).values({
+    name: account.name,
+    email: account.email,
+    phone: account.phone,
+    passwordHash: await hashPassword(account.password),
+    role: account.role,
+    walletBalance: account.wallet,
+    isVerified: true,
+    isActive: true,
+    referralCode: generateReferralCode(),
+  }).returning();
+  if (Number(account.wallet) > 0) {
+    await db.insert(walletTransactionsTable).values({
+      userId: user.id,
+      type: "credit",
+      amount: account.wallet,
+      balance: account.wallet,
+      description: "Demo wallet seed - no real money",
+      referenceId: `DEMO-SEED-${user.id}`,
+      referenceType: "demo_seed",
+    });
+  }
+  return { ...user, created: true };
 }
 
 // GET /api/admin/dashboard
@@ -60,6 +127,146 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/test-controls", (_req, res) => {
+  res.json({
+    testMode: testMode.enabled,
+    demoOtpEnabled: testMode.enabled && testMode.allowDemoOtp,
+    demoPaymentEnabled: testMode.enabled && testMode.allowDemoPayment,
+    demoPayoutEnabled: testMode.enabled && testMode.allowDemoPayout,
+    demoApprovalEnabled: testMode.enabled && testMode.allowDemoApproval,
+    requireRealGps: testMode.requireRealGps,
+    allowFakeGps: testMode.allowFakeGps,
+    maxAccuracyMeters: testMode.maxAccuracyMeters,
+    locationUpdateIntervalSeconds: testMode.locationIntervalSeconds,
+    demoAccounts: demoAccounts.map(({ password: _password, ...account }) => account),
+  });
+});
+
+router.post("/test-controls/seed", async (req: AuthRequest, res) => {
+  try {
+    assertTestModeFeature(testMode.allowDemoApproval, "Demo seed");
+    const users = [];
+    for (const account of demoAccounts) users.push(await ensureDemoUser(account));
+    const seller = users.find((user) => user.email === "seller.demo@chowdharymart.test");
+    const rider = users.find((user) => user.email === "rider.demo@chowdharymart.test");
+
+    if (seller) {
+      const [existingStore] = await db.select().from(storesTable).where(eq(storesTable.userId, seller.id)).limit(1);
+      let store = existingStore;
+      if (!store) {
+        [store] = await db.insert(storesTable).values({
+          userId: seller.id,
+          name: "Alom Demo Grocery",
+          description: "Demo quick-commerce grocery store. Location must be adjusted with real GPS before live testing.",
+          logoUrl: "/app-logo.png",
+          bannerUrl: "/app-logo.png",
+          lat: 22.6076,
+          lng: 88.4695,
+          address: "Demo shop address - replace with live GPS in seller panel",
+          city: "Kolkata",
+          pincode: "700156",
+          phone: "9876500002",
+          radiusKm: 5,
+          deliveryFee: "40",
+          freeDeliveryAbove: "299",
+          estimatedDeliveryMins: 40,
+          isOpen: true,
+          isVerified: true,
+          isActive: true,
+          commissionPercent: "8",
+        }).returning();
+      } else {
+        await db.update(storesTable).set({ isVerified: true, isActive: true, isOpen: true, updatedAt: new Date() }).where(eq(storesTable.id, store.id));
+      }
+
+      const [category] = await db.insert(categoriesTable).values({
+        name: "Demo Grocery",
+        slug: `demo-grocery-${Date.now()}`,
+        imageUrl: "/app-logo.png",
+        iconEmoji: "🥬",
+        colorClass: "bg-green-100 text-green-700",
+        sortOrder: 1,
+        isActive: true,
+      }).returning();
+
+      const products = [
+        { name: "Demo Tomato", price: "40.00", mrp: "50.00", unit: "kg", weight: "1 kg", images: ["https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=800&q=80"] },
+        { name: "Demo Potato", price: "30.00", mrp: "38.00", unit: "kg", weight: "1 kg", images: ["https://images.unsplash.com/photo-1518977676601-b53f82aba655?auto=format&fit=crop&w=800&q=80"] },
+        { name: "Demo Onion", price: "35.00", mrp: "45.00", unit: "kg", weight: "1 kg", images: ["https://images.unsplash.com/photo-1508747703725-719777637510?auto=format&fit=crop&w=800&q=80"] },
+      ];
+      for (const product of products) {
+        const [existingProduct] = await db.select().from(productsTable).where(and(eq(productsTable.storeId, store.id), eq(productsTable.name, product.name))).limit(1);
+        if (!existingProduct) {
+          await db.insert(productsTable).values({
+            storeId: store.id,
+            categoryId: category.id,
+            name: product.name,
+            description: "Demo product for test mode. No real payment is charged in demo checkout.",
+            price: product.price,
+            mrp: product.mrp,
+            discountPercent: "10",
+            images: product.images,
+            weight: product.weight,
+            unit: product.unit,
+            sku: `DEMO-${slugify(product.name)}-${Date.now()}`,
+            stock: 50,
+            rating: "4.50",
+            reviewCount: 12,
+            specifications: { Mode: "DEMO", Location: "Use real GPS before delivery testing" },
+            tags: ["demo", "test-mode", "grocery"],
+            isAvailable: true,
+            isFeatured: true,
+          });
+        }
+      }
+    }
+
+    if (rider) {
+      const [partner] = await db.select().from(deliveryPartnersTable).where(eq(deliveryPartnersTable.userId, rider.id)).limit(1);
+      if (!partner) {
+        await db.insert(deliveryPartnersTable).values({
+          userId: rider.id,
+          vehicleType: "bike",
+          vehicleNumber: "WB00DEMO",
+          isOnline: false,
+          isVerified: true,
+          rating: "4.80",
+        });
+      } else {
+        await db.update(deliveryPartnersTable).set({ isVerified: true }).where(eq(deliveryPartnersTable.id, partner.id));
+      }
+    }
+
+    res.status(201).json({
+      message: "Demo users, seller, rider and grocery products are ready.",
+      users: users.map((user) => ({ id: user.id, email: user.email, role: user.role, created: user.created })),
+    });
+  } catch (err) {
+    const status = (err as Error & { status?: number }).status ?? 500;
+    req.log.error(err);
+    res.status(status).json({ error: err instanceof Error ? err.message : "Demo seed failed" });
+  }
+});
+
+router.delete("/test-controls/data", async (_req, res) => {
+  try {
+    assertTestModeFeature(testMode.allowDemoApproval, "Demo data cleanup");
+    const emails = demoAccounts.map((account) => account.email);
+    const users = await db.select().from(usersTable).where(inArray(usersTable.email, emails));
+    for (const user of users) {
+      await db.delete(walletTransactionsTable).where(eq(walletTransactionsTable.userId, user.id));
+      await db.delete(deliveryPartnersTable).where(eq(deliveryPartnersTable.userId, user.id));
+      const stores = await db.select().from(storesTable).where(eq(storesTable.userId, user.id));
+      for (const store of stores) await db.delete(storesTable).where(eq(storesTable.id, store.id));
+      if (user.email !== process.env.ADMIN_EMAIL) await db.delete(usersTable).where(eq(usersTable.id, user.id));
+    }
+    res.json({ message: "Demo data removed where safe." });
+  } catch (err) {
+    const status = (err as Error & { status?: number }).status ?? 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : "Demo cleanup failed" });
   }
 });
 
@@ -352,7 +559,26 @@ router.get("/orders", async (req: AuthRequest, res) => {
     const stores = await db.select().from(storesTable);
     const storeMap = new Map(stores.map(s => [s.id, s]));
 
-    res.json(orders.map(o => ({ ...o, store: storeMap.get(o.storeId) })));
+    res.json(orders.map(o => {
+      const store = storeMap.get(o.storeId);
+      return {
+        ...o,
+        store,
+        liveTracking: {
+          orderId: o.id,
+          status: o.status,
+          estimatedMins: o.estimatedDeliveryMins ?? 40,
+          storeLocation: store ? { lat: store.lat, lng: store.lng, label: store.name, address: store.address } : null,
+          customerLocation: o.pickupLatitude && o.pickupLongitude ? {
+            lat: Number(o.pickupLatitude),
+            lng: Number(o.pickupLongitude),
+            label: "Customer pickup location",
+            address: o.pickupAddress ?? "Confirmed pickup point",
+          } : null,
+          distanceKm: o.pickupDistanceKm ? Number(o.pickupDistanceKm) : null,
+        },
+      };
+    }));
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -384,22 +610,79 @@ router.get("/coupons", async (req: AuthRequest, res) => {
 // POST /api/admin/coupons
 router.post("/coupons", async (req: AuthRequest, res) => {
   try {
-    const { code, description, discountType, discountValue, minOrderValue, maxDiscount, usageLimit, perUserLimit, expiresAt } = req.body;
+    const { code, description, discountType, discountValue, minOrderValue, maxDiscount, usageLimit, perUserLimit, expiresAt, isActive, isSpecial } = req.body;
+    const nextCode = String(code ?? "").trim().toUpperCase();
+    const nextType = discountType === "percent" ? "percent" : "flat";
+    const nextValue = Number(discountValue);
+    if (!/^[A-Z0-9_-]{3,20}$/.test(nextCode)) { res.status(400).json({ error: "Coupon code must be 3-20 letters/numbers" }); return; }
+    if (!Number.isFinite(nextValue) || nextValue <= 0) { res.status(400).json({ error: "Discount value required" }); return; }
+    if (nextType === "percent" && nextValue > 100) { res.status(400).json({ error: "Percent discount cannot be more than 100" }); return; }
     const [coupon] = await db.insert(couponsTable).values({
-      code: code.toUpperCase(),
-      description,
-      discountType,
-      discountValue,
-      minOrderValue,
-      maxDiscount,
-      usageLimit,
-      perUserLimit,
+      code: nextCode,
+      description: String(description ?? "").trim(),
+      discountType: nextType,
+      discountValue: nextValue.toFixed(2),
+      minOrderValue: minOrderValue !== undefined && minOrderValue !== "" ? Number(minOrderValue).toFixed(2) : "0",
+      maxDiscount: maxDiscount !== undefined && maxDiscount !== "" ? Number(maxDiscount).toFixed(2) : null,
+      usageLimit: usageLimit !== undefined && usageLimit !== "" ? Number(usageLimit) : null,
+      perUserLimit: perUserLimit !== undefined && perUserLimit !== "" ? Number(perUserLimit) : 1,
       expiresAt: expiresAt ? new Date(expiresAt) : null,
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
+      isSpecial: Boolean(isSpecial),
     }).returning();
     res.status(201).json(coupon);
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not create coupon" });
+  }
+});
+
+// PATCH /api/admin/coupons/:couponId
+router.patch("/coupons/:couponId", async (req: AuthRequest, res) => {
+  try {
+    const couponId = Number(req.params.couponId);
+    const [existing] = await db.select().from(couponsTable).where(eq(couponsTable.id, couponId)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Coupon not found" }); return; }
+
+    const nextCode = req.body.code !== undefined ? String(req.body.code).trim().toUpperCase() : existing.code;
+    const nextType = req.body.discountType === "percent" ? "percent" : req.body.discountType === "flat" ? "flat" : existing.discountType;
+    const nextValue = req.body.discountValue !== undefined ? Number(req.body.discountValue) : Number(existing.discountValue);
+    if (!/^[A-Z0-9_-]{3,20}$/.test(nextCode)) { res.status(400).json({ error: "Coupon code must be 3-20 letters/numbers" }); return; }
+    if (!Number.isFinite(nextValue) || nextValue <= 0) { res.status(400).json({ error: "Discount value required" }); return; }
+    if (nextType === "percent" && nextValue > 100) { res.status(400).json({ error: "Percent discount cannot be more than 100" }); return; }
+
+    const [coupon] = await db.update(couponsTable).set({
+      code: nextCode,
+      description: req.body.description !== undefined ? String(req.body.description).trim() : existing.description,
+      discountType: nextType,
+      discountValue: nextValue.toFixed(2),
+      minOrderValue: req.body.minOrderValue !== undefined && req.body.minOrderValue !== "" ? Number(req.body.minOrderValue).toFixed(2) : req.body.minOrderValue === "" ? "0" : existing.minOrderValue,
+      maxDiscount: req.body.maxDiscount !== undefined && req.body.maxDiscount !== "" ? Number(req.body.maxDiscount).toFixed(2) : req.body.maxDiscount === "" ? null : existing.maxDiscount,
+      usageLimit: req.body.usageLimit !== undefined && req.body.usageLimit !== "" ? Number(req.body.usageLimit) : req.body.usageLimit === "" ? null : existing.usageLimit,
+      perUserLimit: req.body.perUserLimit !== undefined && req.body.perUserLimit !== "" ? Number(req.body.perUserLimit) : req.body.perUserLimit === "" ? null : existing.perUserLimit,
+      expiresAt: req.body.expiresAt !== undefined ? (req.body.expiresAt ? new Date(req.body.expiresAt) : null) : existing.expiresAt,
+      isActive: req.body.isActive !== undefined ? Boolean(req.body.isActive) : existing.isActive,
+      isSpecial: req.body.isSpecial !== undefined ? Boolean(req.body.isSpecial) : existing.isSpecial,
+    }).where(eq(couponsTable.id, couponId)).returning();
+    res.json(coupon);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not update coupon" });
+  }
+});
+
+// DELETE /api/admin/coupons/:couponId
+router.delete("/coupons/:couponId", async (req: AuthRequest, res) => {
+  try {
+    const couponId = Number(req.params.couponId);
+    await db.transaction(async (tx) => {
+      await tx.delete(couponUsesTable).where(eq(couponUsesTable.couponId, couponId));
+      await tx.delete(couponsTable).where(eq(couponsTable.id, couponId));
+    });
+    res.json({ message: "Coupon deleted" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: "Could not delete coupon" });
   }
 });
 
@@ -410,6 +693,123 @@ router.get("/banners", async (req: AuthRequest, res) => {
     res.json(banners);
   } catch (err) {
     req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/admin/service-zones
+router.get("/service-zones", async (req: AuthRequest, res) => {
+  try {
+    const zones = await db.select().from(serviceZonesTable).orderBy(desc(serviceZonesTable.createdAt));
+    const [stores, products, orders] = await Promise.all([
+      db.select().from(storesTable),
+      db.select().from(productsTable),
+      db.select().from(ordersTable),
+    ]);
+    res.json(zones.map((zone) => ({
+      ...zone,
+      zoneCode: zone.code,
+      zoneName: zone.name,
+      status: zone.isActive ? "active" : "paused",
+      defaultDeliveryTime: zone.deliveryMinutes,
+      shops: stores.filter((store) => Number(store.zoneId) === zone.id).length,
+      products: products.filter((product) => Number(product.zoneId) === zone.id).length,
+      orders: orders.filter((order) => Number(order.zoneId) === zone.id).length,
+    })));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/admin/service-zones
+router.post("/service-zones", async (req: AuthRequest, res) => {
+  try {
+    const payload = zonePayload(req.body, req.user!.userId);
+    const [zone] = await db.insert(serviceZonesTable).values({ ...payload, createdByAdminId: req.user!.userId }).returning();
+    await auditZone(req, "zone.created", { zoneId: zone.id, newValue: payload });
+    res.status(201).json({ ...zone, zoneCode: zone.code, zoneName: zone.name, status: zone.isActive ? "active" : "paused", defaultDeliveryTime: zone.deliveryMinutes });
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not create service zone" });
+  }
+});
+
+// PATCH /api/admin/service-zones/:zoneId
+router.patch("/service-zones/:zoneId", async (req: AuthRequest, res) => {
+  try {
+    const zoneId = Number(req.params.zoneId);
+    const [oldZone] = await db.select().from(serviceZonesTable).where(eq(serviceZonesTable.id, zoneId)).limit(1);
+    if (!oldZone) { res.status(404).json({ error: "Service zone not found" }); return; }
+    const payload = zonePayload({ ...oldZone, ...req.body, code: req.body.code ?? req.body.zoneCode ?? oldZone.code, name: req.body.name ?? req.body.zoneName ?? oldZone.name, centreLatitude: req.body.centreLatitude ?? oldZone.centreLatitude, centreLongitude: req.body.centreLongitude ?? oldZone.centreLongitude }, req.user!.userId);
+    const [zone] = await db.update(serviceZonesTable).set({ ...payload, updatedAt: new Date() }).where(eq(serviceZonesTable.id, zoneId)).returning();
+    await auditZone(req, "zone.updated", { zoneId, oldValue: oldZone as any, newValue: payload });
+    res.json({ ...zone, zoneCode: zone.code, zoneName: zone.name, status: zone.isActive ? "active" : "paused", defaultDeliveryTime: zone.deliveryMinutes });
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not update service zone" });
+  }
+});
+
+// DELETE /api/admin/service-zones/:zoneId
+router.delete("/service-zones/:zoneId", async (req: AuthRequest, res) => {
+  try {
+    const zoneId = Number(req.params.zoneId);
+    const hasStores = await db.select({ id: storesTable.id }).from(storesTable).where(eq(storesTable.zoneId, zoneId)).limit(1);
+    if (hasStores.length) {
+      await db.update(serviceZonesTable).set({ archivedAt: new Date(), isActive: false, acceptingOrders: false, deliveryEnabled: false, updatedByAdminId: req.user!.userId }).where(eq(serviceZonesTable.id, zoneId));
+      await auditZone(req, "zone.archived", { zoneId });
+      res.json({ message: "Service zone archived because stores are assigned to it." });
+      return;
+    }
+    await db.delete(serviceZonesTable).where(eq(serviceZonesTable.id, zoneId));
+    await auditZone(req, "zone.deleted", { zoneId });
+    res.json({ message: "Service zone deleted" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/admin/service-zones/:zoneId/assign-seller
+router.post("/service-zones/:zoneId/assign-seller", async (req: AuthRequest, res) => {
+  try {
+    const zoneId = Number(req.params.zoneId);
+    const sellerId = Number(req.body.sellerId);
+    const shopId = req.body.shopId ? Number(req.body.shopId) : undefined;
+    if (!sellerId) { res.status(400).json({ error: "Seller is required" }); return; }
+    if (shopId) await db.update(storesTable).set({ zoneId, updatedAt: new Date() }).where(eq(storesTable.id, shopId));
+    await db.insert(sellerZoneAssignmentsTable).values({ sellerId, shopId: shopId ?? null, zoneId, status: "approved", assignedByAdminId: req.user!.userId });
+    await auditZone(req, "seller.assigned", { zoneId, targetUserId: sellerId, newValue: { shopId } });
+    res.json({ message: "Seller assigned to zone" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/admin/service-zones/:zoneId/assign-rider
+router.post("/service-zones/:zoneId/assign-rider", async (req: AuthRequest, res) => {
+  try {
+    const zoneId = Number(req.params.zoneId);
+    const riderId = Number(req.body.riderId);
+    if (!riderId) { res.status(400).json({ error: "Delivery partner is required" }); return; }
+    await db.update(deliveryPartnersTable).set({ currentZoneId: zoneId }).where(eq(deliveryPartnersTable.userId, riderId));
+    await db.insert(riderZoneAssignmentsTable).values({ riderId, zoneId, isPrimary: req.body.isPrimary !== false, status: "approved", assignedByAdminId: req.user!.userId });
+    await auditZone(req, "rider.assigned", { zoneId, targetUserId: riderId });
+    res.json({ message: "Delivery partner assigned to zone" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/admin/zone-change-requests
+router.get("/zone-change-requests", async (_req: AuthRequest, res) => {
+  try {
+    res.json(await db.select().from(zoneChangeRequestsTable).orderBy(desc(zoneChangeRequestsTable.requestedAt)));
+  } catch (err) {
+    _req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

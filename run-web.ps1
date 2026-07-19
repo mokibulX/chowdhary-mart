@@ -14,11 +14,19 @@ if (-not $viteBin -or -not (Test-Path $viteBin)) {
 Write-Host "Starting Chowdhary Mart..." -ForegroundColor Green
 
 Set-Location $webDir
+$existing = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue
+if ($existing) {
+  foreach ($pidValue in ($existing | Select-Object -ExpandProperty OwningProcess -Unique)) {
+    $proc = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+    if ($proc -and $proc.ProcessName -eq "node") { Stop-Process -Id $pidValue -Force }
+  }
+  Start-Sleep -Seconds 1
+}
 for ($port = 5173; $port -le 5190; $port++) {
   $busy = Test-NetConnection -ComputerName 127.0.0.1 -Port $port -InformationLevel Quiet -WarningAction SilentlyContinue
   if (-not $busy) {
     Write-Host "Open this URL in your browser: http://127.0.0.1:$port" -ForegroundColor Cyan
-    node $viteBin --config vite.config.ts --host 127.0.0.1 --port $port
+    & node "$viteBin" --config vite.config.ts --host 127.0.0.1 --port $port
     exit $LASTEXITCODE
   }
 }

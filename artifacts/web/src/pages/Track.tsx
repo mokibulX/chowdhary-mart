@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Bike, CheckCircle2, Headphones, Navigation, Phone } from "lucide-react";
 import { LiveDeliveryMap } from "@/components/LiveDeliveryMap";
+import { testMode } from "@/lib/test-mode";
 
 const STEP_LABELS: Record<string, string> = {
   pending: "Order placed",
@@ -66,7 +67,7 @@ export default function Track() {
               <p className="text-[11px] text-white/60">km</p>
             </div>
             <div className="rounded-lg bg-white/10 px-3 py-2">
-              <p className="text-xl font-bold">{isDelivered ? "Done" : t?.deliveryOtp ?? "----"}</p>
+              <p className="text-xl font-bold">{isDelivered ? "Done" : testMode.demoOtpCode || "123456"}</p>
               <p className="text-[11px] text-white/60">{isDelivered ? "OTP cleared" : "OTP"}</p>
             </div>
           </div>

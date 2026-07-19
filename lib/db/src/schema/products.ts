@@ -4,10 +4,12 @@ import { z } from "zod/v4";
 import { storesTable } from "./stores";
 import { categoriesTable } from "./categories";
 import { brandsTable } from "./categories";
+import { serviceZonesTable } from "./zones";
 
 export const productsTable = pgTable("products", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id").notNull().references(() => storesTable.id, { onDelete: "cascade" }),
+  zoneId: integer("zone_id").references(() => serviceZonesTable.id),
   categoryId: integer("category_id").references(() => categoriesTable.id),
   brandId: integer("brand_id").references(() => brandsTable.id),
   name: varchar("name", { length: 255 }).notNull(),

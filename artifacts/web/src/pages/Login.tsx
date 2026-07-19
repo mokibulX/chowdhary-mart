@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, ChevronDown, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, Smartphone, Store, Truck, UserRound, Zap } from "lucide-react";
+import { CheckCircle2, ChevronDown, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, Smartphone, Store, Truck, UserRound } from "lucide-react";
+import { testMode } from "@/lib/test-mode";
 
 type AuthResponse = {
   token: string;
@@ -16,24 +18,18 @@ type AuthResponse = {
 
 type LoginMode = "password" | "otp" | "forgot";
 type LoginRole = "customer" | "vendor" | "delivery_partner" | "admin";
-
-const demoLoginEnabled = (() => {
-  const env = import.meta.env as Record<string, string | boolean | undefined>;
-  const flag = env.VITE_ENABLE_DEMO_ACCOUNTS ?? env.ENABLE_DEMO_ACCOUNTS;
-  if (flag !== undefined) return String(flag).toLowerCase() === "true";
-  return env.PROD !== true;
-})();
+type DemoAccount = { role: LoginRole; label: string; email: string; password: string };
 
 const env = import.meta.env as Record<string, string | undefined>;
-const demoAccounts = [
+const demoAccounts: DemoAccount[] = [
   { role: "customer" as LoginRole, label: "Login as Customer", email: env.VITE_DEMO_CUSTOMER_EMAIL || "customer.demo@chowdharymart.test", password: env.VITE_DEMO_CUSTOMER_PASSWORD || "Demo@Customer123" },
   { role: "vendor" as LoginRole, label: "Login as Seller", email: env.VITE_DEMO_SELLER_EMAIL || "seller.demo@chowdharymart.test", password: env.VITE_DEMO_SELLER_PASSWORD || "Demo@Seller123" },
   { role: "delivery_partner" as LoginRole, label: "Login as Delivery Partner", email: env.VITE_DEMO_RIDER_EMAIL || "rider.demo@chowdharymart.test", password: env.VITE_DEMO_RIDER_PASSWORD || "Demo@Rider123" },
-  { role: "admin" as LoginRole, label: "Login as Admin", email: env.VITE_DEMO_ADMIN_EMAIL || "admin.demo@chowdharymart.test", password: env.VITE_DEMO_ADMIN_PASSWORD || "Demo@Admin123" },
 ];
+const adminDemoAccount: DemoAccount = { role: "admin", label: "Login as Admin", email: env.VITE_DEMO_ADMIN_EMAIL || "admin.demo@chowdharymart.test", password: env.VITE_DEMO_ADMIN_PASSWORD || "Demo@Admin123" };
 
 const roleContent: Record<LoginRole, { heading: string; subtitle: string; icon: typeof UserRound; accent: string }> = {
-  customer: { heading: "Welcome Back", subtitle: "Login to shop from your nearby local stores.", icon: UserRound, accent: "from-orange-500 to-amber-400" },
+  customer: { heading: "Customer Login", subtitle: "Login to shop from your nearby local stores.", icon: UserRound, accent: "from-orange-500 to-amber-400" },
   vendor: { heading: "Seller Login", subtitle: "Manage your products, orders and store.", icon: Store, accent: "from-blue-600 to-cyan-500" },
   delivery_partner: { heading: "Delivery Partner Login", subtitle: "Go online, accept orders and start delivering.", icon: Truck, accent: "from-green-600 to-emerald-400" },
   admin: { heading: "Admin Control Panel", subtitle: "Secure access for authorised administrators only.", icon: LockKeyhole, accent: "from-slate-950 to-slate-700" },
@@ -62,6 +58,7 @@ export default function Login() {
   const [location, setLocation] = useLocation();
   const { login: setAuthContext } = useAuth();
   const { toast } = useToast();
+  const authToast = (options: Parameters<typeof toast>[0]) => toast({ duration: 2000, ...options });
   const loginMutation = useLogin();
   const initialRole = roleFromPath(location);
   const [role, setRole] = useState<LoginRole>(initialRole);
@@ -78,6 +75,8 @@ export default function Login() {
   const [success, setSuccess] = useState(false);
   const content = roleContent[role];
   const RoleIcon = content.icon;
+  const isAdminLogin = role === "admin";
+  const visibleDemoAccounts = isAdminLogin && env.VITE_SHOW_ADMIN_DEMO_ON_ADMIN_LOGIN === "true" ? [adminDemoAccount] : demoAccounts;
   const canSubmit = useMemo(() => {
     if (mode === "password") return Boolean(identifier.trim() && password);
     if (mode === "otp") return Boolean(identifier.trim() && (!otpSent || otp.length >= 4));
@@ -87,51 +86,76 @@ export default function Login() {
   const finishLogin = (res: AuthResponse) => {
     setSuccess(true);
     setAuthContext(res.token);
-    toast({ title: "Login successful", description: `Signed in as ${res.user.name}` });
+    authToast({ title: "Login successful", description: `Signed in as ${res.user.name}` });
     window.setTimeout(() => setLocation(routeForRole(res.user.role)), 450);
   };
 
   const handlePasswordLogin = (event: React.FormEvent) => {
     event.preventDefault();
     if (!canSubmit) return;
+    const adminEmail = String(env.VITE_ADMIN_EMAIL || "").replace(/^"|"$/g, "").trim().toLowerCase();
+    const resolvedRole: LoginRole = adminEmail && identifier.trim().toLowerCase() === adminEmail ? "admin" : role;
     loginMutation.mutate(
-      { data: { ...splitIdentifier(identifier), password, rememberMe, roleHint: role } as any },
+      { data: { ...splitIdentifier(identifier), password, rememberMe, roleHint: resolvedRole } as any },
       {
         onSuccess: finishLogin,
         onError: (err: unknown) => {
           const message = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
             ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
             ?? "Network connection failed. Please try again.";
-          toast({ title: "Login failed", description: message, variant: "destructive" });
+          authToast({ title: "Login failed", description: message, variant: "destructive" });
         },
       },
     );
   };
 
-  const fillDemo = (account: (typeof demoAccounts)[number]) => {
+  const fillDemo = (account: DemoAccount) => {
     setMode("password");
     setRole(account.role);
     setOtpSent(false);
     setOtp("");
     setIdentifier(account.email);
     setPassword(account.password);
-    toast({ title: "Demo account filled", description: "Tap Login to continue in demo mode." });
+    authToast({ title: "Demo account filled", description: "Tap Login to continue in demo mode." });
   };
 
-  const handleSendOtp = () => {
+  const handleRoleChange = (value: LoginRole) => {
+    setRole(value);
+    setMode("password");
+    setIdentifier("");
+    setPassword("");
+    setOtp("");
+    setOtpSent(false);
+    setNewPassword("");
+    setConfirmPassword("");
+  };
+
+  const handleSendOtp = async (purpose: "login" | "forgot") => {
     if (!identifier.trim()) {
-      toast({ title: "Email or phone required", variant: "destructive" });
+      authToast({ title: "Email or phone required", variant: "destructive" });
       return;
     }
-    setOtpSent(true);
-    setOtp("");
-    toast({ title: "OTP sent", description: "Enter the verification code to continue." });
+    setBusy(true);
+    try {
+      await customFetch("/api/auth/otp/send", {
+        method: "POST",
+        body: JSON.stringify({ ...splitIdentifier(identifier), purpose }),
+      });
+      setOtpSent(true);
+      setOtp("");
+      authToast({ title: "OTP sent", description: "Enter the verification code to continue." });
+    } catch (err) {
+      const message = (err as { data?: { error?: string } })?.data?.error ?? "OTP send failed";
+      authToast({ title: "OTP failed", description: message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleOtpLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!otpSent) {
-      handleSendOtp();
+      void handleSendOtp("login");
       return;
     }
     setBusy(true);
@@ -143,7 +167,7 @@ export default function Login() {
       finishLogin(res);
     } catch (err) {
       const message = (err as { data?: { error?: string } })?.data?.error ?? "OTP verification failed";
-      toast({ title: "OTP failed", description: message, variant: "destructive" });
+      authToast({ title: "OTP failed", description: message, variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -152,11 +176,11 @@ export default function Login() {
   const handleForgotPassword = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!otpSent) {
-      handleSendOtp();
+      void handleSendOtp("forgot");
       return;
     }
     if (newPassword !== confirmPassword) {
-      toast({ title: "Password mismatch", description: "New password and confirm password must match.", variant: "destructive" });
+      authToast({ title: "Password mismatch", description: "New password and confirm password must match.", variant: "destructive" });
       return;
     }
     setBusy(true);
@@ -165,7 +189,7 @@ export default function Login() {
         method: "POST",
         body: JSON.stringify({ ...splitIdentifier(identifier), otp, password: newPassword }),
       });
-      toast({ title: "Password updated", description: "Now sign in with your new password." });
+      authToast({ title: "Password updated", description: "Now sign in with your new password." });
       setPassword(newPassword);
       setNewPassword("");
       setConfirmPassword("");
@@ -174,7 +198,7 @@ export default function Login() {
       setMode("password");
     } catch (err) {
       const message = (err as { data?: { error?: string } })?.data?.error ?? "Password reset failed";
-      toast({ title: "Reset failed", description: message, variant: "destructive" });
+      authToast({ title: "Reset failed", description: message, variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -183,7 +207,7 @@ export default function Login() {
   const signingIn = loginMutation.isPending || busy || success;
 
   return (
-    <div className="relative flex min-h-[100dvh] items-center justify-center overflow-x-hidden overflow-y-auto bg-[#f7f8fb] px-3 py-4 sm:px-4 sm:py-8">
+    <div className="native-page-scroll relative flex min-h-[100dvh] items-center justify-center bg-[#f7f8fb] px-3 py-4 sm:px-4 sm:py-8">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_10%_10%,rgba(249,115,22,.18),transparent_30%),radial-gradient(circle_at_90%_15%,rgba(37,99,235,.16),transparent_28%),linear-gradient(135deg,#fff7ed_0%,#f8fafc_45%,#eff6ff_100%)]" />
       <div className="absolute inset-x-0 top-0 h-32 bg-[linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,.18)_1px,transparent_1px)] bg-[size:28px_28px] opacity-50" />
 
@@ -191,8 +215,8 @@ export default function Login() {
         <section className="hidden min-h-[620px] overflow-hidden rounded-[32px] bg-gray-950 p-8 text-white shadow-2xl lg:flex lg:flex-col lg:justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-primary">
-                <Zap className="h-8 w-8" />
+              <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-white">
+                <img src="/app-logo.png" alt="Chowdhary Mart" className="h-full w-full object-cover" />
               </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/50">CHOWDHARY MART</p>
@@ -202,7 +226,7 @@ export default function Login() {
             <div className="mt-12">
               <p className="mb-3 inline-flex rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/80">Secure login</p>
               <h2 className="text-4xl font-black leading-tight">Fast shopping, seller tools and live delivery in one place.</h2>
-              <p className="mt-4 text-sm leading-6 text-white/65">Role-aware access, OTP recovery, admin audit trail and mobile-first authentication for ChowdharyMart.</p>
+              <p className="mt-4 text-sm leading-6 text-white/65">Role-aware access, OTP recovery and mobile-first authentication for ChowdharyMart.</p>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 text-center text-xs">
@@ -224,17 +248,22 @@ export default function Login() {
             </div>
           </div>
 
-          {role !== "admin" ? (
-            <div className="mb-4 grid grid-cols-3 gap-2 rounded-2xl bg-gray-100 p-1">
-              {([
-                ["customer", "Customer"],
-                ["vendor", "Seller"],
-                ["delivery_partner", "Rider"],
-              ] as Array<[LoginRole, string]>).map(([value, label]) => (
-                <button key={value} type="button" onClick={() => setRole(value)} className={`h-11 rounded-xl text-xs font-bold transition ${role === value ? "bg-white text-primary shadow-sm" : "text-gray-600"}`}>
-                  {label}
-                </button>
-              ))}
+          {!isAdminLogin ? (
+            <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+              <Label className="mb-2 block text-xs font-bold uppercase tracking-wide text-muted-foreground">Login type</Label>
+              <Select value={role} onValueChange={(value) => handleRoleChange(value as LoginRole)}>
+                <SelectTrigger className="h-12 rounded-2xl bg-white text-base font-bold">
+                  <SelectValue placeholder="Choose account type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="customer">Customer</SelectItem>
+                  <SelectItem value="vendor">Seller / shop owner</SelectItem>
+                  <SelectItem value="delivery_partner">Delivery partner</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+              {role === "vendor" && <p className="mt-2 text-xs font-medium text-blue-700">Seller dashboard opens only after admin approval.</p>}
+              {role === "delivery_partner" && <p className="mt-2 text-xs font-medium text-emerald-700">Delivery dashboard opens only after verification and admin approval.</p>}
             </div>
           ) : (
             <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
@@ -242,14 +271,21 @@ export default function Login() {
             </div>
           )}
 
-          {demoLoginEnabled && (
+          {testMode.enabled && (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-950">
+              Testing build — OTP and payments are simulated. GPS location is live from this device.
+              {testMode.allowDemoOtp ? <span className="ml-1 font-black">Demo OTP: {testMode.demoOtpCode}</span> : null}
+            </div>
+          )}
+
+          {testMode.demoAccountsEnabled && visibleDemoAccounts.length > 0 && (
             <div className="mb-4 overflow-hidden rounded-2xl border border-amber-200 bg-amber-50">
               <button type="button" className="flex w-full items-center justify-between px-3 py-3 text-sm font-bold text-amber-950" onClick={() => setShowDemo((value) => !value)}>
                 Demo Accounts <ChevronDown className={`h-4 w-4 transition ${showDemo ? "rotate-180" : ""}`} />
               </button>
               {showDemo && (
                 <div className="grid gap-2 border-t border-amber-200 p-3">
-                  {demoAccounts.map((account) => (
+                  {visibleDemoAccounts.map((account) => (
                     <Button key={account.email} type="button" variant="outline" className="h-11 justify-start rounded-xl bg-white" onClick={() => fillDemo(account)}>
                       {account.label}
                     </Button>
@@ -286,7 +322,12 @@ export default function Login() {
             <TabsContent value="otp">
               <form onSubmit={handleOtpLogin} className="space-y-4" autoComplete="off">
                 <Field label="Email or mobile number" value={identifier} onChange={setIdentifier} placeholder="Enter email or mobile number" icon={<Smartphone className="h-4 w-4" />} autoComplete="off" />
-                {otpSent && <Field label="OTP code" value={otp} onChange={(value) => setOtp(value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter OTP" inputMode="numeric" icon={<ShieldCheck className="h-4 w-4" />} autoComplete="one-time-code" />}
+                {otpSent && (
+                  <>
+                    <Field label="OTP code" value={otp} onChange={(value) => setOtp(value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter OTP" inputMode="numeric" icon={<ShieldCheck className="h-4 w-4" />} autoComplete="one-time-code" />
+                    {testMode.allowDemoOtp && <p className="text-xs font-semibold text-amber-700">Demo OTP: {testMode.demoOtpCode}</p>}
+                  </>
+                )}
                 <Button type="submit" className="h-12 w-full rounded-2xl text-base font-bold" disabled={!canSubmit || signingIn}>
                   {busy ? "Verifying..." : otpSent ? "Verify OTP and login" : "Send OTP"}
                 </Button>
@@ -299,6 +340,7 @@ export default function Login() {
                 {otpSent && (
                   <>
                     <Field label="OTP code" value={otp} onChange={(value) => setOtp(value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter OTP" inputMode="numeric" icon={<ShieldCheck className="h-4 w-4" />} autoComplete="one-time-code" />
+                    {testMode.allowDemoOtp && <p className="text-xs font-semibold text-amber-700">Demo OTP: {testMode.demoOtpCode}</p>}
                     <Field label="New password" value={newPassword} onChange={setNewPassword} placeholder="Minimum 6 characters" type="password" icon={<KeyRound className="h-4 w-4" />} autoComplete="new-password" />
                     <Field label="Confirm new password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Re-enter new password" type="password" icon={<KeyRound className="h-4 w-4" />} autoComplete="new-password" />
                   </>
@@ -313,7 +355,7 @@ export default function Login() {
           <div className="mt-5 grid gap-2 text-center text-sm">
             {role !== "admin" && (
               <p className="text-muted-foreground">
-                New here? <Link href="/register" className="font-medium text-primary hover:underline">Create account</Link>
+                New here? <Link href={`/register?role=${role}`} className="font-medium text-primary hover:underline">Create account</Link>
               </p>
             )}
             {role === "vendor" && <Link href="/seller/register" className="font-semibold text-[#0f3f8f] hover:underline">Register your shop</Link>}

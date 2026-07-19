@@ -7,7 +7,7 @@ export const userRoleEnum = pgEnum("user_role", ["customer", "vendor", "delivery
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
   email: varchar("email", { length: 255 }).unique(),
-  phone: varchar("phone", { length: 20 }).unique(),
+  phone: varchar("phone", { length: 20 }),
   passwordHash: text("password_hash"),
   name: varchar("name", { length: 255 }).notNull(),
   avatarUrl: text("avatar_url"),

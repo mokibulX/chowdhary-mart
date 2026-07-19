@@ -5,7 +5,7 @@ export type DeliveryLocation = {
   area: string;
   lat: number;
   lng: number;
-  source?: "pincode" | "gps";
+  source?: "pincode" | "gps" | "places";
   accuracy?: number;
   capturedAt?: string;
 };

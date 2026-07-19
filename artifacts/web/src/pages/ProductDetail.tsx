@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import {
   useAddToCart,
@@ -11,6 +11,7 @@ import {
   useListOrders,
   useListProducts,
   useRemoveFromWishlist,
+  customFetch,
   getGetCartQueryKey,
   getGetProductQueryKey,
   getGetProductReviewsQueryKey,
@@ -18,7 +19,7 @@ import {
   getListOrdersQueryKey,
   getListProductsQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +52,12 @@ const COLOR_SWATCHES: Record<string, string> = {
   silver: "#c0c0c0",
 };
 
+type RelatedProductsResponse = {
+  items: any[];
+  nextCursor?: string | null;
+  hasMore: boolean;
+};
+
 function normalizeOptions(value: unknown) {
   const source = Array.isArray(value) ? value : String(value ?? "").split(",");
   return Array.from(new Set(source.map((item) => String(item).trim()).filter(Boolean)));
@@ -72,6 +79,7 @@ export default function ProductDetail() {
   const [locatingGps, setLocatingGps] = useState(false);
   const [selectedSize, setSelectedSize] = useState("");
   const [selectedColor, setSelectedColor] = useState("");
+  const relatedLoaderRef = useRef<HTMLDivElement | null>(null);
 
   const { data: product, isLoading } = useGetProduct(id, {
     query: { enabled: !!id, queryKey: getGetProductQueryKey(id) },
@@ -88,6 +96,25 @@ export default function ProductDetail() {
   const { data: cart } = useGetCart({ query: { enabled: !!user, queryKey: getGetCartQueryKey() } });
   const { data: wishlist } = useGetWishlist({ query: { enabled: !!user, queryKey: getGetWishlistQueryKey() } });
   const { data: orders } = useListOrders({ limit: 50 }, { query: { enabled: !!user, queryKey: getListOrdersQueryKey({ limit: 50 }) } });
+
+  const relatedQuery = useInfiniteQuery({
+    queryKey: ["product-related", id, deliveryLocation.pincode, deliveryLocation.lat, deliveryLocation.lng],
+    initialPageParam: "",
+    enabled: !!id && !!product,
+    queryFn: ({ pageParam, signal }) => {
+      const params = new URLSearchParams({
+        limit: "16",
+        radiusKm: "5",
+        pincode: deliveryLocation.pincode || "",
+        lat: String(deliveryLocation.lat),
+        lng: String(deliveryLocation.lng),
+      });
+      if (pageParam) params.set("cursor", String(pageParam));
+      return customFetch<RelatedProductsResponse>(`/api/products/${id}/related?${params.toString()}`, { signal, responseType: "json" } as any);
+    },
+    getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.nextCursor : undefined,
+    staleTime: 60_000,
+  });
 
   const addToCart = useAddToCart();
   const createReview = useCreateReview();
@@ -136,6 +163,21 @@ export default function ProductDetail() {
   }, [(product as any)?.id]);
 
   useEffect(() => {
+    const target = relatedLoaderRef.current;
+    if (!target || !relatedQuery.hasNextPage || relatedQuery.isFetchingNextPage) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && relatedQuery.hasNextPage && !relatedQuery.isFetchingNextPage) {
+          relatedQuery.fetchNextPage();
+        }
+      },
+      { rootMargin: "700px 0px 700px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [relatedQuery.hasNextPage, relatedQuery.isFetchingNextPage, relatedQuery.fetchNextPage]);
+
+  useEffect(() => {
     const colorImages = (product as any)?.colorImages && typeof (product as any).colorImages === "object" ? (product as any).colorImages : {};
     const colorImage = selectedColor ? colorImages[selectedColor] || colorImages[selectedColor.toLowerCase()] : "";
     const rotatingImages = [colorImage, ...((product as any)?.images ?? [])].filter(Boolean);
@@ -175,6 +217,10 @@ export default function ProductDetail() {
   const sellerActive = !(product as any).store || (product as any).store?.isOpen !== false;
   const specs = (product as any).specifications && typeof (product as any).specifications === "object" ? Object.entries((product as any).specifications) : [];
   const similarProducts = (similar?.items ?? []).filter((item: any) => item.id !== id);
+  const relatedProducts = (() => {
+    const items = relatedQuery.data?.pages.flatMap((page) => page.items ?? []) ?? [];
+    return Array.from(new Map(items.filter((item: any) => item.id !== id).map((item: any) => [item.id, item])).values());
+  })();
   const eligibleOrder = (orders ?? []).find((order: any) => order.status === "delivered" && (order.items ?? []).some((item: any) => Number(item.productId) === id));
   const sizes = normalizeOptions((product as any).sizes ?? (product as any).specifications?.Sizes ?? (product as any).specifications?.Size);
   const colors = normalizeOptions((product as any).colors ?? (product as any).specifications?.Colors ?? (product as any).specifications?.Color);
@@ -238,7 +284,7 @@ export default function ProductDetail() {
     }
     if (!requireOptions()) return;
     addToCart.mutate(
-      { data: { productId: id, qty: 1, selectedSize, selectedColor, selectedImageUrl } },
+      { data: { productId: id, qty: 1, selectedSize, selectedColor, selectedImageUrl } as any },
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetCartQueryKey() });
@@ -256,7 +302,7 @@ export default function ProductDetail() {
 
   const handleAdjust = (newQty: number) => {
     addToCart.mutate(
-      { data: { productId: id, qty: newQty, selectedSize, selectedColor, selectedImageUrl } },
+      { data: { productId: id, qty: newQty, selectedSize, selectedColor, selectedImageUrl } as any },
       { onSuccess: () => qc.invalidateQueries({ queryKey: getGetCartQueryKey() }) }
     );
   };
@@ -269,7 +315,7 @@ export default function ProductDetail() {
     }
     if (!requireOptions()) return;
     addToCart.mutate(
-      { data: { productId: id, qty: Math.max(1, qty || 1), selectedSize, selectedColor, selectedImageUrl } },
+      { data: { productId: id, qty: Math.max(1, qty || 1), selectedSize, selectedColor, selectedImageUrl } as any },
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetCartQueryKey() });
@@ -297,6 +343,39 @@ export default function ProductDetail() {
         { data: { productId: id } },
         { onSuccess: () => qc.invalidateQueries({ queryKey: getGetWishlistQueryKey() }) }
       );
+    }
+  };
+
+  const prefetchRelatedProduct = (productId: number) => {
+    qc.prefetchQuery({
+      queryKey: getGetProductQueryKey(productId),
+      queryFn: () => customFetch(`/api/products/${productId}`),
+      staleTime: 60_000,
+    });
+  };
+
+  const handleRelatedAdd = (item: any, event: React.MouseEvent, qtyToSet = 1) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!user) { setLocation("/login"); return; }
+    addToCart.mutate(
+      { data: { productId: item.id, qty: qtyToSet } as any },
+      {
+        onSuccess: () => qc.invalidateQueries({ queryKey: getGetCartQueryKey() }),
+        onError: () => toast({ title: "Could not add product", variant: "destructive" }),
+      },
+    );
+  };
+
+  const handleRelatedWishlist = (item: any, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!user) { setLocation("/login"); return; }
+    const wishlisted = wishlist?.some((wish: { productId: number }) => wish.productId === item.id) ?? false;
+    if (wishlisted) {
+      removeFromWishlist.mutate({ productId: item.id }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetWishlistQueryKey() }) });
+    } else {
+      addToWishlist.mutate({ data: { productId: item.id } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetWishlistQueryKey() }) });
     }
   };
 
@@ -624,6 +703,154 @@ export default function ProductDetail() {
           </div>
         </section>
       )}
+
+      <section className="rounded-lg border bg-white p-4 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold">Related Products</h2>
+            <p className="text-sm text-muted-foreground">You may also like</p>
+          </div>
+          {relatedProducts.length > 0 && <Badge variant="outline">{relatedProducts.length} loaded</Badge>}
+        </div>
+
+        {relatedQuery.isError && relatedProducts.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6 text-center">
+            <p className="font-semibold">Unable to load related products.</p>
+            <Button className="mt-3" variant="outline" onClick={() => relatedQuery.refetch()}>Try Again</Button>
+          </div>
+        ) : relatedQuery.isLoading ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="space-y-3 rounded-xl border p-3">
+                <Skeleton className="aspect-square rounded-lg" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-9 w-full rounded-full" />
+              </div>
+            ))}
+          </div>
+        ) : relatedProducts.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No related products are available in your area right now.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {relatedProducts.map((item: any) => {
+                const relatedQty = cart?.items?.find((cartItem: any) => cartItem.productId === item.id)?.qty ?? 0;
+                const wishlisted = wishlist?.some((wish: { productId: number }) => wish.productId === item.id) ?? false;
+                return (
+                  <RelatedProductCard
+                    key={item.id}
+                    product={item}
+                    qty={relatedQty}
+                    wishlisted={wishlisted}
+                    onAdd={(event, qtyToSet) => handleRelatedAdd(item, event, qtyToSet)}
+                    onWishlist={(event) => handleRelatedWishlist(item, event)}
+                    onPrefetch={() => prefetchRelatedProduct(item.id)}
+                  />
+                );
+              })}
+            </div>
+            <div ref={relatedLoaderRef} className="min-h-16 py-4 text-center">
+              {relatedQuery.isFetchingNextPage && (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div key={index} className="space-y-3 rounded-xl border p-3">
+                      <Skeleton className="aspect-square rounded-lg" />
+                      <Skeleton className="h-4 w-5/6" />
+                      <Skeleton className="h-9 w-full rounded-full" />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {relatedQuery.isError && relatedProducts.length > 0 && (
+                <Button variant="outline" onClick={() => relatedQuery.fetchNextPage()}>Try Again</Button>
+              )}
+              {!relatedQuery.hasNextPage && !relatedQuery.isFetchingNextPage && relatedProducts.length > 0 && (
+                <p className="text-sm text-muted-foreground">You've reached the end</p>
+              )}
+            </div>
+          </>
+        )}
+      </section>
     </div>
+  );
+}
+
+function RelatedProductCard({
+  product,
+  qty,
+  wishlisted,
+  onAdd,
+  onWishlist,
+  onPrefetch,
+}: {
+  product: any;
+  qty: number;
+  wishlisted: boolean;
+  onAdd: (event: React.MouseEvent, qtyToSet: number) => void;
+  onWishlist: (event: React.MouseEvent) => void;
+  onPrefetch: () => void;
+}) {
+  const discount = product.discountPercent ? Number(product.discountPercent) : 0;
+  const image = Array.isArray(product.images) ? product.images.find(Boolean) : "";
+  const available = product.isAvailable !== false && Number(product.stock ?? 0) > 0;
+  const unit = [product.weight, product.unit].filter(Boolean).join(" ");
+  const brand = product.brandName ?? product.brand?.name ?? product.specifications?.Brand ?? product.category?.name ?? "";
+  return (
+    <article
+      className="group flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg"
+      onMouseEnter={onPrefetch}
+      onTouchStart={onPrefetch}
+    >
+      <Link href={`/product/${product.id}`} className="relative block aspect-square bg-gray-50">
+        {image ? (
+          <img src={image} alt={product.name} loading="lazy" className="h-full w-full object-contain p-3 transition-transform duration-300 group-hover:scale-105 sm:p-4" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-gray-300"><ShoppingCart className="h-10 w-10 opacity-30" /></div>
+        )}
+        {discount > 0 && <Badge className="absolute left-2 top-2 bg-red-500 px-1.5 text-[10px] text-white">{Math.round(discount)}% OFF</Badge>}
+        <button type="button" onClick={onWishlist} className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-gray-700 shadow-sm">
+          <Heart className={`h-4 w-4 ${wishlisted ? "fill-red-500 stroke-red-500" : ""}`} />
+        </button>
+      </Link>
+      <div className="flex min-w-0 flex-1 flex-col p-3">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <p className="line-clamp-1 text-[11px] text-muted-foreground">{unit || brand || "unit"}</p>
+          {available ? <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">{product.deliveryEtaMins ?? 40} min</span> : <span className="text-[10px] text-red-500">Out</span>}
+        </div>
+        <Link href={`/product/${product.id}`} className="line-clamp-2 min-h-[38px] text-sm font-semibold leading-[18px] text-gray-950 hover:text-primary">
+          {product.name}
+        </Link>
+        <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">{brand}</p>
+        <div className="mt-1 flex items-center gap-1 text-[11px] text-amber-600">
+          <Star className="h-3.5 w-3.5 fill-amber-400 stroke-amber-400" />
+          <span className="font-semibold">{product.rating ? Number(product.rating).toFixed(1) : "4.3"}</span>
+          {product.shopName && <span className="line-clamp-1 text-muted-foreground">- {product.shopName}</span>}
+        </div>
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          <span className="text-base font-bold text-gray-950">Rs.{Number(product.price).toFixed(0)}</span>
+          {product.mrp && Number(product.mrp) > Number(product.price) && <span className="text-xs text-muted-foreground line-through">Rs.{Number(product.mrp).toFixed(0)}</span>}
+        </div>
+        <div className="mt-auto pt-3">
+          {available ? (
+            qty > 0 ? (
+              <div className="flex h-10 items-center justify-between rounded-full border bg-gray-50 p-1">
+                <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-primary" onClick={(event) => onAdd(event, qty - 1)}><Minus className="h-4 w-4" /></Button>
+                <span className="min-w-8 text-center text-sm font-bold">{qty}</span>
+                <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full text-primary" onClick={(event) => onAdd(event, qty + 1)}><Plus className="h-4 w-4" /></Button>
+              </div>
+            ) : (
+              <Button size="sm" variant="outline" className="h-10 w-full rounded-full font-bold text-primary" onClick={(event) => onAdd(event, 1)}>
+                <Plus className="mr-1 h-4 w-4" /> Add
+              </Button>
+            )
+          ) : (
+            <Button disabled variant="outline" className="h-10 w-full rounded-full">Out of Stock</Button>
+          )}
+        </div>
+      </div>
+    </article>
   );
 }

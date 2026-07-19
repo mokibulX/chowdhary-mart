@@ -7,7 +7,7 @@ const port = Number(process.env.PORT || 8090);
 
 const server = http.createServer((req, res) => {
   const requestPath = decodeURIComponent((req.url || "/").split("?")[0]);
-  const fileName = requestPath === "/" ? "ChowdharyMart-debug-v1.0.0.apk" : requestPath.slice(1);
+  const fileName = requestPath === "/" ? "ChowdharyMart-debug-v1.0.15.apk" : requestPath.slice(1);
   const filePath = path.resolve(root, fileName);
 
   if (!filePath.startsWith(root) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {

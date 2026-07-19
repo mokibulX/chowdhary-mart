@@ -34,7 +34,7 @@ export default function Cart() {
 
   const handleQty = (item: any, qty: number) => {
     addToCart.mutate(
-      { data: { productId: item.productId, qty, selectedSize: item.selectedSize, selectedColor: item.selectedColor } },
+      { data: { productId: item.productId, qty, selectedSize: item.selectedSize, selectedColor: item.selectedColor } as any },
       {
         onSuccess: () => qc.invalidateQueries({ queryKey: getGetCartQueryKey() }),
         onError: (err: unknown) => toast({ title: getErrorMessage(err, "Could not update cart"), variant: "destructive" }),
@@ -114,13 +114,13 @@ export default function Cart() {
           </div>
         )}
         {items.map((item: any) => (
-          <div key={item.id} className="flex items-center gap-4 p-4 bg-white border rounded-xl shadow-sm">
-            <div className="w-16 h-16 bg-gray-50 rounded-lg flex-shrink-0 overflow-hidden">
+          <div key={item.id} className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 rounded-xl border bg-white p-3 shadow-sm sm:flex sm:items-center sm:gap-4 sm:p-4">
+            <div className="h-16 w-16 overflow-hidden rounded-lg bg-gray-50">
               {(item.imageUrl || item.product?.images?.[0]) ? (
                 <img src={item.imageUrl || item.product.images[0]} alt={item.product.name} className="w-full h-full object-contain p-1" />
               ) : null}
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 sm:flex-1">
               <h3 className="font-medium text-sm line-clamp-2">{item.product?.name ?? `Product #${item.productId}`}</h3>
               {(item.selectedSize || item.selectedColor) && (
                 <div className="mt-1 flex flex-wrap gap-1 text-[11px] font-semibold text-gray-600">
@@ -135,7 +135,7 @@ export default function Cart() {
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="col-span-2 flex items-center gap-2 sm:col-span-1 sm:flex-shrink-0">
               <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => handleQty(item, item.qty - 1)} data-testid={`btn-dec-${item.productId}`}>
                 {item.qty === 1 ? <Trash2 className="h-3 w-3 text-red-500" /> : <Minus className="h-3 w-3" />}
               </Button>
@@ -144,7 +144,7 @@ export default function Cart() {
                 <Plus className="h-3 w-3" />
               </Button>
             </div>
-            <div className="text-right flex-shrink-0 min-w-[60px]">
+            <div className="col-span-2 text-right sm:col-span-1 sm:min-w-[60px] sm:flex-shrink-0">
               <span className="font-bold text-sm">₹{(Number(item.price) * item.qty).toFixed(0)}</span>
             </div>
           </div>

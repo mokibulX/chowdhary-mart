@@ -31,6 +31,7 @@ const schema = z.object({
   usageLimit: optionalNumber(1),
   perUserLimit: optionalNumber(1),
   expiresAt: z.string().optional().or(z.literal("")),
+  isSpecial: z.boolean().optional(),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -48,7 +49,7 @@ export default function AdminCoupons() {
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema as any),
-    defaultValues: { code: "", description: "", discountType: "flat", discountValue: 1, minOrderValue: undefined, maxDiscount: undefined, usageLimit: undefined, perUserLimit: undefined, expiresAt: "" },
+    defaultValues: { code: "", description: "", discountType: "flat", discountValue: 1, minOrderValue: undefined, maxDiscount: undefined, usageLimit: undefined, perUserLimit: undefined, expiresAt: "", isSpecial: false },
   });
   const discountType = watch("discountType");
 
@@ -66,6 +67,7 @@ export default function AdminCoupons() {
       usageLimit: coupon.usageLimit ? Number(coupon.usageLimit) : undefined,
       perUserLimit: coupon.perUserLimit ? Number(coupon.perUserLimit) : undefined,
       expiresAt: coupon.expiresAt ? String(coupon.expiresAt).slice(0, 10) : "",
+      isSpecial: !!coupon.isSpecial,
     });
     setDialogOpen(true);
   };
@@ -94,6 +96,7 @@ export default function AdminCoupons() {
       usageLimit: data.usageLimit,
       perUserLimit: data.perUserLimit,
       expiresAt: data.expiresAt || undefined,
+      isSpecial: !!data.isSpecial,
     } as any;
     if (editing) {
       try {
@@ -136,7 +139,7 @@ export default function AdminCoupons() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Coupons ({coupons?.length ?? 0})</h1>
-        <Button onClick={() => { setEditing(null); reset({ code: "", description: "", discountType: "flat", discountValue: 1, minOrderValue: undefined, maxDiscount: undefined, usageLimit: undefined, perUserLimit: undefined, expiresAt: "" }); setDialogOpen(true); }} data-testid="btn-create">
+        <Button onClick={() => { setEditing(null); reset({ code: "", description: "", discountType: "flat", discountValue: 1, minOrderValue: undefined, maxDiscount: undefined, usageLimit: undefined, perUserLimit: undefined, expiresAt: "", isSpecial: false }); setDialogOpen(true); }} data-testid="btn-create">
           <Plus className="w-4 h-4 mr-2" />Create Coupon
         </Button>
       </div>
@@ -163,6 +166,7 @@ export default function AdminCoupons() {
                     <Badge variant={coupon.isActive && !isExpired ? "default" : "secondary"} className="text-xs">
                       {isExpired ? "Expired" : coupon.isActive ? "Active" : "Inactive"}
                     </Badge>
+                    {coupon.isSpecial && <Badge variant="outline" className="border-amber-300 bg-amber-50 text-xs text-amber-700">Special</Badge>}
                   </div>
                   <p className="text-sm text-muted-foreground">{coupon.description}</p>
                   <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-muted-foreground">
@@ -252,6 +256,13 @@ export default function AdminCoupons() {
               <Label>Expires At</Label>
               <Input type="date" {...register("expiresAt")} data-testid="input-expires" />
             </div>
+            <label className="flex items-start gap-2 rounded-xl border bg-amber-50 p-3 text-sm">
+              <input type="checkbox" className="mt-1 accent-primary" {...register("isSpecial")} />
+              <span>
+                <b>Special coupon</b>
+                <span className="block text-xs text-muted-foreground">Only admin can create or edit this flag. Use it for special campaigns.</span>
+              </span>
+            </label>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={create.isPending} data-testid="btn-save">

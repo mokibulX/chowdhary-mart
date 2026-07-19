@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { customFetch } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MapPin, Plus, Save, ShieldCheck } from "lucide-react";
+import { MapPin, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 
 const QUERY_KEY = ["/api/admin/service-zones"];
 
@@ -17,10 +18,13 @@ const DEFAULT_FORM = {
   radiusMeters: "5000",
   defaultDeliveryTime: "40",
   minimumOrderAmount: "99",
+  city: "Kolkata",
+  state: "West Bengal",
 };
 
 export default function AdminZones() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [form, setForm] = useState(DEFAULT_FORM);
   const { data: zones = [], isLoading } = useQuery({
     queryKey: QUERY_KEY,
@@ -31,11 +35,25 @@ export default function AdminZones() {
     onSuccess: () => {
       setForm(DEFAULT_FORM);
       qc.invalidateQueries({ queryKey: QUERY_KEY });
+      toast({ title: "Location added", description: "New delivery service zone is ready." });
     },
+    onError: (error: any) => toast({ title: "Location add failed", description: error?.data?.error ?? "Please check zone code and GPS.", variant: "destructive" }),
   });
   const saveZone = useMutation({
     mutationFn: ({ id, data }: { id: number; data: any }) => customFetch(`/api/admin/service-zones/${id}`, { method: "PATCH", body: JSON.stringify(data), responseType: "json" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      toast({ title: "Location saved" });
+    },
+    onError: (error: any) => toast({ title: "Location save failed", description: error?.data?.error ?? "Could not save service zone.", variant: "destructive" }),
+  });
+  const deleteZone = useMutation({
+    mutationFn: (id: number) => customFetch(`/api/admin/service-zones/${id}`, { method: "DELETE", responseType: "json" }),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      toast({ title: "Location removed", description: data?.message ?? "Service zone deleted." });
+    },
+    onError: (error: any) => toast({ title: "Location delete failed", description: error?.data?.error ?? "Could not remove service zone.", variant: "destructive" }),
   });
 
   return (
@@ -53,6 +71,8 @@ export default function AdminZones() {
         <div className="grid gap-3 md:grid-cols-4">
           <Field label="Code" value={form.zoneCode} onChange={(value) => setForm({ ...form, zoneCode: value })} placeholder="KOL-AREA-5K" />
           <Field label="Name" value={form.zoneName} onChange={(value) => setForm({ ...form, zoneName: value })} placeholder="Zone name" />
+          <Field label="City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} placeholder="Kolkata" />
+          <Field label="State" value={form.state} onChange={(value) => setForm({ ...form, state: value })} placeholder="West Bengal" />
           <Field label="Latitude" value={form.centreLatitude} onChange={(value) => setForm({ ...form, centreLatitude: value })} />
           <Field label="Longitude" value={form.centreLongitude} onChange={(value) => setForm({ ...form, centreLongitude: value })} />
           <Field label="Radius meters" value={form.radiusMeters} onChange={(value) => setForm({ ...form, radiusMeters: value })} />
@@ -69,7 +89,17 @@ export default function AdminZones() {
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
           {zones.map((zone: any) => (
-            <ZoneCard key={zone.id} zone={zone} save={(data) => saveZone.mutate({ id: zone.id, data })} busy={saveZone.isPending} />
+            <ZoneCard
+              key={zone.id}
+              zone={zone}
+              save={(data) => saveZone.mutate({ id: zone.id, data })}
+              remove={() => {
+                if (window.confirm(`Remove ${zone.zoneName ?? zone.name}? Assigned stores will make it archived instead of hard deleted.`)) {
+                  deleteZone.mutate(zone.id);
+                }
+              }}
+              busy={saveZone.isPending || deleteZone.isPending}
+            />
           ))}
         </div>
       )}
@@ -77,15 +107,23 @@ export default function AdminZones() {
   );
 }
 
-function ZoneCard({ zone, save, busy }: { zone: any; save: (data: any) => void; busy: boolean }) {
+function ZoneCard({ zone, save, remove, busy }: { zone: any; save: (data: any) => void; remove: () => void; busy: boolean }) {
   const [draft, setDraft] = useState({
+    zoneCode: zone.zoneCode ?? zone.code ?? "",
     zoneName: zone.zoneName ?? "",
+    city: zone.city ?? "",
+    state: zone.state ?? "",
+    centreLatitude: String(zone.centreLatitude ?? ""),
+    centreLongitude: String(zone.centreLongitude ?? ""),
     radiusMeters: String(zone.radiusMeters ?? 5000),
     defaultDeliveryTime: String(zone.defaultDeliveryTime ?? 40),
     minimumOrderAmount: String(zone.minimumOrderAmount ?? 99),
     status: zone.status ?? "active",
     acceptingOrders: zone.acceptingOrders !== false,
     deliveryEnabled: zone.deliveryEnabled !== false,
+    registrationEnabled: zone.registrationEnabled !== false,
+    sellerRegistrationEnabled: zone.sellerRegistrationEnabled !== false,
+    riderRegistrationEnabled: zone.riderRegistrationEnabled !== false,
   });
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm">
@@ -108,7 +146,12 @@ function ZoneCard({ zone, save, busy }: { zone: any; save: (data: any) => void; 
         </div>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
+        <Field label="Code" value={draft.zoneCode} onChange={(value) => setDraft({ ...draft, zoneCode: value })} />
         <Field label="Zone name" value={draft.zoneName} onChange={(value) => setDraft({ ...draft, zoneName: value })} />
+        <Field label="City" value={draft.city} onChange={(value) => setDraft({ ...draft, city: value })} />
+        <Field label="State" value={draft.state} onChange={(value) => setDraft({ ...draft, state: value })} />
+        <Field label="Latitude" value={draft.centreLatitude} onChange={(value) => setDraft({ ...draft, centreLatitude: value })} />
+        <Field label="Longitude" value={draft.centreLongitude} onChange={(value) => setDraft({ ...draft, centreLongitude: value })} />
         <Field label="Radius meters" value={draft.radiusMeters} onChange={(value) => setDraft({ ...draft, radiusMeters: value })} />
         <Field label="Delivery minutes" value={draft.defaultDeliveryTime} onChange={(value) => setDraft({ ...draft, defaultDeliveryTime: value })} />
         <Field label="Minimum order" value={draft.minimumOrderAmount} onChange={(value) => setDraft({ ...draft, minimumOrderAmount: value })} />
@@ -117,10 +160,18 @@ function ZoneCard({ zone, save, busy }: { zone: any; save: (data: any) => void; 
         <Toggle label="Active" checked={draft.status === "active"} onClick={() => setDraft({ ...draft, status: draft.status === "active" ? "paused" : "active" })} />
         <Toggle label="Accept orders" checked={draft.acceptingOrders} onClick={() => setDraft({ ...draft, acceptingOrders: !draft.acceptingOrders })} />
         <Toggle label="Delivery" checked={draft.deliveryEnabled} onClick={() => setDraft({ ...draft, deliveryEnabled: !draft.deliveryEnabled })} />
+        <Toggle label="Registration" checked={draft.registrationEnabled} onClick={() => setDraft({ ...draft, registrationEnabled: !draft.registrationEnabled })} />
+        <Toggle label="Seller signup" checked={draft.sellerRegistrationEnabled} onClick={() => setDraft({ ...draft, sellerRegistrationEnabled: !draft.sellerRegistrationEnabled })} />
+        <Toggle label="Rider signup" checked={draft.riderRegistrationEnabled} onClick={() => setDraft({ ...draft, riderRegistrationEnabled: !draft.riderRegistrationEnabled })} />
       </div>
-      <Button className="mt-4 w-full" onClick={() => save(draft)} disabled={busy}>
-        <Save className="mr-2 h-4 w-4" /> Save zone controls
-      </Button>
+      <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <Button onClick={() => save(draft)} disabled={busy}>
+          <Save className="mr-2 h-4 w-4" /> Save location
+        </Button>
+        <Button type="button" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={remove} disabled={busy}>
+          <Trash2 className="mr-2 h-4 w-4" /> Delete
+        </Button>
+      </div>
     </div>
   );
 }

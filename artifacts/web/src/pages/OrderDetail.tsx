@@ -62,6 +62,9 @@ export default function OrderDetail() {
 
   const items = (order as any).items ?? [];
   const deliveryAddress = (order as any).address ?? (order as any).addressSnapshot;
+  const pickupLat = Number((order as any).pickupLatitude ?? deliveryAddress?.lat);
+  const pickupLng = Number((order as any).pickupLongitude ?? deliveryAddress?.lng);
+  const pickupAddress = (order as any).pickupAddress ?? deliveryAddress?.line1;
 
   return (
     <div className="max-w-xl mx-auto space-y-5">
@@ -154,14 +157,19 @@ export default function OrderDetail() {
       {/* Delivery Address */}
       {deliveryAddress && (
         <div className="bg-white border rounded-xl p-4">
-          <h2 className="font-semibold flex items-center gap-2 mb-2"><MapPin className="w-4 h-4 text-primary" />Delivery Address</h2>
+          <h2 className="font-semibold flex items-center gap-2 mb-2"><MapPin className="w-4 h-4 text-primary" />Confirmed Pickup Location</h2>
           {(deliveryAddress as any).photoUrl && (
             <img src={(deliveryAddress as any).photoUrl} alt="Delivery place" className="mb-3 h-32 w-full rounded-lg object-cover" />
           )}
           <p className="text-sm">{deliveryAddress.name}</p>
-          <p className="text-sm text-muted-foreground">{deliveryAddress.line1}, {deliveryAddress.city} - {deliveryAddress.pincode}</p>
-          {deliveryAddress.lat && deliveryAddress.lng && (
-            <p className="mt-1 text-xs text-emerald-700">GPS: {Number(deliveryAddress.lat).toFixed(5)}, {Number(deliveryAddress.lng).toFixed(5)}</p>
+          <p className="text-sm text-muted-foreground">{pickupAddress}, {deliveryAddress.city} - {deliveryAddress.pincode}</p>
+          {Number.isFinite(pickupLat) && Number.isFinite(pickupLng) && (
+            <div className="mt-2 flex flex-col gap-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-emerald-700">GPS: {pickupLat.toFixed(5)}, {pickupLng.toFixed(5)}</p>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${pickupLat},${pickupLng}`} target="_blank" rel="noreferrer">
+                <Button size="sm" variant="outline"><Navigation className="mr-2 h-4 w-4" />Open in Maps</Button>
+              </a>
+            </div>
           )}
         </div>
       )}

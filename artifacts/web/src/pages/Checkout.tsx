@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   useCreateAddress,
   useGetCart,
   useListAddresses,
-  usePlaceOrder,
   useUpdateAddress,
   getGetCartQueryKey,
   getListAddressesQueryKey,
@@ -21,6 +20,8 @@ import { Badge } from "@/components/ui/badge";
 import { Camera, CreditCard, MapPin, Plus, ShieldCheck, Truck, Zap } from "lucide-react";
 import { getSavedDeliveryLocation } from "@/lib/pincode";
 import { fileToDataUrl, getBrowserLocation } from "@/lib/live-location";
+import { testMode } from "@/lib/test-mode";
+import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 
 const PAYMENT_METHODS = [
   { value: "cod", label: "Cash on Delivery", icon: Truck, desc: "Pay when delivered" },
@@ -50,12 +51,51 @@ export default function Checkout() {
   const [providerPaymentId, setProviderPaymentId] = useState("");
   const [locationSaving, setLocationSaving] = useState(false);
   const [deliveryPhoto, setDeliveryPhoto] = useState("");
+  const [confirmedPickup, setConfirmedPickup] = useState<PickupLocation | null>(null);
+  const [couponResult, setCouponResult] = useState<{ code: string; discount: number; description?: string } | null>(null);
+  const [couponError, setCouponError] = useState("");
 
   const { data: cart, isLoading: loadingCart } = useGetCart({ query: { enabled: !!user, queryKey: getGetCartQueryKey() } });
   const { data: addresses, isLoading: loadingAddresses } = useListAddresses({ query: { enabled: !!user, queryKey: getListAddressesQueryKey() } });
   const createAddress = useCreateAddress();
   const updateAddress = useUpdateAddress();
-  const placeOrder = usePlaceOrder();
+
+  const defaultAddress = addresses?.find((address) => address.isDefault) ?? addresses?.[0];
+  const activeAddressId = selectedAddressId ?? defaultAddress?.id ?? null;
+  const activeAddress = addresses?.find((address) => address.id === activeAddressId);
+
+  const subtotal = Number(cart?.subtotal ?? 0);
+  const deliveryFee = Number(cart?.deliveryFee ?? 0);
+  const couponDiscount = couponResult ? Math.min(couponResult.discount, subtotal) : 0;
+  const total = Math.max(0, subtotal + deliveryFee - couponDiscount);
+  const sellerActive = !(cart as any)?.store || (cart as any).store?.isOpen !== false;
+  const storePoint = (cart as any)?.store;
+  const activeAddressPhoto = activeAddress ? ((activeAddress as any).photoUrl as string | undefined) : "";
+  const visibleDeliveryPhoto = deliveryPhoto || activeAddressPhoto || "";
+  const orderDeliveryPhoto = visibleDeliveryPhoto || DEFAULT_DELIVERY_PHOTO;
+  const couponReady = !couponCode || !!couponResult;
+  const canPlaceOrder = couponReady && !couponError && !!confirmedPickup && confirmedPickup.available && sellerActive && !!cart?.items?.length;
+
+  useEffect(() => {
+    let cancelled = false;
+    setCouponResult(null);
+    setCouponError("");
+    if (!couponCode || !user || !subtotal) return;
+    customFetch<any>("/api/coupons/validate", {
+      method: "POST",
+      body: JSON.stringify({ code: couponCode, orderValue: String(subtotal) }),
+      responseType: "json",
+    })
+      .then((data) => {
+        if (cancelled) return;
+        setCouponResult({ code: data.coupon?.code ?? couponCode.toUpperCase(), discount: Number(data.discount ?? 0), description: data.coupon?.description });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setCouponError(getErrorMessage(err, "Coupon could not be applied"));
+      });
+    return () => { cancelled = true; };
+  }, [couponCode, subtotal, user]);
 
   if (!user) {
     return (
@@ -68,18 +108,6 @@ export default function Checkout() {
   if (loadingCart || loadingAddresses) {
     return <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>;
   }
-
-  const defaultAddress = addresses?.find((address) => address.isDefault) ?? addresses?.[0];
-  const activeAddressId = selectedAddressId ?? defaultAddress?.id ?? null;
-  const activeAddress = addresses?.find((address) => address.id === activeAddressId);
-
-  const subtotal = Number(cart?.subtotal ?? 0);
-  const deliveryFee = Number(cart?.deliveryFee ?? 0);
-  const total = Math.max(0, subtotal + deliveryFee);
-  const sellerActive = !(cart as any)?.store || (cart as any).store?.isOpen !== false;
-  const activeAddressPhoto = activeAddress ? ((activeAddress as any).photoUrl as string | undefined) : "";
-  const visibleDeliveryPhoto = deliveryPhoto || activeAddressPhoto || "";
-  const orderDeliveryPhoto = visibleDeliveryPhoto || DEFAULT_DELIVERY_PHOTO;
 
   const handleDeliveryPhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -102,6 +130,14 @@ export default function Checkout() {
       toast({ title: "Complete online payment", description: "Pay securely with Razorpay before placing this prepaid order.", variant: "destructive" });
       return;
     }
+    if (!confirmedPickup) {
+      toast({ title: "Confirm pickup location", description: "Please select your exact delivery pin on the map first.", variant: "destructive" });
+      return;
+    }
+    if (!confirmedPickup.available) {
+      toast({ title: "Outside service area", description: "Sorry! We currently deliver only within a 5 KM service area.", variant: "destructive" });
+      return;
+    }
     let orderAddressId = activeAddressId;
     setLocationSaving(true);
 
@@ -109,14 +145,13 @@ export default function Checkout() {
     try {
       liveLocation = await getBrowserLocation();
     } catch (error) {
-      const savedLocation = getSavedDeliveryLocation();
-      liveLocation = {
-        lat: Number((activeAddress as any)?.lat ?? savedLocation.lat ?? 22.5726),
-        lng: Number((activeAddress as any)?.lng ?? savedLocation.lng ?? 88.3639),
-        accuracy: Number((activeAddress as any)?.locationAccuracy ?? 120),
-        capturedAt: new Date().toISOString(),
-      };
-      toast({ title: "GPS fallback used", description: "Saved pincode/address location diye order continue holo." });
+      setLocationSaving(false);
+      toast({
+        title: "Live GPS required",
+        description: error instanceof Error ? error.message : "Please allow location permission and try again. Fake/static location cannot be used.",
+        variant: "destructive",
+      });
+      return;
     }
 
     if (!orderAddressId) {
@@ -132,8 +167,8 @@ export default function Checkout() {
             city: savedLocation.city,
             state: savedLocation.state,
             pincode: savedLocation.pincode,
-            lat: liveLocation.lat,
-            lng: liveLocation.lng,
+            lat: confirmedPickup.lat,
+            lng: confirmedPickup.lng,
             locationAccuracy: liveLocation.accuracy,
             locationCapturedAt: liveLocation.capturedAt,
             photoUrl: orderDeliveryPhoto,
@@ -160,8 +195,8 @@ export default function Checkout() {
             city: activeAddress.city,
             state: activeAddress.state,
             pincode: activeAddress.pincode,
-            lat: liveLocation.lat,
-            lng: liveLocation.lng,
+            lat: confirmedPickup.lat,
+            lng: confirmedPickup.lng,
             locationAccuracy: liveLocation.accuracy,
             locationCapturedAt: liveLocation.capturedAt,
             photoUrl: orderDeliveryPhoto,
@@ -176,30 +211,34 @@ export default function Checkout() {
       }
     }
 
-    placeOrder.mutate(
-      {
-        data: {
+    customFetch<any>("/api/orders", {
+      method: "POST",
+      headers: {
+        "Idempotency-Key": `checkout-${user.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      },
+      body: JSON.stringify({
           addressId: orderAddressId,
           paymentMethod: paymentMethod === "upi" ? "online" : "cod",
-          couponCode,
+          couponCode: couponResult?.code,
           useWallet: false,
           providerPaymentId,
-        } as any,
-      },
-      {
-        onSuccess: (order) => {
+          pickupLatitude: confirmedPickup.lat,
+          pickupLongitude: confirmedPickup.lng,
+          pickupAddress: confirmedPickup.address,
+        }),
+        responseType: "json",
+      })
+      .then((order) => {
           setLocationSaving(false);
           qc.invalidateQueries({ queryKey: getGetCartQueryKey() });
           qc.invalidateQueries({ queryKey: getListOrdersQueryKey() });
           setLocation(`/orders/${order.id}/confirmed`);
-        },
-        onError: (err: unknown) => {
+        })
+        .catch((err: unknown) => {
           setLocationSaving(false);
           const msg = getErrorMessage(err, "Order failed");
           toast({ title: "Order failed", description: msg, variant: "destructive" });
-        },
-      }
-    );
+        });
   };
 
   return (
@@ -221,7 +260,21 @@ export default function Checkout() {
 
       <section className="space-y-3 rounded-lg border bg-white p-5">
         <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 font-semibold"><MapPin className="h-4 w-4 text-primary" />Delivery Address</h2>
+            <h2 className="flex items-center gap-2 font-semibold"><MapPin className="h-4 w-4 text-primary" />Exact Delivery Location</h2>
+          <Badge variant="secondary" className="rounded-full">{confirmedPickup ? "Confirmed" : "Required"}</Badge>
+        </div>
+        <PickupLocationPicker
+          mode="inline"
+          store={storePoint}
+          initial={confirmedPickup}
+          onClose={() => undefined}
+          onConfirm={(location) => {
+            setConfirmedPickup(location);
+            toast({ title: "Delivery point confirmed", description: location.address });
+          }}
+        />
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-muted-foreground">Saved Address</h2>
           <Link href="/addresses">
             <Button variant="ghost" size="sm" className="text-primary"><Plus className="mr-1 h-3 w-3" />Add New</Button>
           </Link>
@@ -308,8 +361,10 @@ export default function Checkout() {
           <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
             <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
               <div>
-                <label className="text-xs font-semibold text-blue-900">Razorpay secure checkout</label>
-                <p className="mt-1 text-sm text-blue-800">Amount is verified again on backend from your cart. Secret keys are never exposed in browser.</p>
+                <label className="text-xs font-semibold text-blue-900">{testMode.enabled ? "Demo payment checkout" : "Razorpay secure checkout"}</label>
+                <p className="mt-1 text-sm text-blue-800">
+                  {testMode.enabled ? "No real money will be charged. This creates a PAID_TEST transaction." : "Amount is verified again on backend from your cart. Secret keys are never exposed in browser."}
+                </p>
                 {providerPaymentId && <p className="mt-1 text-xs font-semibold text-green-700">Payment verified: {providerPaymentId}</p>}
               </div>
               <Button
@@ -319,6 +374,13 @@ export default function Checkout() {
                 onClick={async () => {
                   setPaymentBusy(true);
                   try {
+                    if (testMode.enabled) {
+                      const verified = await customFetch<any>("/api/payments/demo/complete", { method: "POST", responseType: "json" });
+                      setOnlinePaid(true);
+                      setProviderPaymentId(verified.providerPaymentId);
+                      toast({ title: "Demo payment complete", description: "No real money was charged." });
+                      return;
+                    }
                     const paymentOrder = await customFetch<any>("/api/payments/razorpay/order", { method: "POST", responseType: "json" });
                     await openRazorpayCheckout({
                       order: paymentOrder,
@@ -341,7 +403,7 @@ export default function Checkout() {
                   }
                 }}
               >
-                {onlinePaid ? "Paid" : paymentBusy ? "Opening..." : `Pay Rs.${total.toFixed(0)}`}
+                {onlinePaid ? "Paid" : paymentBusy ? "Opening..." : testMode.enabled ? "Complete Test Payment" : `Pay Rs.${total.toFixed(0)}`}
               </Button>
             </div>
             <p className="mt-2 text-xs text-blue-700">Supports UPI/cards/netbanking/wallets enabled in your Razorpay account.</p>
@@ -368,7 +430,8 @@ export default function Checkout() {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal ({cart?.itemCount} items)</span><span>Rs.{subtotal.toFixed(0)}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Delivery fee</span><span className={deliveryFee === 0 ? "text-green-600" : ""}>{deliveryFee === 0 ? "FREE" : `Rs.${deliveryFee.toFixed(0)}`}</span></div>
-          {couponCode && <div className="flex justify-between text-green-600"><span>Coupon ({couponCode})</span><span>Applied</span></div>}
+          {couponResult && <div className="flex justify-between text-green-600"><span>Coupon ({couponResult.code})</span><span>-Rs.{couponDiscount.toFixed(0)}</span></div>}
+          {couponError && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{couponError}</div>}
           <Separator />
           <div className="flex justify-between text-base font-bold"><span>Total</span><span>Rs.{total.toFixed(0)}</span></div>
         </div>
@@ -376,10 +439,10 @@ export default function Checkout() {
           className="w-full"
           size="lg"
           onClick={handlePlaceOrder}
-          disabled={placeOrder.isPending || createAddress.isPending || updateAddress.isPending || locationSaving || !cart?.items?.length}
+          disabled={createAddress.isPending || updateAddress.isPending || locationSaving || !canPlaceOrder}
           data-testid="btn-place-order"
         >
-          {placeOrder.isPending || createAddress.isPending || updateAddress.isPending || locationSaving ? "Capturing location..." : `Place order and track live - Rs.${total.toFixed(0)}`}
+          {createAddress.isPending || updateAddress.isPending || locationSaving ? "Placing order..." : couponCode && !couponReady ? "Checking coupon..." : couponError ? "Fix coupon first" : !confirmedPickup ? "Confirm map location first" : !confirmedPickup.available ? "Outside 5 KM service area" : `Place order and track live - Rs.${total.toFixed(0)}`}
         </Button>
         <p className="text-center text-xs text-muted-foreground">No extra confirmation screen. You will go straight to live delivery tracking.</p>
       </section>

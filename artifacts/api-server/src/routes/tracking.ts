@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { eq, desc } from "drizzle-orm";
-import { db, ordersTable, orderTrackingTable, deliveryPartnersTable, usersTable, storesTable, addressesTable } from "@workspace/db";
+import { db, ordersTable, orderTrackingTable, deliveryPartnersTable, usersTable, storesTable, addressesTable, liveLocationsTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 
 const router = Router();
@@ -23,6 +23,13 @@ function etaFromDistance(distance: number, status: string, fallback?: number | n
   return Math.min(40, Math.max(4, Math.ceil(distance / 0.32) + 5));
 }
 
+function locationOrNull(lat?: number | string | null, lng?: number | string | null) {
+  const nextLat = Number(lat);
+  const nextLng = Number(lng);
+  if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return null;
+  return { lat: nextLat, lng: nextLng };
+}
+
 // GET /api/tracking/:orderId
 router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -43,42 +50,64 @@ router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
 
     let deliveryPartnerInfo = null;
     const latestTracking = timeline[0];
+    let latestLiveLocation = null as null | typeof liveLocationsTable.$inferSelect;
     if (latestTracking?.deliveryPartnerId) {
       const [dp] = await db.select().from(deliveryPartnersTable)
         .where(eq(deliveryPartnersTable.id, latestTracking.deliveryPartnerId)).limit(1);
       if (dp) {
-        const [dpUser] = await db.select({ name: usersTable.name, phone: usersTable.phone })
+        const [liveLocation] = await db.select().from(liveLocationsTable)
+          .where(eq(liveLocationsTable.deliveryPartnerId, dp.id)).limit(1);
+        latestLiveLocation = liveLocation ?? null;
+        const [dpUser] = await db.select({ name: usersTable.name, phone: usersTable.phone, avatarUrl: usersTable.avatarUrl })
           .from(usersTable).where(eq(usersTable.id, dp.userId)).limit(1);
         deliveryPartnerInfo = {
           id: dp.id,
           name: dpUser?.name ?? "Delivery Partner",
           phone: dpUser?.phone ?? null,
+          photoUrl: dpUser?.avatarUrl ?? null,
+          publicProfilePhotoUrl: dpUser?.avatarUrl ?? null,
           rating: dp.rating,
           vehicleType: dp.vehicleType,
           vehicleNumber: dp.vehicleNumber,
-          lat: dp.currentLat ?? store?.lat ?? 22.5726,
-          lng: dp.currentLng ?? store?.lng ?? 88.3639,
+          location: latestLiveLocation ? {
+            lat: latestLiveLocation.lat,
+            lng: latestLiveLocation.lng,
+            speed: latestLiveLocation.speed,
+            heading: latestLiveLocation.heading,
+            updatedAt: latestLiveLocation.updatedAt,
+          } : locationOrNull(dp.currentLat, dp.currentLng),
         };
       }
     }
 
-    const storeLocation = {
-      lat: Number(store?.lat ?? 22.5726),
-      lng: Number(store?.lng ?? 88.3639),
+    const storeCoords = locationOrNull(store?.lat, store?.lng);
+    const customerCoords = locationOrNull(order.pickupLatitude, order.pickupLongitude) ?? locationOrNull(address?.lat, address?.lng);
+    const partnerCoords = latestLiveLocation
+      ? locationOrNull(latestLiveLocation.lat, latestLiveLocation.lng)
+      : deliveryPartnerInfo?.location
+        ? locationOrNull((deliveryPartnerInfo as any).location.lat, (deliveryPartnerInfo as any).location.lng)
+        : locationOrNull(latestTracking?.lat, latestTracking?.lng);
+
+    const storeLocation = storeCoords ? {
+      ...storeCoords,
       label: store?.name ?? "Store hub",
       address: store?.address ?? "Pickup point",
-    };
-    const customerLocation = {
-      lat: Number(address?.lat ?? (storeLocation.lat + 0.026)),
-      lng: Number(address?.lng ?? (storeLocation.lng + 0.031)),
+    } : null;
+    const customerLocation = customerCoords ? {
+      ...customerCoords,
       label: address?.label ?? "Customer",
-      address: address ? `${address.line1}, ${address.city}` : "Delivery address",
-    };
-    const partnerLocation = deliveryPartnerInfo
-      ? { lat: Number((deliveryPartnerInfo as any).lat), lng: Number((deliveryPartnerInfo as any).lng) }
-      : { lat: storeLocation.lat + 0.006, lng: storeLocation.lng + 0.004 };
-    const distance = distanceKm(partnerLocation.lat, partnerLocation.lng, customerLocation.lat, customerLocation.lng);
-    const eta = etaFromDistance(distance, order.status, order.estimatedDeliveryMins);
+      address: order.pickupAddress ?? (address ? `${address.line1}, ${address.city}` : "Delivery address"),
+    } : null;
+    const partnerLocation = partnerCoords ? {
+      ...partnerCoords,
+      speed: latestLiveLocation?.speed ?? 0,
+      heading: latestLiveLocation?.heading ?? 0,
+      updatedAt: latestLiveLocation?.updatedAt ?? latestTracking?.updatedAt,
+    } : null;
+    const distance = partnerLocation && customerLocation
+      ? distanceKm(partnerLocation.lat, partnerLocation.lng, customerLocation.lat, customerLocation.lng)
+      : null;
+    const eta = distance !== null ? etaFromDistance(distance, order.status, order.estimatedDeliveryMins) : (order.estimatedDeliveryMins ?? null);
 
     res.json({
       orderId,
@@ -87,10 +116,13 @@ router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
       storeLocation,
       customerLocation,
       partnerLocation,
-      route: [storeLocation, partnerLocation, customerLocation],
-      distanceKm: Number(distance.toFixed(1)),
+      route: [storeLocation, partnerLocation, customerLocation].filter(Boolean),
+      distanceKm: distance === null ? null : Number(distance.toFixed(1)),
       estimatedMins: eta,
       deliveryOtp: String(1000 + (order.id % 9000)),
+      riderHeading: latestLiveLocation?.heading ?? 0,
+      speed: latestLiveLocation?.speed ?? 0,
+      lastLocationUpdatedAt: latestLiveLocation?.updatedAt ?? latestTracking?.updatedAt,
       timeline: timeline.map(t => ({
         status: t.status,
         message: t.message,

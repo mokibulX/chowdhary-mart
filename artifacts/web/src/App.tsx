@@ -52,6 +52,7 @@ import { VendorLayout } from "@/components/layout/VendorLayout";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { GlobalTranslator } from "@/components/GlobalTranslator";
 import { GlobalIncomingOrderAlerts } from "@/components/GlobalIncomingOrderAlerts";
+import { DemoModeBadge } from "@/components/DemoModeBadge";
 import { Button } from "@/components/ui/button";
 import { Store as StoreIcon } from "lucide-react";
 
@@ -90,8 +91,6 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: s
 }
 
 function CustomerRoute({ component: Component }: { component: () => ReactElement }) {
-  const { user } = useAuth();
-  if (user?.role === "delivery_partner") return <Redirect to="/delivery" />;
   return (
     <CustomerLayout>
       <Component />
@@ -100,8 +99,6 @@ function CustomerRoute({ component: Component }: { component: () => ReactElement
 }
 
 function ProtectedCustomerRoute({ component: Component }: { component: () => ReactElement }) {
-  const { user } = useAuth();
-  if (user?.role === "delivery_partner") return <Redirect to="/delivery" />;
   return (
     <RequireAuth>
       <CustomerLayout>
@@ -252,6 +249,7 @@ function App() {
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <AuthProvider>
             <GlobalTranslator />
+            <DemoModeBadge />
             <Router />
             <GlobalIncomingOrderAlerts />
           </AuthProvider>

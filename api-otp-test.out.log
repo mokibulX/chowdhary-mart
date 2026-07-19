@@ -1,0 +1,80 @@
+[15:38:42.660] [32mINFO[39m (17768): [36mServer listening[39m
+    [35mport[39m: 5000
+[15:38:51.340] [32mINFO[39m (17768): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 1,
+      "requestId": "2057ef13-0f1c-4fcc-9eea-d3799edd130a",
+      "correlationId": "2057ef13-0f1c-4fcc-9eea-d3799edd130a",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3909
+[15:38:56.129] [31mERROR[39m (17768): [36mSMS_PROVIDER is not configured[39m
+    [35mreq[39m: {
+      "id": 2,
+      "requestId": "a277b024-134d-423c-978a-6628c6c98537",
+      "correlationId": "a277b024-134d-423c-978a-6628c6c98537",
+      "method": "POST",
+      "url": "/api/auth/otp/send"
+    }
+    err: {
+      "type": "Error",
+      "message": "SMS_PROVIDER is not configured",
+      "stack":
+          Error: SMS_PROVIDER is not configured
+              at sendSmsOtp (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:87822:9)
+              at requestOtp (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:87875:38)
+              at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+              at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:87974:20
+    }
+[15:38:56.131] [32mINFO[39m (17768): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 2,
+      "requestId": "a277b024-134d-423c-978a-6628c6c98537",
+      "correlationId": "a277b024-134d-423c-978a-6628c6c98537",
+      "method": "POST",
+      "url": "/api/auth/otp/send"
+    }
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 4764
+[15:39:11.707] [32mINFO[39m (17768): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "requestId": "5b691b54-82bc-4ed7-86c8-6ef1e521c9c9",
+      "correlationId": "5b691b54-82bc-4ed7-86c8-6ef1e521c9c9",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 539
+[15:40:54.411] [32mINFO[39m (17768): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "requestId": "e32289e7-bfd7-47da-ba8c-8efc2642322e",
+      "correlationId": "e32289e7-bfd7-47da-ba8c-8efc2642322e",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3121
+[15:59:49.477] [32mINFO[39m (17768): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 5,
+      "requestId": "8e5ecffd-07f4-4c45-a403-07a75e9398d4",
+      "correlationId": "8e5ecffd-07f4-4c45-a403-07a75e9398d4",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2808

@@ -19,6 +19,7 @@ export const couponsTable = pgTable("coupons", {
   perUserLimit: integer("per_user_limit").default(1),
   expiresAt: timestamp("expires_at"),
   isActive: boolean("is_active").notNull().default(true),
+  isSpecial: boolean("is_special").notNull().default(false),
   applicableCategories: text("applicable_categories"), // JSON array of category IDs
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

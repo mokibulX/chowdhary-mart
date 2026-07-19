@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronDown, Search as SearchIcon, SlidersHorizontal, X } from "lucide-react";
+import { ChevronDown, Mic, Search as SearchIcon, SlidersHorizontal, X } from "lucide-react";
 import { useInfiniteProducts } from "@/hooks/use-infinite-products";
 import { getSavedDeliveryLocation } from "@/lib/pincode";
 
@@ -45,6 +45,7 @@ export default function Search() {
   const [categoryId, setCategoryId] = useState<number | undefined>(params.get("categoryId") ? Number(params.get("categoryId")) : undefined);
   const [sort, setSort] = useState(params.get("sort") ?? "newest");
   const [inputVal, setInputVal] = useState(q);
+  const [lastSubmittedQ, setLastSubmittedQ] = useState(q);
   const [minPrice, setMinPrice] = useState(params.get("minPrice") ?? "");
   const [maxPrice, setMaxPrice] = useState("");
   const [minRating, setMinRating] = useState("0");
@@ -54,6 +55,7 @@ export default function Search() {
   const [radiusKm, setRadiusKm] = useState(params.get("radiusKm") ?? "5");
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -63,6 +65,7 @@ export default function Search() {
     const nextSort = nextParams.get("sort") ?? "newest";
     setQ(nextQ);
     setInputVal(nextQ);
+    setLastSubmittedQ(nextQ);
     setCategoryId(nextCategory);
     setSort(nextSort);
     setMinPrice(nextParams.get("minPrice") ?? "");
@@ -84,6 +87,13 @@ export default function Search() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setQ(inputVal.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [inputVal]);
 
   const { data: categories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
 
@@ -145,12 +155,36 @@ export default function Search() {
     event.preventDefault();
     const next = inputVal.trim();
     setQ(next);
+    setLastSubmittedQ(next);
     setLocation(buildSearchUrl({ q: next, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
     if (next) {
       const updated = [next, ...recentSearches.filter((item) => item.toLowerCase() !== next.toLowerCase())].slice(0, 6);
       setRecentSearches(updated);
       localStorage.setItem("ekart_recent_searches", JSON.stringify(updated));
     }
+  };
+
+  const startVoiceSearch = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice typing is not supported in this browser. Please use Chrome or Android WebView.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = navigator.language || "en-IN";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    setVoiceListening(true);
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+      if (transcript) setInputVal(transcript);
+    };
+    recognition.onerror = () => setVoiceListening(false);
+    recognition.onend = () => setVoiceListening(false);
+    recognition.start();
   };
 
   const resetFilters = () => {
@@ -172,12 +206,15 @@ export default function Search() {
         <div className="flex gap-2">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input className="h-11 pl-9" placeholder="Search products, brands, stores..." value={inputVal} onChange={(event) => setInputVal(event.target.value)} data-testid="input-search" autoFocus />
+            <Input className="h-11 pl-9 pr-20" placeholder="Search products, brands, stores..." value={inputVal} onChange={(event) => setInputVal(event.target.value)} data-testid="input-search" autoFocus />
             {inputVal && (
-              <button type="button" onClick={() => { setInputVal(""); setQ(""); }} className="absolute right-3 top-1/2 -translate-y-1/2">
+              <button type="button" onClick={() => { setInputVal(""); setQ(""); setLastSubmittedQ(""); }} className="absolute right-10 top-1/2 -translate-y-1/2">
                 <X className="h-4 w-4 text-muted-foreground" />
               </button>
             )}
+            <button type="button" onClick={startVoiceSearch} className={`absolute right-3 top-1/2 -translate-y-1/2 ${voiceListening ? "text-orange-600" : "text-muted-foreground"}`} aria-label="Voice search">
+              <Mic className="h-4 w-4" />
+            </button>
           </div>
           <Button className="h-11" type="submit" data-testid="btn-search">Search</Button>
         </div>
@@ -190,6 +227,7 @@ export default function Search() {
             onClick={() => {
                 setInputVal(item);
                 setQ(item);
+                setLastSubmittedQ(item);
                 setLocation(buildSearchUrl({ q: item, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
               }}
             >
@@ -203,6 +241,7 @@ export default function Search() {
             onClick={() => {
               setInputVal(correctedQuery);
               setQ(correctedQuery);
+              setLastSubmittedQ(correctedQuery);
               setLocation(buildSearchUrl({ q: correctedQuery, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
             }}
             className="mt-2 text-left text-xs font-semibold text-primary"
@@ -320,6 +359,7 @@ export default function Search() {
         <p className="text-sm text-muted-foreground">
           {isLoading ? "Searching..." : `${filteredProducts.length} of ${total} loaded`}
           {q && <> for "<strong>{q}</strong>"</>}
+          {q && q !== lastSubmittedQ && <span className="ml-2 text-xs font-semibold text-primary">live</span>}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -339,8 +379,8 @@ export default function Search() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-44 rounded-lg sm:h-64" />)}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-56 rounded-lg sm:h-64" />)}
         </div>
       ) : filteredProducts.length === 0 ? (
         <div className="rounded-lg border bg-white py-16 text-center text-muted-foreground">
@@ -351,13 +391,13 @@ export default function Search() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             {filteredProducts.map((product) => <ProductCard key={product.id} product={product} />)}
           </div>
           <div ref={loadMoreRef} className="flex min-h-16 items-center justify-center py-4">
             {isFetchingNextPage ? (
-              <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
-                {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-44 rounded-lg sm:h-64" />)}
+              <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-56 rounded-lg sm:h-64" />)}
               </div>
             ) : hasNextPage ? (
               <Button variant="outline" onClick={() => fetchNextPage()}>Load more products</Button>

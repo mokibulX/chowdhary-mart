@@ -2,8 +2,10 @@ import { Router } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db, walletTransactionsTable, usersTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
+import { assertTestModeFeature, testMode } from "../lib/test-mode";
 
 const router = Router();
+const demoWithdrawals: Array<Record<string, unknown>> = [];
 
 router.use(requireAuth);
 
@@ -42,6 +44,56 @@ router.get("/transactions", async (req: AuthRequest, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/withdrawals", async (req: AuthRequest, res) => {
+  res.json(demoWithdrawals.filter((item) => item.userId === req.user!.userId));
+});
+
+router.post("/withdrawals", async (req: AuthRequest, res) => {
+  try {
+    assertTestModeFeature(testMode.allowDemoPayout, "Demo payout");
+    const amount = Number(req.body?.amount ?? 0);
+    if (!amount || amount < 1) {
+      res.status(400).json({ error: "Enter a valid withdrawal amount" });
+      return;
+    }
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
+    const balance = Number(user?.walletBalance ?? 0);
+    if (amount > balance) {
+      res.status(400).json({ error: "Insufficient demo wallet balance" });
+      return;
+    }
+    const closing = balance - amount;
+    await db.update(usersTable).set({ walletBalance: closing.toFixed(2) }).where(eq(usersTable.id, req.user!.userId));
+    const request = {
+      id: Date.now(),
+      userId: req.user!.userId,
+      amount: amount.toFixed(2),
+      method: String(req.body?.method ?? "upi"),
+      upiId: req.body?.upiId ?? null,
+      status: "PROCESSED_TEST",
+      payoutMode: "DEMO",
+      realMoney: false,
+      createdInTestMode: true,
+      createdAt: new Date().toISOString(),
+    };
+    demoWithdrawals.unshift(request);
+    await db.insert(walletTransactionsTable).values({
+      userId: req.user!.userId,
+      type: "debit",
+      amount: amount.toFixed(2),
+      balance: closing.toFixed(2),
+      description: "Test withdrawal - no real money transferred",
+      referenceId: `DEMO-WD-${request.id}`,
+      referenceType: "demo_withdrawal",
+    });
+    res.status(201).json(request);
+  } catch (err) {
+    const status = (err as Error & { status?: number }).status ?? 500;
+    req.log.error(err);
+    res.status(status).json({ error: err instanceof Error ? err.message : "Withdrawal failed" });
   }
 });
 

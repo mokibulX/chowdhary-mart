@@ -5,6 +5,7 @@ import { usersTable } from "./users";
 import { storesTable } from "./stores";
 import { addressesTable } from "./addresses";
 import { productsTable } from "./products";
+import { serviceZonesTable } from "./zones";
 
 export const orderStatusEnum = pgEnum("order_status", [
   "pending", "confirmed", "preparing", "packed", "picked_up", "on_the_way", "arriving", "delivered", "cancelled", "returned"
@@ -18,8 +19,16 @@ export const ordersTable = pgTable("orders", {
   orderNumber: varchar("order_number", { length: 20 }).notNull().unique(),
   userId: integer("user_id").notNull().references(() => usersTable.id),
   storeId: integer("store_id").notNull().references(() => storesTable.id),
+  zoneId: integer("zone_id").references(() => serviceZonesTable.id),
+  customerZoneId: integer("customer_zone_id").references(() => serviceZonesTable.id),
+  shopZoneId: integer("shop_zone_id").references(() => serviceZonesTable.id),
+  riderZoneId: integer("rider_zone_id").references(() => serviceZonesTable.id),
   addressId: integer("address_id").references(() => addressesTable.id),
   addressSnapshot: json("address_snapshot").$type<Record<string, string>>(),
+  pickupLatitude: decimal("pickup_latitude", { precision: 10, scale: 7 }),
+  pickupLongitude: decimal("pickup_longitude", { precision: 10, scale: 7 }),
+  pickupAddress: text("pickup_address"),
+  pickupDistanceKm: decimal("pickup_distance_km", { precision: 8, scale: 2 }),
   status: orderStatusEnum("status").notNull().default("pending"),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
   paymentStatus: paymentStatusEnum("payment_status").notNull().default("pending"),

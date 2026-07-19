@@ -2,10 +2,12 @@ import { pgTable, serial, text, varchar, timestamp, boolean, integer, decimal, r
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { serviceZonesTable } from "./zones";
 
 export const storesTable = pgTable("stores", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => usersTable.id),
+  zoneId: integer("zone_id").references(() => serviceZonesTable.id),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   logoUrl: text("logo_url"),

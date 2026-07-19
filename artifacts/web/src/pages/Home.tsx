@@ -11,13 +11,12 @@ import {
   getListProductsQueryKey,
 } from "@workspace/api-client-react";
 import { customFetch } from "@workspace/api-client-react";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProductCard } from "@/components/ProductCard";
-import { ArrowRight, BadgePercent, Clock, CreditCard, MapPin, Search, ShieldCheck, Sparkles, Truck, Zap } from "lucide-react";
+import { ArrowRight, BadgePercent, Clock, CreditCard, MapPin, ShieldCheck, Sparkles, Truck, Zap } from "lucide-react";
 import { useInfiniteProducts } from "@/hooks/use-infinite-products";
 import { getSavedDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
 
@@ -66,8 +65,6 @@ const FALLBACK_BANNERS = [
 ];
 
 export default function Home() {
-  const [, setLocation] = useLocation();
-  const [searchText, setSearchText] = useState("");
   const [recentlyViewed, setRecentlyViewed] = useState<any[]>([]);
   const [secondsLeft, setSecondsLeft] = useState(3600 * 5 + 42 * 60 + 12);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | undefined>();
@@ -122,12 +119,6 @@ export default function Home() {
     return `${hours}:${minutes}:${seconds}`;
   }, [secondsLeft]);
 
-  const submitSearch = (event: React.FormEvent) => {
-    event.preventDefault();
-    const q = searchText.trim();
-    setLocation(q ? `/search?q=${encodeURIComponent(q)}` : "/search");
-  };
-
   useEffect(() => {
     const syncLocation = () => setDeliveryLocation(getSavedDeliveryLocation());
     window.addEventListener("delivery-location-change", syncLocation);
@@ -150,7 +141,7 @@ export default function Home() {
   }, [fetchMoreCategoryProducts, hasMoreCategoryProducts, loadingMoreCategoryProducts, selectedCategoryProducts.length]);
 
   return (
-    <div className="w-full max-w-full space-y-6 overflow-x-hidden pb-10">
+    <div className="w-full max-w-full space-y-5 overflow-x-hidden pb-10 sm:space-y-6">
       <style>{`
         @keyframes lch-slide { 0%, 28% { transform: translateX(0); } 34%, 62% { transform: translateX(-100%); } 68%, 96% { transform: translateX(-200%); } 100% { transform: translateX(0); } }
         @keyframes lch-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
@@ -160,27 +151,14 @@ export default function Home() {
         .lch-offer-shine::after { animation: lch-shine 3.8s ease-in-out infinite; }
       `}</style>
 
-      <section className="rounded-lg border bg-white p-3 shadow-sm">
-        <button className="mb-3 flex w-full items-center gap-2 rounded-md bg-orange-50 px-3 py-2 text-left text-sm text-gray-800">
+      <section className="rounded-xl border bg-white p-3 shadow-sm sm:p-4">
+        <button className="flex w-full items-center gap-2 rounded-lg bg-orange-50 px-3 py-3 text-left text-sm text-gray-800 transition-colors hover:bg-orange-100">
           <MapPin className="h-4 w-4 text-primary" />
-          <span className="font-semibold">
+          <span className="min-w-0 flex-1 truncate font-semibold">
             {deliveryLocation.pincode ? `Deliver to ${deliveryLocation.area} ${deliveryLocation.pincode}` : "Select live delivery location"}
           </span>
           <span className="ml-auto text-xs text-primary">Change</span>
         </button>
-        <form onSubmit={submitSearch} className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              className="h-11 pl-9"
-              placeholder="Search phones, grocery, fashion..."
-              data-testid="home-search"
-            />
-          </div>
-          <Button className="h-11" type="submit">Search</Button>
-        </form>
       </section>
 
       <section className="rounded-lg border bg-white p-3 shadow-sm">

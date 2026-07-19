@@ -4,11 +4,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { isDemoOtp, testMode } from "@/lib/test-mode";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Bike, Camera, CheckCircle, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, Upload, X } from "lucide-react";
+import { ArrowLeft, Bike, Camera, CheckCircle, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, Upload, X } from "lucide-react";
 import { LiveDeliveryMap } from "@/components/LiveDeliveryMap";
 import { fileToDataUrl, getBrowserLocation, watchBrowserLocation } from "@/lib/live-location";
 import { WalletSummaryCard } from "@/components/WalletSummaryCard";
@@ -46,6 +47,7 @@ export default function DeliveryDashboard() {
   const updateLocation = useUpdateDeliveryLocation();
 
   const refresh = () => qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
+  const userOnline = (user as any)?.isOnline === true;
   const activeOrders = (orders ?? []).filter((order: any) => ["packed", "picked_up", "on_the_way"].includes(order.status));
   const waitingOrders = (orders ?? []).filter((order: any) => ["confirmed", "preparing"].includes(order.status));
   const currentOrder = activeOrders[0] ?? waitingOrders[0];
@@ -65,8 +67,9 @@ export default function DeliveryDashboard() {
             accuracy: gps.accuracy,
             speed: gps.speed,
             heading: gps.heading,
-            capturedAt: gps.capturedAt,
-          },
+            timestamp: gps.capturedAt,
+            orderId: currentOrder?.id,
+          } as any,
         });
       },
       (error) => {
@@ -82,14 +85,14 @@ export default function DeliveryDashboard() {
     const gps = await getBrowserLocation();
     setLastGpsAt(gps.capturedAt);
     setLastAccuracy(gps.accuracy);
-    return { lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy, speed: gps.speed, heading: gps.heading, capturedAt: gps.capturedAt };
+    return { lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy, speed: gps.speed, heading: gps.heading, timestamp: gps.capturedAt, orderId: currentOrder?.id };
   };
 
   const updateGpsOnce = async () => {
     try {
       const location = await getPartnerLocation();
       updateLocation.mutate(
-        { data: location },
+        { data: location as any },
         { onSuccess: () => toast({ title: "Location updated", description: "Customers can see your latest GPS point." }) },
       );
     } catch (error) {
@@ -102,7 +105,7 @@ export default function DeliveryDashboard() {
   const toggleOnline = async () => {
     setOnlineBusy(true);
     try {
-      const goingOnline = !user?.isOnline;
+      const goingOnline = !(user as any)?.isOnline;
       let location = null;
       if (goingOnline) {
         if (!activationSelfie) {
@@ -118,7 +121,9 @@ export default function DeliveryDashboard() {
       });
       if (location) await customFetch("/api/delivery/location", { method: "PATCH", body: JSON.stringify(location), responseType: "json" });
       setActivationSelfie("");
+      if (!goingOnline) setAutoGps(false);
       await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
+      await qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
       toast({ title: goingOnline ? "You are online" : "You are offline", description: goingOnline ? "Daily live selfie and GPS verified." : undefined });
     } catch (error) {
       toast({ title: "Online check failed", description: (error as { data?: { error?: string } })?.data?.error ?? "Please complete GPS and selfie verification.", variant: "destructive" });
@@ -194,11 +199,13 @@ export default function DeliveryDashboard() {
     if (!status) return;
     const expectedOtp = String((order as any).liveTracking?.deliveryOtp ?? order.tracking?.deliveryOtp ?? 1000 + (order.id % 9000));
     const expectedPickupOtp = String((order as any).liveTracking?.pickupOtp ?? order.tracking?.pickupOtp ?? "");
-    if (status === "picked_up" && pickupOtpByOrder[order.id] !== expectedPickupOtp) {
+    const enteredPickupOtp = pickupOtpByOrder[order.id] ?? "";
+    const enteredDeliveryOtp = otpByOrder[order.id] ?? "";
+    if (status === "picked_up" && enteredPickupOtp !== expectedPickupOtp && !isDemoOtp(enteredPickupOtp)) {
       toast({ title: "Pickup OTP required", description: "Seller-er kach theke pickup OTP niye enter korun.", variant: "destructive" });
       return;
     }
-    if (status === "delivered" && otpByOrder[order.id] !== expectedOtp) {
+    if (status === "delivered" && enteredDeliveryOtp !== expectedOtp && !isDemoOtp(enteredDeliveryOtp)) {
       toast({ title: "Delivery OTP required", description: "Customer-er order tracking page-er OTP diye delivered mark korun.", variant: "destructive" });
       return;
     }
@@ -233,8 +240,13 @@ export default function DeliveryDashboard() {
             <Link href="/" className="truncate font-bold text-primary">Chowdhary Mart Partner</Link>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-            <Button className="w-full sm:w-auto" variant={user?.isOnline ? "default" : "outline"} size="sm" onClick={toggleOnline} disabled={onlineBusy}>
-              <Power className="mr-2 h-4 w-4" /> {user?.isOnline ? "Go offline" : "Go online"}
+            <Link href="/">
+              <Button className="w-full sm:w-auto" variant="outline" size="sm">
+                <Home className="mr-2 h-4 w-4" /> Shop Home
+              </Button>
+            </Link>
+            <Button className="w-full sm:w-auto" variant={userOnline ? "default" : "outline"} size="sm" onClick={toggleOnline} disabled={onlineBusy}>
+              <Power className="mr-2 h-4 w-4" /> {userOnline ? "Go offline" : "Go online"}
             </Button>
             <Button className="w-full sm:w-auto" variant={autoGps ? "default" : "outline"} size="sm" onClick={() => setAutoGps(value => !value)}>
               <LocateFixed className="mr-2 h-4 w-4" /> {autoGps ? "GPS live" : "Start GPS"}
@@ -264,7 +276,7 @@ export default function DeliveryDashboard() {
 
         <WalletSummaryCard href="/delivery/wallet" title="Delivery partner wallet" tone="dark" />
 
-        {!user?.isOnline && (
+        {!userOnline && (
           <section className="rounded-lg border border-blue-100 bg-blue-50 p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -326,13 +338,23 @@ export default function DeliveryDashboard() {
                       </div>
                       <div className="rounded bg-gray-50 p-2">
                         <p className="flex items-center gap-1 font-medium"><MapPin className="h-4 w-4" /> Drop</p>
-                        <p className="text-xs text-muted-foreground">{order.addressSnapshot?.line1}, {order.addressSnapshot?.city}</p>
+                        <p className="text-xs text-muted-foreground">{order.pickupAddress ?? order.addressSnapshot?.line1}, {order.addressSnapshot?.city}</p>
+                        {order.pickupLatitude && order.pickupLongitude && (
+                          <p className="mt-1 text-[11px] font-semibold text-emerald-700">
+                            {Number(order.pickupLatitude).toFixed(5)}, {Number(order.pickupLongitude).toFixed(5)}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                       <Link href={`/track/${order.id}`}>
                         <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> Track map</Button>
                       </Link>
+                      {order.pickupLatitude && order.pickupLongitude && (
+                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${order.pickupLatitude},${order.pickupLongitude}&travelmode=driving`} target="_blank" rel="noreferrer">
+                          <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> Navigate</Button>
+                        </a>
+                      )}
                       {["confirmed", "preparing"].includes(order.status) && (
                         <>
                           <Button className="w-full sm:w-auto" size="sm" onClick={() => acceptOrder(order.id)} disabled={busyOrderId === order.id}>

@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { eq, desc, and } from "drizzle-orm";
-import { db, ordersTable, deliveryPartnersTable, liveLocationsTable, orderTrackingTable, storesTable } from "@workspace/db";
+import { db, ordersTable, deliveryPartnersTable, liveLocationsTable, orderTrackingTable, storesTable, activeDeliveryLocationsTable, deliveryTrackingHistoryTable } from "@workspace/db";
 import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
+import { riderZoneIds, isInsideZone } from "../lib/zones";
 
 const router = Router();
 
@@ -30,7 +31,23 @@ router.get("/orders", async (req: AuthRequest, res) => {
 
     const orders = await Promise.all(orderIds.map(async id => {
       const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
-      return order ? { ...order, store: storeMap.get(order.storeId) } : null;
+      const store = order ? storeMap.get(order.storeId) : null;
+      return order ? {
+        ...order,
+        store,
+        liveTracking: {
+          orderId: order.id,
+          status: order.status,
+          estimatedMins: order.estimatedDeliveryMins ?? 40,
+          storeLocation: store ? { lat: store.lat, lng: store.lng, label: store.name, address: store.address } : null,
+          customerLocation: order.pickupLatitude && order.pickupLongitude ? {
+            lat: Number(order.pickupLatitude),
+            lng: Number(order.pickupLongitude),
+            label: "Customer pickup location",
+            address: order.pickupAddress ?? "Confirmed pickup point",
+          } : null,
+        },
+      } : null;
     }));
 
     res.json(orders.filter(Boolean).sort((a: any, b: any) =>
@@ -43,17 +60,41 @@ router.get("/orders", async (req: AuthRequest, res) => {
 });
 
 // GET /api/delivery/available-orders
-router.get("/available-orders", async (_req: AuthRequest, res) => {
+router.get("/available-orders", async (req: AuthRequest, res) => {
   try {
+    const dp = await getDP(req.user!.userId);
+    if (!dp || !dp.isVerified || !dp.isOnline) { res.status(200).json([]); return; }
+    const zones = await riderZoneIds(req.user!.userId);
+    if (!zones.length) { res.status(200).json([]); return; }
     const orders = await db.select().from(ordersTable)
       .where(eq(ordersTable.status, "confirmed"))
       .orderBy(desc(ordersTable.createdAt))
       .limit(30);
     const stores = await db.select().from(storesTable);
     const storeMap = new Map(stores.map(s => [s.id, s]));
-    res.json(orders.map(order => ({ ...order, store: storeMap.get(order.storeId) })));
+    res.json(orders
+      .filter((order) => !order.zoneId || zones.includes(order.zoneId))
+      .map(order => {
+        const store = storeMap.get(order.storeId);
+        return {
+          ...order,
+          store,
+          liveTracking: {
+            orderId: order.id,
+            status: order.status,
+            estimatedMins: order.estimatedDeliveryMins ?? 40,
+            storeLocation: store ? { lat: store.lat, lng: store.lng, label: store.name, address: store.address } : null,
+            customerLocation: order.pickupLatitude && order.pickupLongitude ? {
+              lat: Number(order.pickupLatitude),
+              lng: Number(order.pickupLongitude),
+              label: "Customer pickup location",
+              address: order.pickupAddress ?? "Confirmed pickup point",
+            } : null,
+          },
+        };
+      }));
   } catch (err) {
-    _req.log.error(err);
+    req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -66,6 +107,11 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
     const orderId = Number(req.params.orderId);
     const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
     if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    if (!dp.isVerified || !dp.isOnline) { res.status(403).json({ error: "Delivery partner must be approved and online." }); return; }
+    const zones = await riderZoneIds(req.user!.userId);
+    if (order.zoneId && !zones.includes(order.zoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
+    const [store] = await db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
+    if (store?.zoneId && !zones.includes(store.zoneId)) { res.status(403).json({ error: "Pickup store is outside your service zone." }); return; }
 
     await db.insert(orderTrackingTable).values({
       orderId,
@@ -76,7 +122,7 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
       lng: dp.currentLng,
     });
 
-    res.json({ ...order, assignedDeliveryPartnerId: dp.id });
+    res.json({ ...order, riderZoneId: order.zoneId ?? dp.currentZoneId, assignedDeliveryPartnerId: dp.id });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -110,8 +156,11 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
     const orderId = Number(req.params.orderId);
     const { status } = req.body as { status: "picked_up" | "on_the_way" | "delivered" };
+    const [targetOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+    const zones = await riderZoneIds(req.user!.userId);
+    if (!targetOrder || (targetOrder.zoneId && !zones.includes(targetOrder.zoneId))) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
 
-    const update: Partial<typeof ordersTable.$inferInsert> = { status, updatedAt: new Date() };
+    const update: Partial<typeof ordersTable.$inferInsert> = { status, riderZoneId: targetOrder.zoneId ?? dp.currentZoneId ?? null, updatedAt: new Date() };
     if (status === "delivered") update.deliveredAt = new Date();
 
     const [order] = await db.update(ordersTable)
@@ -138,13 +187,23 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
 // PATCH /api/delivery/location
 router.patch("/location", async (req: AuthRequest, res) => {
   try {
-    const { lat, lng, speed, heading } = req.body as { lat: number; lng: number; speed?: number; heading?: number };
+    const { lat, lng, speed, heading, accuracy, altitude, timestamp, orderId, zoneId } = req.body as {
+      lat: number;
+      lng: number;
+      speed?: number;
+      heading?: number;
+      accuracy?: number;
+      altitude?: number;
+      timestamp?: string;
+      orderId?: number;
+      zoneId?: number;
+    };
     const dp = await getDP(req.user!.userId);
     if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
 
     // Update current location on partner
     await db.update(deliveryPartnersTable)
-      .set({ currentLat: lat, currentLng: lng })
+      .set({ currentLat: lat, currentLng: lng, currentZoneId: zoneId ?? dp.currentZoneId ?? null })
       .where(eq(deliveryPartnersTable.id, dp.id));
 
     // Upsert live location
@@ -162,7 +221,69 @@ router.patch("/location", async (req: AuthRequest, res) => {
       });
     }
 
-    res.json({ message: "Location updated" });
+    const activeRows = await db.select().from(activeDeliveryLocationsTable)
+      .where(eq(activeDeliveryLocationsTable.deliveryPartnerId, dp.id)).limit(1);
+    if (activeRows[0]) {
+      await db.update(activeDeliveryLocationsTable)
+        .set({
+          orderId: orderId ?? activeRows[0].orderId,
+          latitude: lat,
+          longitude: lng,
+          speed: speed ?? 0,
+          heading: heading ?? 0,
+          accuracy: accuracy ?? null,
+          altitude: altitude ?? null,
+          zoneId: zoneId ?? activeRows[0].zoneId,
+          status: "online",
+          updatedAt: new Date(),
+        })
+        .where(eq(activeDeliveryLocationsTable.deliveryPartnerId, dp.id));
+    } else {
+      await db.insert(activeDeliveryLocationsTable).values({
+        orderId: orderId ?? null,
+        deliveryPartnerId: dp.id,
+        latitude: lat,
+        longitude: lng,
+        speed: speed ?? 0,
+        heading: heading ?? 0,
+        accuracy: accuracy ?? null,
+        altitude: altitude ?? null,
+        zoneId: zoneId ?? null,
+        status: "online",
+      });
+    }
+
+    await db.insert(deliveryTrackingHistoryTable).values({
+      orderId: orderId ?? null,
+      deliveryPartnerId: dp.id,
+      latitude: lat,
+      longitude: lng,
+      speed: speed ?? 0,
+      heading: heading ?? 0,
+      accuracy: accuracy ?? null,
+      altitude: altitude ?? null,
+      source: "gps",
+      recordedAt: timestamp ? new Date(timestamp) : new Date(),
+    });
+
+    const payload = {
+      deliveryPartnerId: dp.id,
+      orderId: orderId ?? null,
+      lat,
+      lng,
+      speed: speed ?? 0,
+      heading: heading ?? 0,
+      accuracy: accuracy ?? null,
+      altitude: altitude ?? null,
+      timestamp: timestamp ?? new Date().toISOString(),
+    };
+
+    const io = req.app.get("io");
+    io?.to(`rider:location:${dp.id}`).emit("rider:location", payload);
+    if (orderId) io?.to(`delivery:tracking:${orderId}`).emit("delivery:tracking", payload);
+    if (zoneId) io?.to(`zone:riders:${zoneId}`).emit("zone:riders", payload);
+
+    res.json({ message: "Location updated", location: payload });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -174,12 +295,24 @@ router.patch("/toggle-online", async (req: AuthRequest, res) => {
   try {
     const dp = await getDP(req.user!.userId);
     if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
+    if (!dp.isVerified) { res.status(403).json({ error: "Admin approval required before going online." }); return; }
+    const nextOnline = !dp.isOnline;
+    const location = req.body?.location;
+    const updates: Partial<typeof deliveryPartnersTable.$inferInsert> = { isOnline: nextOnline };
+    if (nextOnline && location) {
+      updates.currentLat = Number(location.lat);
+      updates.currentLng = Number(location.lng);
+    }
 
-    await db.update(deliveryPartnersTable)
-      .set({ isOnline: !dp.isOnline })
-      .where(eq(deliveryPartnersTable.id, dp.id));
+    const [updated] = await db.update(deliveryPartnersTable)
+      .set(updates)
+      .where(eq(deliveryPartnersTable.id, dp.id))
+      .returning();
+    if (!nextOnline) {
+      await db.delete(activeDeliveryLocationsTable).where(eq(activeDeliveryLocationsTable.deliveryPartnerId, dp.id));
+    }
 
-    res.json({ message: `Now ${!dp.isOnline ? "online" : "offline"}` });
+    res.json({ message: `Now ${nextOnline ? "online" : "offline"}`, isOnline: nextOnline, partner: updated });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

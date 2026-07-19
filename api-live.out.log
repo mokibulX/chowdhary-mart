@@ -1,0 +1,168 @@
+[13:01:11.307] [32mINFO[39m (20252): [36mServer listening[39m
+    [35mport[39m: 5000
+[13:01:21.533] [31mERROR[39m (20252): [36mFailed query: select "id", "email", "phone", "password_hash", "name", "avatar_url", "role", "wallet_balance", "loyalty_points", "referral_code", "referred_by", "is_verified", "is_active", "created_at", "updated_at" from "users" where "users"."email" = $1 limit $2
+params: chowdhary909090@gmail.com,1[39m
+    [35mreq[39m: {
+      "id": 1,
+      "requestId": "a6d5f098-6a2b-468e-a765-1ab7d56dbda8",
+      "correlationId": "a6d5f098-6a2b-468e-a765-1ab7d56dbda8",
+      "method": "POST",
+      "url": "/api/auth/login"
+    }
+    err: {
+      "type": "_DrizzleQueryError",
+      "message": "Failed query: select \"id\", \"email\", \"phone\", \"password_hash\", \"name\", \"avatar_url\", \"role\", \"wallet_balance\", \"loyalty_points\", \"referral_code\", \"referred_by\", \"is_verified\", \"is_active\", \"created_at\", \"updated_at\" from \"users\" where \"users\".\"email\" = $1 limit $2\nparams: chowdhary909090@gmail.com,1: relation \"users\" does not exist",
+      "stack":
+          Error: Failed query: select "id", "email", "phone", "password_hash", "name", "avatar_url", "role", "wallet_balance", "loyalty_points", "referral_code", "referred_by", "is_verified", "is_active", "created_at", "updated_at" from "users" where "users"."email" = $1 limit $2
+          params: chowdhary909090@gmail.com,1
+              at NodePgPreparedQuery.queryWithCache (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41490:19)
+              at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+              at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41777:26
+              at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:87891:20
+          caused by: error: relation "users" does not exist
+              at file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:36578:15
+              at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+              at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41784:22
+              at async NodePgPreparedQuery.queryWithCache (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41488:20)
+              at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41777:26
+              at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:87891:20
+      "query": "select \"id\", \"email\", \"phone\", \"password_hash\", \"name\", \"avatar_url\", \"role\", \"wallet_balance\", \"loyalty_points\", \"referral_code\", \"referred_by\", \"is_verified\", \"is_active\", \"created_at\", \"updated_at\" from \"users\" where \"users\".\"email\" = $1 limit $2",
+      "params": [
+        "chowdhary909090@gmail.com",
+        1
+      ]
+    }
+[13:01:21.549] [32mINFO[39m (20252): [36mrequest errored[39m
+    [35mreq[39m: {
+      "id": 1,
+      "requestId": "a6d5f098-6a2b-468e-a765-1ab7d56dbda8",
+      "correlationId": "a6d5f098-6a2b-468e-a765-1ab7d56dbda8",
+      "method": "POST",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 500
+    }
+    [35mresponseTime[39m: 5300
+    err: {
+      "type": "Error",
+      "message": "failed with status code 500",
+      "stack":
+          Error: failed with status code 500
+              at onResFinished (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:28325:45)
+              at ServerResponse.onResponseComplete (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:28375:18)
+              at ServerResponse.emit (node:events:520:35)
+              at onFinish (node:_http_outgoing:1026:10)
+              at callback (node:internal/streams/writable:764:21)
+              at afterWrite (node:internal/streams/writable:708:5)
+              at afterWriteTick (node:internal/streams/writable:694:10)
+              at process.processTicksAndRejections (node:internal/process/task_queues:89:21)
+    }
+[13:05:29.224] [32mINFO[39m (20252): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 2,
+      "requestId": "b2082b33-8412-448c-9b81-2e1859e6abb4",
+      "correlationId": "b2082b33-8412-448c-9b81-2e1859e6abb4",
+      "method": "POST",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5613
+[13:05:29.418] [32mINFO[39m (20252): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "requestId": "77f66359-9e42-4738-8ab7-89d09627ad16",
+      "correlationId": "77f66359-9e42-4738-8ab7-89d09627ad16",
+      "method": "GET",
+      "url": "/api/maps/config"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 15
+[13:05:29.438] [32mINFO[39m (20252): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "requestId": "755b4dc0-a486-4c87-8147-c950bd9846c0",
+      "correlationId": "755b4dc0-a486-4c87-8147-c950bd9846c0",
+      "method": "GET",
+      "url": "/api/auth/test-mode"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3
+[13:06:16.555] [32mINFO[39m (20252): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 5,
+      "requestId": "79f4ef50-9f44-40da-bb97-79012d00fe77",
+      "correlationId": "79f4ef50-9f44-40da-bb97-79012d00fe77",
+      "method": "POST",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 5229
+[13:06:17.534] [32mINFO[39m (20252): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 6,
+      "requestId": "feb938da-2048-4bd5-b49b-582a67d788d9",
+      "correlationId": "feb938da-2048-4bd5-b49b-582a67d788d9",
+      "method": "GET",
+      "url": "/api/maps/geocode"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 750
+[13:06:33.782] [32mINFO[39m (20252): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 7,
+      "requestId": "8e11bba1-e725-487c-8666-5efa399837a1",
+      "correlationId": "8e11bba1-e725-487c-8666-5efa399837a1",
+      "method": "POST",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1166
+[13:06:34.571] [32mINFO[39m (20252): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 8,
+      "requestId": "8f42a66e-2157-4b1c-8037-d80aa60aebf1",
+      "correlationId": "8f42a66e-2157-4b1c-8037-d80aa60aebf1",
+      "method": "GET",
+      "url": "/api/maps/geocode"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 744
+[13:08:46.815] [32mINFO[39m (20252): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 9,
+      "requestId": "7555b0bd-88fe-4ad8-a098-d25a4811272f",
+      "correlationId": "7555b0bd-88fe-4ad8-a098-d25a4811272f",
+      "method": "OPTIONS",
+      "url": "/api/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 9
+[13:08:46.861] [32mINFO[39m (20252): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 10,
+      "requestId": "c13fc84d-63b0-451b-a70c-6ecf9cc09ec6",
+      "correlationId": "c13fc84d-63b0-451b-a70c-6ecf9cc09ec6",
+      "method": "POST",
+      "url": "/api/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 16

@@ -1,13 +1,17 @@
 import { Router } from "express";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, gte, sql } from "drizzle-orm";
 import {
   db, ordersTable, orderItemsTable, orderTrackingTable,
   cartItemsTable, cartsTable, productsTable, storesTable,
   addressesTable, usersTable, couponUsesTable, couponsTable,
-  walletTransactionsTable, reviewsTable, deliveryPartnersTable
+  walletTransactionsTable, reviewsTable, deliveryPartnersTable,
+  outboxEventsTable, inventoryLedgerTable
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 import { generateOrderNumber } from "../lib/auth";
+import { getEligibleRegistrationZones } from "../lib/zones";
+import { beginIdempotency, getIdempotencyKey, requestHash, saveIdempotencyResponse } from "../lib/idempotency";
+import { validateCouponForUser } from "../lib/coupons";
 
 const router = Router();
 
@@ -73,44 +77,84 @@ router.get("/", async (req: AuthRequest, res) => {
 router.post("/", async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.userId;
-    const { addressId, paymentMethod, couponCode, useWallet, notes } = req.body as {
+    const idempotencyKey = getIdempotencyKey(req.headers);
+    if (!idempotencyKey) {
+      res.status(400).json({ error: "Idempotency-Key header is required for checkout." });
+      return;
+    }
+    const endpoint = "POST /api/orders";
+    const hash = requestHash(req.body);
+    const replay = await beginIdempotency(idempotencyKey, userId, endpoint, hash);
+    if (replay.state === "claimed") {
+      // This request owns the idempotency slot and may continue.
+    } else
+    if (replay.state === "replay") {
+      res.status(replay.status).json(replay.body);
+      return;
+    }
+    if (replay.state === "conflict" || replay.state === "processing") {
+      res.status(replay.state === "conflict" ? 409 : 425).json({ error: replay.message });
+      return;
+    }
+    const { addressId, paymentMethod, couponCode, useWallet, notes, pickupLatitude, pickupLongitude, pickupAddress } = req.body as {
       addressId: number;
       paymentMethod: "cod" | "online" | "wallet" | "upi";
       couponCode?: string;
       useWallet?: boolean;
       notes?: string;
+      pickupLatitude?: number;
+      pickupLongitude?: number;
+      pickupAddress?: string;
     };
 
+    const result = await db.transaction(async (tx) => {
     // Get cart
-    const [cart] = await db.select().from(cartsTable).where(eq(cartsTable.userId, userId)).limit(1);
+    const [cart] = await tx.select().from(cartsTable).where(eq(cartsTable.userId, userId)).limit(1);
     if (!cart || !cart.storeId) {
-      res.status(400).json({ error: "Cart is empty" });
-      return;
+      return { status: 400, body: { error: "Cart is empty" } };
     }
 
-    const cartItems = await db.select().from(cartItemsTable).where(eq(cartItemsTable.cartId, cart.id));
+    const cartItems = await tx.select().from(cartItemsTable).where(eq(cartItemsTable.cartId, cart.id));
     if (cartItems.length === 0) {
-      res.status(400).json({ error: "Cart is empty" });
-      return;
+      return { status: 400, body: { error: "Cart is empty" } };
     }
 
     // Get store and address
     const [[store], [address]] = await Promise.all([
-      db.select().from(storesTable).where(eq(storesTable.id, cart.storeId)).limit(1),
-      db.select().from(addressesTable).where(eq(addressesTable.id, addressId)).limit(1),
+      tx.select().from(storesTable).where(eq(storesTable.id, cart.storeId)).limit(1),
+      tx.select().from(addressesTable).where(eq(addressesTable.id, addressId)).limit(1),
     ]);
 
-    if (!store) { res.status(400).json({ error: "Store not found" }); return; }
-    if (!address) { res.status(400).json({ error: "Address not found" }); return; }
+    if (!store) return { status: 400, body: { error: "Store not found" } };
+    if (!address) return { status: 400, body: { error: "Address not found" } };
+    if (!store.isActive || !store.isOpen || store.holidayMode) return { status: 400, body: { error: "This seller is not active right now." } };
+    const selectedLat = Number(pickupLatitude ?? address.lat);
+    const selectedLng = Number(pickupLongitude ?? address.lng);
+    const selectedAddress = String(pickupAddress ?? "").trim();
+    if (!Number.isFinite(selectedLat) || !Number.isFinite(selectedLng) || !selectedAddress) {
+      return { status: 400, body: { error: "Please confirm your exact delivery location on the map before placing the order." } };
+    }
+    const shopDistanceKm = distanceKm(store.lat, store.lng, selectedLat, selectedLng);
+    if (shopDistanceKm > 5) {
+      return { status: 400, body: { error: "Sorry! We currently deliver only within a 5 KM service area." } };
+    }
+    const customerZones = await getEligibleRegistrationZones("seller", selectedLat, selectedLng);
+    const customerZone = customerZones.find((zone) => zone.insideServiceZone && zone.acceptingOrders);
+    if (!customerZone) return { status: 400, body: { error: "This address is outside our current delivery area." } };
+    const shopZoneId = store.zoneId ?? customerZone.id;
+    if (shopZoneId !== customerZone.id && process.env.CROSS_ZONE_DELIVERY_ENABLED !== "true") {
+      return { status: 400, body: { error: "Your cart store is outside the selected delivery zone. Please switch to a nearby store." } };
+    }
 
     // Compute subtotal
     const productIds = cartItems.map(i => i.productId);
-    const products = await db.select().from(productsTable).where(inArray(productsTable.id, productIds));
+    const products = await tx.select().from(productsTable).where(inArray(productsTable.id, productIds));
     const productMap = new Map(products.map(p => [p.id, p]));
 
     let subtotal = 0;
     const orderItemsData = cartItems.map(item => {
-      const product = productMap.get(item.productId)!;
+      const product = productMap.get(item.productId);
+      if (!product) throw new Error(`Product ${item.productId} disappeared during checkout`);
       const lineTotal = safeNum(item.price) * item.qty;
       subtotal += lineTotal;
       return {
@@ -130,22 +174,13 @@ router.post("/", async (req: AuthRequest, res) => {
     let couponDiscount = 0;
     let coupon = null;
     if (couponCode) {
-      [coupon] = await db.select().from(couponsTable)
-        .where(and(eq(couponsTable.code, couponCode.toUpperCase()), eq(couponsTable.isActive, true)))
-        .limit(1);
-      if (coupon) {
-        if (coupon.discountType === "percent") {
-          couponDiscount = (subtotal * safeNum(coupon.discountValue)) / 100;
-          if (coupon.maxDiscount) couponDiscount = Math.min(couponDiscount, safeNum(coupon.maxDiscount));
-        } else {
-          couponDiscount = safeNum(coupon.discountValue);
-        }
-        couponDiscount = Math.min(couponDiscount, subtotal);
-      }
+      const validated = await validateCouponForUser(tx as any, { code: couponCode, orderAmount: subtotal, userId });
+      coupon = validated.coupon;
+      couponDiscount = validated.discount;
     }
 
     // Wallet
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     let walletUsed = 0;
     if (useWallet && user) {
       walletUsed = Math.min(safeNum(user.walletBalance), subtotal + deliveryFee - couponDiscount);
@@ -159,15 +194,23 @@ router.post("/", async (req: AuthRequest, res) => {
     const assignedPartner = await assignNearestPartner(store);
     const promisedMins = Math.min(40, Math.max(20, store.estimatedDeliveryMins ?? 40));
 
-    const [order] = await db.insert(ordersTable).values({
+    const [order] = await tx.insert(ordersTable).values({
       orderNumber: generateOrderNumber(),
       userId,
       storeId: cart.storeId,
+      zoneId: customerZone.id,
+      customerZoneId: customerZone.id,
+      shopZoneId,
+      riderZoneId: assignedPartner?.currentZoneId ?? null,
       addressId,
-      addressSnapshot: { line1: address.line1, city: address.city, pincode: address.pincode, name: address.name },
+      addressSnapshot: { line1: selectedAddress || address.line1, city: address.city, pincode: address.pincode, name: address.name },
+      pickupLatitude: selectedLat.toFixed(7),
+      pickupLongitude: selectedLng.toFixed(7),
+      pickupAddress: selectedAddress,
+      pickupDistanceKm: shopDistanceKm.toFixed(2),
       status: assignedPartner ? "confirmed" : "pending",
       paymentMethod,
-      paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
+      paymentStatus: "pending",
       subtotal: subtotal.toFixed(2),
       deliveryFee: deliveryFee.toFixed(2),
       discount: "0.00",
@@ -180,13 +223,29 @@ router.post("/", async (req: AuthRequest, res) => {
       notes,
     }).returning();
 
+    for (const item of cartItems) {
+      const [reserved] = await tx.update(productsTable)
+        .set({ stock: sql`${productsTable.stock} - ${item.qty}`, updatedAt: new Date() })
+        .where(and(eq(productsTable.id, item.productId), eq(productsTable.isAvailable, true), gte(productsTable.stock, item.qty)))
+        .returning({ id: productsTable.id, stock: productsTable.stock });
+      if (!reserved) throw new Error(`OUT_OF_STOCK:${item.productId}`);
+      await tx.insert(inventoryLedgerTable).values({
+        productId: item.productId,
+        orderId: order.id,
+        type: "RESERVED",
+        qty: item.qty,
+        idempotencyKey,
+        note: `Reserved for order ${order.orderNumber}`,
+      });
+    }
+
     // Insert order items
-    await db.insert(orderItemsTable).values(
+    await tx.insert(orderItemsTable).values(
       orderItemsData.map(item => ({ ...item, orderId: order.id }))
     );
 
     // Insert tracking event
-    await db.insert(orderTrackingTable).values([
+    await tx.insert(orderTrackingTable).values([
       {
         orderId: order.id,
         deliveryPartnerId: assignedPartner?.id,
@@ -204,15 +263,15 @@ router.post("/", async (req: AuthRequest, res) => {
     ]);
 
     // Clear cart
-    await db.delete(cartItemsTable).where(eq(cartItemsTable.cartId, cart.id));
+    await tx.delete(cartItemsTable).where(eq(cartItemsTable.cartId, cart.id));
 
     // Update wallet and loyalty
     if (walletUsed > 0 && user) {
       const newBalance = safeNum(user.walletBalance) - walletUsed;
-      await db.update(usersTable)
+      await tx.update(usersTable)
         .set({ walletBalance: newBalance.toFixed(2) })
         .where(eq(usersTable.id, userId));
-      await db.insert(walletTransactionsTable).values({
+      await tx.insert(walletTransactionsTable).values({
         userId,
         type: "debit",
         amount: walletUsed.toFixed(2),
@@ -224,27 +283,60 @@ router.post("/", async (req: AuthRequest, res) => {
     }
 
     if (loyaltyEarned > 0 && user) {
-      await db.update(usersTable)
+      await tx.update(usersTable)
         .set({ loyaltyPoints: user.loyaltyPoints + loyaltyEarned })
         .where(eq(usersTable.id, userId));
     }
 
     // Mark coupon used
     if (coupon) {
-      await db.insert(couponUsesTable).values({
+      await tx.insert(couponUsesTable).values({
         couponId: coupon.id,
         userId,
         orderId: order.id,
         discountApplied: couponDiscount.toFixed(2),
       });
-      await db.update(couponsTable)
+      await tx.update(couponsTable)
         .set({ usedCount: (coupon.usedCount ?? 0) + 1 })
         .where(eq(couponsTable.id, coupon.id));
     }
 
-    const [storeData] = await db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
-    res.status(201).json({ ...order, store: storeData });
+    await tx.insert(outboxEventsTable).values({
+      aggregateType: "order",
+      aggregateId: String(order.id),
+      eventType: "order.created",
+      eventVersion: 1,
+      idempotencyKey,
+      payload: {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        userId,
+        storeId: order.storeId,
+        zoneId: order.zoneId,
+        total: order.total,
+        paymentMethod: order.paymentMethod,
+      },
+    });
+
+    const [storeData] = await tx.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
+    return { status: 201, body: { ...order, store: storeData } };
+    });
+
+    await saveIdempotencyResponse({
+      key: idempotencyKey,
+      userId,
+      endpoint,
+      hash,
+      status: result.status,
+      body: result.body as Record<string, unknown>,
+      resourceId: String((result.body as { id?: number }).id ?? ""),
+    });
+    res.status(result.status).json(result.body);
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith("OUT_OF_STOCK:")) {
+      res.status(409).json({ error: "Some products are out of stock. Please refresh your cart." });
+      return;
+    }
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
   }

@@ -1,11 +1,12 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowLeft, LayoutDashboard, Users, ShoppingBag, Store, Tag, LogOut, Grid3X3, ShieldCheck, Menu, Wallet, MapPinned, PanelsTopLeft } from "lucide-react";
+import { ArrowLeft, Home, LayoutDashboard, Users, ShoppingBag, Store, Tag, LogOut, Grid3X3, ShieldCheck, Menu, Wallet, MapPinned, PanelsTopLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const NAV = [
+  { href: "/", label: "Shop Home", icon: Home },
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/approvals", label: "Shop Approvals", icon: ShieldCheck },
@@ -25,7 +26,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const navItems = (mobile = false) => (
     <nav className={mobile ? "space-y-1" : "flex-1 p-3 space-y-1"}>
       {NAV.map(({ href, label, icon: Icon }) => {
-        const active = href === "/admin" ? location === href : location.startsWith(href);
+        const active = href === "/" ? location === href : href === "/admin" ? location === href : location.startsWith(href);
         const item = (
           <div
             className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
@@ -55,9 +56,12 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <Link href="/">
-              <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <img src="/app-logo.png" alt="Chowdhary Mart" className="h-9 w-9 rounded-xl bg-white object-cover" />
+                <div className="min-w-0">
                 <div className="truncate text-base font-bold">Chowdhary Mart</div>
                 <div className="text-xs text-slate-300">Admin Panel</div>
+                </div>
               </div>
             </Link>
           </div>
@@ -69,7 +73,10 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             </SheetTrigger>
             <SheetContent side="left" className="app-scroll-panel w-[86vw] max-w-xs p-0">
               <div className="border-b bg-slate-900 p-5 text-white">
-                <div className="text-lg font-bold">Chowdhary Mart</div>
+                <div className="flex items-center gap-2 text-lg font-bold">
+                  <img src="/app-logo.png" alt="Chowdhary Mart" className="h-10 w-10 rounded-xl bg-white object-cover" />
+                  Chowdhary Mart
+                </div>
                 <div className="text-xs text-slate-300">Admin Panel</div>
               </div>
               <div className="p-3">{navItems(true)}</div>
@@ -92,7 +99,15 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
           </Button>
           <Link href="/">
-            <div className="font-bold text-white text-lg">Chowdhary Mart</div>
+            <Button variant="outline" size="sm" className="mb-3 w-full justify-start border-white/20 bg-white/10 text-white hover:bg-white/20">
+              <Home className="mr-2 h-4 w-4" /> Shop Home
+            </Button>
+          </Link>
+          <Link href="/">
+          <div className="flex items-center gap-2 text-lg font-bold text-white">
+            <img src="/app-logo.png" alt="Chowdhary Mart" className="h-10 w-10 rounded-xl bg-white object-cover" />
+            Chowdhary Mart
+          </div>
           </Link>
           <div className="text-xs text-slate-400 mt-0.5">Admin Panel</div>
         </div>

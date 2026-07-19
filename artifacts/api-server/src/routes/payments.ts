@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 import { createRazorpayOrder, getRazorpayConfig, verifyRazorpayPaymentSignature } from "../lib/razorpay";
+import { assertTestModeFeature, testMode } from "../lib/test-mode";
 
 const router = Router();
 
@@ -42,6 +43,61 @@ async function verifiedCartTotal(userId: number) {
 }
 
 router.use(requireAuth);
+
+router.post("/demo/complete", async (req: AuthRequest, res) => {
+  try {
+    assertTestModeFeature(testMode.allowDemoPayment, "Demo payment");
+    const verified = await verifiedCartTotal(req.user!.userId);
+    const providerOrderId = `DEMO_ORDER_${req.user!.userId}_${Date.now()}`;
+    const providerPaymentId = `DEMO_PAY_${Date.now()}`;
+
+    const [paymentOrder] = await db.insert(paymentOrdersTable).values({
+      customerId: req.user!.userId,
+      providerOrderId,
+      amount: verified.total.toFixed(2),
+      currency: "INR",
+      status: "paid_test",
+      cartSnapshot: {
+        itemCount: verified.items.length,
+        storeId: verified.store.id,
+        subtotal: verified.subtotal,
+        deliveryFee: verified.deliveryFee,
+        isDemo: true,
+        paymentMode: "DEMO",
+        realMoney: false,
+        createdInTestMode: true,
+      },
+    }).returning();
+
+    const [payment] = await db.insert(paymentsTable).values({
+      paymentOrderId: paymentOrder.id,
+      customerId: req.user!.userId,
+      providerOrderId,
+      providerPaymentId,
+      providerSignature: "DEMO_SIGNATURE_NOT_REAL",
+      amount: paymentOrder.amount,
+      currency: paymentOrder.currency,
+      paymentMethod: "demo",
+      paymentStatus: "paid",
+      captureStatus: "captured_test",
+      capturedAt: new Date(),
+    }).returning();
+
+    res.status(201).json({
+      verified: true,
+      paymentId: payment.id,
+      providerPaymentId,
+      provider: "DEMO",
+      status: "PAID_TEST",
+      realMoney: false,
+      message: "No real money was charged.",
+    });
+  } catch (err) {
+    const status = (err as Error & { status?: number }).status ?? 500;
+    req.log.error(err);
+    res.status(status).json({ error: err instanceof Error ? err.message : "Demo payment failed" });
+  }
+});
 
 router.post("/razorpay/order", async (req: AuthRequest, res) => {
   try {

@@ -65,7 +65,7 @@ export default function VendorStore() {
         estimatedDeliveryMins: store.estimatedDeliveryMins ?? 40,
         lat: Number(store.lat ?? 0),
         lng: Number(store.lng ?? 0),
-        pickupAddress: store.pickupAddress ?? store.address ?? "",
+        pickupAddress: (store as any).pickupAddress ?? store.address ?? "",
         isOpen: !!store.isOpen,
       });
     }

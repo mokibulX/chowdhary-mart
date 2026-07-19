@@ -89,7 +89,7 @@ export default function VendorOrders() {
       return;
     }
     updateStatus.mutate(
-      { orderId: decisionOrder.id, data: { status: decisionType === "reject" ? "cancelled" : "cancelled_by_seller", reason } },
+      { orderId: decisionOrder.id, data: { status: decisionType === "reject" ? "cancelled" : "cancelled_by_seller", reason } as any },
       {
         onSuccess: () => {
           refresh();

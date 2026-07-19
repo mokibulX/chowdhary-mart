@@ -20,6 +20,8 @@ import homepageRouter from "./homepage";
 import searchRouter from "./search";
 import paymentsRouter from "./payments";
 import razorpayWebhookRouter from "./razorpay-webhook";
+import mapsRouter from "./maps";
+import publicRouter from "./public";
 
 const router: IRouter = Router();
 
@@ -44,5 +46,7 @@ router.use("/homepage", homepageRouter);
 router.use("/search", searchRouter);
 router.use("/payments", paymentsRouter);
 router.use("/webhooks", razorpayWebhookRouter);
+router.use("/maps", mapsRouter);
+router.use("/public", publicRouter);
 
 export default router;

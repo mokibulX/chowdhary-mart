@@ -32,7 +32,7 @@ export default function Returns() {
 
   const returnableOrders = useMemo(() => (orders ?? []).filter((order: any) => !["cancelled"].includes(order.status)), [orders]);
   const selectedOrder = returnableOrders.find((order: any) => String(order.id) === orderId);
-  const selectedItems = selectedOrder?.items ?? [];
+  const selectedItems = (selectedOrder as any)?.items ?? [];
 
   const submitReturn = async () => {
     if (!orderId || !productId) {

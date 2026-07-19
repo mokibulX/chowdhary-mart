@@ -1,0 +1,62 @@
+[15:04:01.227] [32mINFO[39m (19056): [36mServer listening[39m
+    [35mport[39m: 5000
+[15:04:14.188] [32mINFO[39m (19056): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 1,
+      "requestId": "a9eb5ae8-d75f-4bfc-ba0f-9f8cbea44cea",
+      "correlationId": "a9eb5ae8-d75f-4bfc-ba0f-9f8cbea44cea",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3029
+[15:04:30.665] [32mINFO[39m (19056): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 2,
+      "requestId": "2a295620-381e-453a-9782-27c73231ca06",
+      "correlationId": "2a295620-381e-453a-9782-27c73231ca06",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 451
+[15:06:59.869] [32mINFO[39m (19056): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "requestId": "b94fae80-0465-4af3-94be-d36ae96e442b",
+      "correlationId": "b94fae80-0465-4af3-94be-d36ae96e442b",
+      "method": "OPTIONS",
+      "url": "/api/admin/test-controls"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[15:06:59.879] [32mINFO[39m (19056): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "requestId": "88ea0c6c-cde7-461d-be68-7d050cae9c9e",
+      "correlationId": "88ea0c6c-cde7-461d-be68-7d050cae9c9e",
+      "method": "GET",
+      "url": "/api/admin/test-controls"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 2
+[15:08:17.761] [32mINFO[39m (19056): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 5,
+      "requestId": "e0ef036f-36a6-493d-bbe9-b9326689850c",
+      "correlationId": "e0ef036f-36a6-493d-bbe9-b9326689850c",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2525

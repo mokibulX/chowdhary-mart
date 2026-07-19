@@ -1,9 +1,30 @@
 import { Router } from "express";
-import { eq, ilike, and, or, desc, asc, sql } from "drizzle-orm";
+import { eq, ilike, and, desc, asc, sql } from "drizzle-orm";
 import { db, productsTable, categoriesTable, storesTable, reviewsTable } from "@workspace/db";
-import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 
 const router = Router();
+
+function distanceKm(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const toRad = (value: number) => value * Math.PI / 180;
+  const earthKm = 6371;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthKm * Math.asin(Math.sqrt(h));
+}
+
+function parseIdList(value: unknown) {
+  return String(value ?? "")
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isFinite(item) && item > 0);
+}
+
+function asTags(value: unknown) {
+  return Array.isArray(value) ? value.map((item) => String(item).toLowerCase()) : [];
+}
 
 // GET /api/products
 router.get("/", async (req, res) => {
@@ -43,6 +64,104 @@ router.get("/", async (req, res) => {
     const total = Number(countResult[0]?.count ?? 0);
 
     res.json({ items, total, hasMore: offset + limit < total });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/products/:productId/related
+router.get("/:productId/related", async (req, res) => {
+  try {
+    const productId = Number(req.params.productId);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 16, 1), 30);
+    const cursor = Math.max(Number(req.query.cursor) || 0, 0);
+    const excludedIds = new Set([productId, ...parseIdList(req.query.excludeIds)]);
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const hasCustomerLocation = Number.isFinite(lat) && Number.isFinite(lng);
+    const minPrice = Number(req.query.minPrice);
+    const maxPrice = Number(req.query.maxPrice);
+    const shopId = Number(req.query.shopId);
+
+    const [current] = await db.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
+    if (!current) {
+      res.status(404).json({ error: "Product not found" });
+      return;
+    }
+
+    const candidates = await db
+      .select({ product: productsTable, store: storesTable, category: categoriesTable })
+      .from(productsTable)
+      .innerJoin(storesTable, eq(productsTable.storeId, storesTable.id))
+      .leftJoin(categoriesTable, eq(productsTable.categoryId, categoriesTable.id))
+      .where(and(
+        eq(productsTable.isAvailable, true),
+        eq(storesTable.isActive, true),
+        eq(storesTable.isOpen, true),
+        eq(storesTable.isVerified, true),
+        sql`${productsTable.id} <> ${productId}`,
+        sql`${productsTable.stock} > 0`,
+      ))
+      .orderBy(desc(productsTable.rating), asc(productsTable.price))
+      .limit(250);
+
+    const currentPrice = Number(current.price);
+    const currentTags = asTags(current.tags);
+
+    const ranked = candidates
+      .filter(({ product, store }) => {
+        if (excludedIds.has(product.id)) return false;
+        if (shopId && product.storeId !== shopId) return false;
+        const price = Number(product.price);
+        if (Number.isFinite(minPrice) && price < minPrice) return false;
+        if (Number.isFinite(maxPrice) && price > maxPrice) return false;
+        if (hasCustomerLocation) {
+          const distance = distanceKm(lat, lng, Number(store.lat), Number(store.lng));
+          const radius = Number(store.radiusKm || 5);
+          if (Number.isFinite(distance) && distance > Math.max(radius, 5)) return false;
+        }
+        return true;
+      })
+      .map(({ product, store, category }) => {
+        const price = Number(product.price);
+        const tags = asTags(product.tags);
+        const tagMatches = tags.filter((tag) => currentTags.includes(tag)).length;
+        const similarPrice = currentPrice > 0 ? Math.max(0, 1 - Math.abs(price - currentPrice) / currentPrice) : 0;
+        const distance = hasCustomerLocation ? distanceKm(lat, lng, Number(store.lat), Number(store.lng)) : 0;
+        const score =
+          (product.categoryId && product.categoryId === current.categoryId ? 60 : 0) +
+          (product.brandId && product.brandId === current.brandId ? 25 : 0) +
+          (tagMatches * 12) +
+          (similarPrice * 20) +
+          (Number(product.rating ?? 0) * 4) +
+          (Number(product.stock ?? 0) > 10 ? 6 : 0) +
+          (Number(store.estimatedDeliveryMins ?? 40) <= 40 ? 8 : 0) -
+          (hasCustomerLocation ? Math.min(distance, 20) : 0);
+        return {
+          ...product,
+          category,
+          store: {
+            id: store.id,
+            name: store.name,
+            rating: store.rating,
+            estimatedDeliveryMins: store.estimatedDeliveryMins,
+            deliveryFee: store.deliveryFee,
+          },
+          shopName: store.name,
+          shopRating: store.rating,
+          deliveryEtaMins: store.estimatedDeliveryMins ?? 40,
+          distanceKm: hasCustomerLocation ? Number(distance.toFixed(2)) : undefined,
+          _score: score,
+        };
+      })
+      .sort((a, b) => Number(b._score) - Number(a._score) || Number(b.rating ?? 0) - Number(a.rating ?? 0) || Number(a.price) - Number(b.price));
+
+    const unique = Array.from(new Map(ranked.map((item) => [item.id, item])).values());
+    const items = unique.slice(cursor, cursor + limit).map(({ _score, ...item }) => item);
+    const nextCursor = cursor + limit < unique.length ? String(cursor + limit) : null;
+
+    res.json({ items, nextCursor, hasMore: Boolean(nextCursor) });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
