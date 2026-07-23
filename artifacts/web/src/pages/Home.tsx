@@ -149,6 +149,8 @@ export default function Home() {
         .lch-carousel { animation: lch-slide 15s ease-in-out infinite; }
         .lch-float { animation: lch-float 3.5s ease-in-out infinite; }
         .lch-offer-shine::after { animation: lch-shine 3.8s ease-in-out infinite; }
+        .lch-clean-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+        .lch-clean-scroll::-webkit-scrollbar { display: none; }
       `}</style>
 
       <section className="rounded-xl border bg-white p-3 shadow-sm sm:p-4">
@@ -169,7 +171,7 @@ export default function Home() {
         {loadingCategories ? (
           <div className="flex max-w-full gap-3 overflow-x-auto pb-1">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 min-w-16 rounded-full" />)}</div>
         ) : (
-          <div className="flex max-w-full gap-3 overflow-x-auto pb-1">
+          <div className="lch-clean-scroll flex max-w-full gap-3 overflow-x-auto pb-1">
             {categories?.map((cat, index) => (
               <button key={cat.id} type="button" onClick={() => setSelectedCategoryId(cat.id)} className="group min-w-[72px] text-center">
                 <div className={`mx-auto h-16 w-16 overflow-hidden rounded-full border-2 border-white bg-gray-50 shadow-sm ring-1 transition-all group-hover:-translate-y-1 ${selectedCategoryId === cat.id ? "ring-2 ring-[#0757ee]" : "ring-gray-200 group-hover:ring-primary/50"}`}>
@@ -187,7 +189,7 @@ export default function Home() {
           <h2 className="text-sm font-bold">Tap a product style</h2>
           <span className="text-xs text-muted-foreground">Category opens below</span>
         </div>
-        <div className="flex max-w-full gap-3 overflow-x-auto pb-1">
+        <div className="lch-clean-scroll flex max-w-full gap-3 overflow-x-auto pb-1">
           {quickPhotoProducts.map((product: any) => (
             <button
               key={product.id}
@@ -249,17 +251,17 @@ export default function Home() {
         {loadingBanners ? (
           <Skeleton className="h-56 w-full md:h-72" />
         ) : (
-          <div className="relative h-56 overflow-hidden md:h-72">
+          <div className="relative h-60 overflow-hidden sm:h-64 md:h-72">
             <div className="lch-carousel flex h-full w-full">
               {slides.slice(0, 3).map((banner: any) => (
                 <Link key={banner.id} href={banner.href ?? "/search"} className="relative block h-full min-w-full overflow-hidden">
                   {banner.imageUrl && <img src={banner.imageUrl} alt={banner.title} className="h-full w-full object-cover" />}
                   <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/35 to-transparent" />
-                  <div className="absolute inset-y-0 left-0 flex max-w-xl flex-col justify-center p-6 text-white md:p-10">
-                    <Badge className="mb-3 w-fit bg-white text-gray-900 hover:bg-white">Mega sale live</Badge>
-                    <h1 className="text-3xl font-bold leading-tight md:text-5xl">{banner.title}</h1>
-                    {banner.subtitle && <p className="mt-3 max-w-md text-sm text-white/90 md:text-base">{banner.subtitle}</p>}
-                    <Button className="mt-5 w-fit bg-white text-gray-950 hover:bg-gray-100">
+                  <div className="absolute inset-y-0 left-0 flex w-[82%] max-w-xl flex-col justify-center p-5 text-white sm:w-[70%] md:p-10">
+                    <Badge className="mb-2 w-fit bg-white text-gray-900 hover:bg-white md:mb-3">Mega sale live</Badge>
+                    <h1 className="line-clamp-2 text-2xl font-bold leading-tight sm:text-3xl md:text-5xl">{banner.title}</h1>
+                    {banner.subtitle && <p className="mt-2 line-clamp-2 max-w-md text-xs text-white/90 sm:text-sm md:mt-3 md:text-base">{banner.subtitle}</p>}
+                    <Button className="mt-4 w-fit bg-white text-gray-950 hover:bg-gray-100 md:mt-5">
                       Shop now <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                   </div>

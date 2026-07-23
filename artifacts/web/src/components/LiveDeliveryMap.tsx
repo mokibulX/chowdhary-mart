@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Bike, Clock, Crosshair, Home, MapPin, MessageCircle, Navigation, Package, Phone, Route, ShieldCheck, Store, UserRound } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
@@ -8,6 +9,7 @@ declare global {
   interface Window {
     google?: any;
     __cmGoogleMapsPromise?: Promise<any>;
+    gm_authFailure?: () => void;
   }
 }
 
@@ -56,6 +58,31 @@ function getEnv(name: string) {
   return env[`VITE_${name}`] || env[name] || "";
 }
 
+function isNativeApp() {
+  return Boolean((window as any).Capacitor?.isNativePlatform?.());
+}
+
+function isLocalhostUrl(value?: string | null) {
+  return Boolean(value && /^(https?:\/\/|wss?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?/i.test(value.trim()));
+}
+
+function toWebsocketUrl(value: string) {
+  return value.replace(/^https:\/\//i, "wss://").replace(/^http:\/\//i, "ws://");
+}
+
+function getRealtimeUrl() {
+  const configuredWs = getEnv("WEBSOCKET_URL");
+  const mobileWs = getEnv("MOBILE_WEBSOCKET_URL");
+  const mobileApi = getEnv("MOBILE_API_URL");
+  const api = getEnv("API_URL");
+  if (isNativeApp() && isLocalhostUrl(configuredWs)) {
+    if (mobileWs) return mobileWs;
+    if (mobileApi) return toWebsocketUrl(mobileApi);
+    return "ws://10.0.2.2:5000";
+  }
+  return configuredWs || (mobileApi && isNativeApp() ? toWebsocketUrl(mobileApi) : api) || window.location.origin;
+}
+
 function loadGoogleMaps() {
   const apiKey = getEnv("MAPS_API_KEY") || getEnv("GOOGLE_MAPS_API_KEY");
   const mapStyleId = getEnv("MAP_STYLE_ID");
@@ -82,7 +109,16 @@ function loadGoogleMaps() {
     script.async = true;
     script.defer = true;
     script.dataset.cmGoogleMaps = "true";
-    script.onload = () => resolve(window.google);
+    window.gm_authFailure = () => {
+      window.dispatchEvent(new CustomEvent("cm-google-maps-auth-failure"));
+      reject(new Error("Google Maps key is not allowed for this app. Check API, billing and referrer settings."));
+    };
+    script.onload = () => {
+      setTimeout(() => {
+        if (window.google?.maps) resolve(window.google);
+        else reject(new Error("Google Maps could not initialize"));
+      }, 50);
+    };
     script.onerror = () => reject(new Error("Google Maps failed to load"));
     document.head.appendChild(script);
   });
@@ -189,6 +225,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
   const [mapType, setMapType] = useState<"roadmap" | "satellite">("roadmap");
   const [trafficOn, setTrafficOn] = useState(false);
   const [liveGps, setLiveGps] = useState<any>(null);
+  const [fallbackMap, setFallbackMap] = useState(false);
 
   const status = String(tracking?.status ?? "pending");
   const isDelivered = status === "delivered";
@@ -212,13 +249,14 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
   const title = isDelivered ? "Order delivered" : beforePickup ? "Rider heading to seller" : `Arriving in ${etaMins} mins`;
   const googleKeyMissing = !(getEnv("MAPS_API_KEY") || getEnv("GOOGLE_MAPS_API_KEY"));
   const routeUnavailable = !origin || !destination;
+  const shouldShowFallbackMap = fallbackMap || googleKeyMissing || Boolean(error && !ready);
 
   const boundsPoints = useMemo(() => [store, customer, partner].filter(Boolean) as LatLng[], [store?.lat, store?.lng, customer?.lat, customer?.lng, partner?.lat, partner?.lng]);
 
   useEffect(() => {
     const orderId = tracking?.orderId;
     if (!orderId || isDelivered) return;
-    const websocketUrl = getEnv("WEBSOCKET_URL") || getEnv("API_URL") || window.location.origin;
+    const websocketUrl = getRealtimeUrl();
     if (!sharedSocket) {
       sharedSocket = io(websocketUrl, {
         transports: ["websocket", "polling"],
@@ -240,17 +278,26 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
 
   useEffect(() => {
     if (!mapRef.current || googleKeyMissing) {
-      if (googleKeyMissing) setError("Google Maps API key missing. Set VITE_MAPS_API_KEY / MAPS_API_KEY in .env.");
+      if (googleKeyMissing) {
+        setFallbackMap(true);
+        setError("Google Maps API key missing. Set VITE_MAPS_API_KEY / MAPS_API_KEY in .env.");
+      }
       return;
     }
 
     let cancelled = false;
+    const handleAuthFailure = () => {
+      setFallbackMap(true);
+      setError("Google Maps key is not allowed for this app. Fallback live map is active.");
+    };
+    window.addEventListener("cm-google-maps-auth-failure", handleAuthFailure);
     loadGoogleMaps()
       .then((google) => {
         if (cancelled || !mapRef.current) return;
         const center = partner ?? store ?? customer;
         if (!center) {
           setError("Live map needs a real customer, store or rider GPS coordinate.");
+          setFallbackMap(true);
           return;
         }
         mapInstance.current = new google.maps.Map(mapRef.current, {
@@ -276,12 +323,19 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
         });
         trafficLayer.current = new google.maps.TrafficLayer();
         setReady(true);
+        setFallbackMap(false);
         setError("");
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Google Maps failed to load");
+        if (!cancelled) {
+          setFallbackMap(true);
+          setError(err instanceof Error ? err.message : "Google Maps failed to load");
+        }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.removeEventListener("cm-google-maps-auth-failure", handleAuthFailure);
+    };
   }, [compact, googleKeyMissing]);
 
   useEffect(() => {
@@ -377,6 +431,15 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
 
       <div className={`relative bg-slate-100 ${compact ? "h-[330px]" : "h-[76dvh] min-h-[560px] sm:h-[700px]"}`}>
         <div ref={mapRef} className="h-full w-full" />
+        {shouldShowFallbackMap && (
+          <FallbackRouteMap
+            store={store}
+            customer={customer}
+            partner={partner}
+            status={status}
+            title={title}
+          />
+        )}
 
         {(error || routeUnavailable) && (
           <div className="absolute inset-x-3 top-3 z-20 rounded-2xl border border-amber-200 bg-white/95 p-3 text-sm shadow-xl backdrop-blur">
@@ -491,6 +554,98 @@ function InfoTile({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl bg-slate-50 p-3">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="truncate font-bold capitalize">{value}</p>
+    </div>
+  );
+}
+
+function FallbackRouteMap({
+  store,
+  customer,
+  partner,
+  status,
+  title,
+}: {
+  store: LatLng | null;
+  customer: LatLng | null;
+  partner: LatLng | null;
+  status: string;
+  title: string;
+}) {
+  const points = [store, partner, customer].filter(Boolean) as LatLng[];
+  const bounds = points.length
+    ? points.reduce((acc, point) => ({
+      minLat: Math.min(acc.minLat, point.lat),
+      maxLat: Math.max(acc.maxLat, point.lat),
+      minLng: Math.min(acc.minLng, point.lng),
+      maxLng: Math.max(acc.maxLng, point.lng),
+    }), { minLat: points[0].lat, maxLat: points[0].lat, minLng: points[0].lng, maxLng: points[0].lng })
+    : { minLat: 22.606, maxLat: 22.61, minLng: 88.468, maxLng: 88.472 };
+  const latSpan = Math.max(0.001, bounds.maxLat - bounds.minLat);
+  const lngSpan = Math.max(0.001, bounds.maxLng - bounds.minLng);
+  const toXY = (point: LatLng | null) => {
+    if (!point) return null;
+    const x = 12 + ((point.lng - bounds.minLng) / lngSpan) * 76;
+    const y = 82 - ((point.lat - bounds.minLat) / latSpan) * 64;
+    return { x, y };
+  };
+  const storePos = toXY(store);
+  const partnerPos = toXY(partner);
+  const customerPos = toXY(customer);
+  const pathPoints = [storePos, partnerPos, customerPos].filter(Boolean) as Array<{ x: number; y: number }>;
+  const line = pathPoints.map((point) => `${point.x},${point.y}`).join(" ");
+
+  return (
+    <div className="absolute inset-0 overflow-hidden bg-[#eaf3ef]">
+      <div
+        className="absolute inset-0 opacity-90"
+        style={{
+          backgroundImage: "linear-gradient(31deg, transparent 0 42%, rgba(255,255,255,.95) 42% 47%, transparent 47% 100%), linear-gradient(124deg, transparent 0 43%, rgba(255,255,255,.88) 43% 49%, transparent 49% 100%), linear-gradient(rgba(15,23,42,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,.08) 1px, transparent 1px)",
+          backgroundSize: "230px 230px, 290px 290px, 44px 44px, 44px 44px",
+        }}
+      />
+      <div className="absolute left-[8%] top-[12%] h-28 w-44 rounded-full bg-emerald-200/70 blur-sm" />
+      <div className="absolute right-[8%] top-[22%] h-32 w-48 rounded-3xl bg-blue-100/80" />
+      <div className="absolute bottom-[16%] left-[18%] h-24 w-56 rounded-3xl bg-amber-100/80" />
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {line && (
+          <>
+            <polyline points={line} fill="none" stroke="rgba(15,23,42,.18)" strokeWidth="3.8" strokeLinecap="round" strokeLinejoin="round" />
+            <polyline points={line} fill="none" stroke="#0757ee" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4 3" />
+          </>
+        )}
+      </svg>
+      {storePos && <FallbackPin x={storePos.x} y={storePos.y} label="Store" tone="store" icon={<Store className="h-4 w-4" />} />}
+      {customerPos && <FallbackPin x={customerPos.x} y={customerPos.y} label="Customer" tone="customer" icon={<Home className="h-4 w-4" />} />}
+      {partnerPos && status !== "delivered" && <FallbackPin x={partnerPos.x} y={partnerPos.y} label="Rider" tone="rider" icon={<Bike className="h-4 w-4" />} />}
+      <div className="absolute left-4 top-4 max-w-[calc(100%-2rem)] rounded-2xl bg-white/95 px-4 py-3 shadow-xl">
+        <p className="text-xs font-black uppercase text-primary">Live route map</p>
+        <p className="mt-1 text-sm font-bold text-slate-900">{title}</p>
+        <p className="mt-1 text-xs text-slate-600">Fallback map active. Real GPS points are still used.</p>
+      </div>
+    </div>
+  );
+}
+
+function FallbackPin({
+  x,
+  y,
+  label,
+  tone,
+  icon,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  tone: "store" | "customer" | "rider";
+  icon: ReactNode;
+}) {
+  const toneClass = tone === "store" ? "bg-emerald-600" : tone === "customer" ? "bg-red-500" : "bg-[#0757ee]";
+  return (
+    <div className="absolute z-10 flex -translate-x-1/2 -translate-y-full flex-col items-center" style={{ left: `${x}%`, top: `${y}%` }}>
+      <div className={`flex h-11 w-11 items-center justify-center rounded-full border-4 border-white text-white shadow-2xl ${toneClass}`}>
+        {icon}
+      </div>
+      <div className="mt-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-slate-900 shadow-lg">{label}</div>
     </div>
   );
 }

@@ -230,7 +230,7 @@ export default function Login() {
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 text-center text-xs">
-            {["Secure sessions", "Role redirects", "Demo mode"].map((item) => (
+            {["Secure sessions", "Role redirects", "Live GPS"].map((item) => (
               <div key={item} className="rounded-2xl bg-white/10 p-3 font-semibold text-white/75">{item}</div>
             ))}
           </div>

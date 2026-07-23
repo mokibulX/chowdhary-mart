@@ -1,6 +1,12 @@
 import type { NextFunction, Request, Response } from "express";
 
-const defaultCorsAllowlist = ["http://localhost:5173", "http://127.0.0.1:5173"];
+const defaultCorsAllowlist = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost",
+  "capacitor://localhost",
+  "ionic://localhost",
+];
 
 export function securityHeaders(_req: Request, res: Response, next: NextFunction) {
   res.setHeader("x-content-type-options", "nosniff");
@@ -19,7 +25,7 @@ export function getCorsOptions() {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-  const allowlist = configured.length ? configured : defaultCorsAllowlist;
+  const allowlist = Array.from(new Set([...defaultCorsAllowlist, ...configured]));
   return {
     credentials: true,
     origin(origin: string | undefined, callback: (error: Error | null, allowed?: boolean) => void) {

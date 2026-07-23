@@ -1,11 +1,18 @@
 import { setBaseUrl } from "@workspace/api-client-react";
 
-export async function initMobileRuntime() {
-  const apiUrl = import.meta.env.VITE_API_URL?.trim();
-  if (apiUrl) setBaseUrl(apiUrl);
+function isLocalhostUrl(value?: string | null) {
+  return Boolean(value && /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?/i.test(value.trim()));
+}
 
+export async function initMobileRuntime() {
   const isNative = Boolean((window as any).Capacitor?.isNativePlatform?.());
   document.documentElement.classList.toggle("capacitor-native", isNative);
+  const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+  const mobileApiUrl = import.meta.env.VITE_MOBILE_API_URL?.trim();
+  const apiUrl = isNative && isLocalhostUrl(configuredApiUrl)
+    ? mobileApiUrl || "http://10.0.2.2:5000"
+    : configuredApiUrl;
+  if (apiUrl) setBaseUrl(apiUrl);
 
   if (!isNative) return;
 
