@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { CheckCircle2, ChevronDown, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, Smartphone, Store, Truck, UserRound } from "lucide-react";
 import { testMode } from "@/lib/test-mode";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 type AuthResponse = {
   token: string;
@@ -54,6 +54,10 @@ function roleFromPath(path: string): LoginRole {
   return "customer";
 }
 
+function roleHintForPath(path: string, role: LoginRole) {
+  return path === "/login" ? undefined : role;
+}
+
 export default function Login() {
   const [location, setLocation] = useLocation();
   const { login: setAuthContext } = useAuth();
@@ -76,7 +80,7 @@ export default function Login() {
   const content = roleContent[role];
   const RoleIcon = content.icon;
   const isAdminLogin = role === "admin";
-  const visibleDemoAccounts = isAdminLogin && env.VITE_SHOW_ADMIN_DEMO_ON_ADMIN_LOGIN === "true" ? [adminDemoAccount] : demoAccounts;
+  const visibleDemoAccounts = isAdminLogin && env.VITE_SHOW_ADMIN_DEMO_ON_ADMIN_LOGIN === "true" ? [adminDemoAccount] : [];
   const canSubmit = useMemo(() => {
     if (mode === "password") return Boolean(identifier.trim() && password);
     if (mode === "otp") return Boolean(identifier.trim() && (!otpSent || otp.length >= 4));
@@ -93,17 +97,13 @@ export default function Login() {
   const handlePasswordLogin = (event: React.FormEvent) => {
     event.preventDefault();
     if (!canSubmit) return;
-    const adminEmail = String(env.VITE_ADMIN_EMAIL || "").replace(/^"|"$/g, "").trim().toLowerCase();
-    const resolvedRole: LoginRole = adminEmail && identifier.trim().toLowerCase() === adminEmail ? "admin" : role;
+    const roleHint = roleHintForPath(location, role);
     loginMutation.mutate(
-      { data: { ...splitIdentifier(identifier), password, rememberMe, roleHint: resolvedRole } as any },
+      { data: { ...splitIdentifier(identifier), password, rememberMe, ...(roleHint ? { roleHint } : {}) } as any },
       {
         onSuccess: finishLogin,
         onError: (err: unknown) => {
-          const message = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-            ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-            ?? "Network connection failed. Please try again.";
-          authToast({ title: "Login failed", description: message, variant: "destructive" });
+          authToast({ title: "Login failed", description: getFriendlyErrorMessage(err, "Network connection failed. Please try again."), variant: "destructive" });
         },
       },
     );
@@ -117,17 +117,6 @@ export default function Login() {
     setIdentifier(account.email);
     setPassword(account.password);
     authToast({ title: "Demo account filled", description: "Tap Login to continue in demo mode." });
-  };
-
-  const handleRoleChange = (value: LoginRole) => {
-    setRole(value);
-    setMode("password");
-    setIdentifier("");
-    setPassword("");
-    setOtp("");
-    setOtpSent(false);
-    setNewPassword("");
-    setConfirmPassword("");
   };
 
   const handleSendOtp = async (purpose: "login" | "forgot") => {
@@ -145,8 +134,7 @@ export default function Login() {
       setOtp("");
       authToast({ title: "OTP sent", description: "Enter the verification code to continue." });
     } catch (err) {
-      const message = (err as { data?: { error?: string } })?.data?.error ?? "OTP send failed";
-      authToast({ title: "OTP failed", description: message, variant: "destructive" });
+      authToast({ title: "OTP failed", description: getFriendlyErrorMessage(err, "OTP could not be sent. Please try again."), variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -160,14 +148,14 @@ export default function Login() {
     }
     setBusy(true);
     try {
+      const roleHint = roleHintForPath(location, role);
       const res = await customFetch<AuthResponse>("/api/auth/otp-login", {
         method: "POST",
-        body: JSON.stringify({ ...splitIdentifier(identifier), otp, roleHint: role }),
+        body: JSON.stringify({ ...splitIdentifier(identifier), otp, ...(roleHint ? { roleHint } : {}) }),
       });
       finishLogin(res);
     } catch (err) {
-      const message = (err as { data?: { error?: string } })?.data?.error ?? "OTP verification failed";
-      authToast({ title: "OTP failed", description: message, variant: "destructive" });
+      authToast({ title: "OTP failed", description: getFriendlyErrorMessage(err, "OTP verification failed."), variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -197,8 +185,7 @@ export default function Login() {
       setOtp("");
       setMode("password");
     } catch (err) {
-      const message = (err as { data?: { error?: string } })?.data?.error ?? "Password reset failed";
-      authToast({ title: "Reset failed", description: message, variant: "destructive" });
+      authToast({ title: "Reset failed", description: getFriendlyErrorMessage(err, "Password reset failed."), variant: "destructive" });
     } finally {
       setBusy(false);
     }
@@ -216,7 +203,7 @@ export default function Login() {
           <div>
             <div className="flex items-center gap-3">
               <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-white">
-                <img src="/app-logo.png" alt="Chowdhary Mart" className="h-full w-full object-cover" />
+                <img src="/app-logo.png" alt="Chowdhary Mart" className="h-full w-full object-contain p-1" />
               </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/50">CHOWDHARY MART</p>
@@ -248,24 +235,17 @@ export default function Login() {
             </div>
           </div>
 
-          {!isAdminLogin ? (
-            <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-              <Label className="mb-2 block text-xs font-bold uppercase tracking-wide text-muted-foreground">Login type</Label>
-              <Select value={role} onValueChange={(value) => handleRoleChange(value as LoginRole)}>
-                <SelectTrigger className="h-12 rounded-2xl bg-white text-base font-bold">
-                  <SelectValue placeholder="Choose account type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="customer">Customer</SelectItem>
-                  <SelectItem value="vendor">Seller / shop owner</SelectItem>
-                  <SelectItem value="delivery_partner">Delivery partner</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-              {role === "vendor" && <p className="mt-2 text-xs font-medium text-blue-700">Seller dashboard opens only after admin approval.</p>}
-              {role === "delivery_partner" && <p className="mt-2 text-xs font-medium text-emerald-700">Delivery dashboard opens only after verification and admin approval.</p>}
+          {role === "vendor" && (
+            <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs font-medium text-blue-800">
+              Seller dashboard opens only after admin approval. Use the same seller account you created during shop registration.
             </div>
-          ) : (
+          )}
+          {role === "delivery_partner" && (
+            <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-xs font-medium text-emerald-800">
+              Delivery dashboard opens only after verification and admin approval. Use the same rider account you registered.
+            </div>
+          )}
+          {isAdminLogin && (
             <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
               Admin route is protected. Failed attempts are tracked and temporarily locked after repeated failures.
             </div>

@@ -1,8 +1,7 @@
 ﻿import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
 import { Link, useLocation } from "wouter";
-import { customFetch, useRegister } from "@workspace/api-client-react";
+import { customFetch } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
 import { Bike, Eye, EyeOff, ShieldCheck, Store, UserRound } from "lucide-react";
 import { testMode } from "@/lib/test-mode";
+import { getFirstFormError, getFriendlyErrorMessage } from "@/lib/error-message";
+import { IndiaStateDistrictSelects } from "@/components/IndiaLocationSelects";
 
 const schema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -26,6 +27,7 @@ const schema = z.object({
   shopCategory: z.string().optional().or(z.literal("")),
   shopAddress: z.string().optional().or(z.literal("")),
   city: z.string().optional().or(z.literal("")),
+  district: z.string().optional().or(z.literal("")),
   state: z.string().optional().or(z.literal("")),
   pincode: z.string().optional().or(z.literal("")),
   gstNumber: z.string().optional().or(z.literal("")),
@@ -41,13 +43,14 @@ const schema = z.object({
 });
 
 type FormData = z.infer<typeof schema>;
+type RegisterResponse = { token: string; user: { name: string; role: string } };
 
 export default function Register() {
   const { login, user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const authToast = (options: Parameters<typeof toast>[0]) => toast({ duration: 2000, ...options });
-  const registerMutation = useRegister();
+  const [registering, setRegistering] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -59,7 +62,6 @@ export default function Register() {
   const urlRole = new URLSearchParams(window.location.search).get("role");
   const initialRole = urlRole === "vendor" || urlRole === "delivery_partner" ? urlRole : "customer";
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema as any),
     defaultValues: { role: initialRole, termsAccepted: false },
   });
   const role = watch("role");
@@ -70,7 +72,17 @@ export default function Register() {
       : { title: "Create Customer Account", subtitle: "Start shopping from verified nearby stores.", icon: UserRound };
   const RoleIcon = roleMeta.icon;
 
-  const onSubmit = async (data: FormData) => {
+  const onSubmit = async (rawData: FormData) => {
+    const parsed = schema.safeParse(rawData);
+    if (!parsed.success) {
+      authToast({
+        title: "Please complete the form",
+        description: getFriendlyErrorMessage(parsed.error.issues, "Name, mobile, password and terms are required."),
+        variant: "destructive",
+      });
+      return;
+    }
+    const data = parsed.data;
     if (!data.email && !data.phone) {
       authToast({ title: "Mobile required", description: "OTP account-er jonno mobile number din.", variant: "destructive" });
       return;
@@ -95,8 +107,7 @@ export default function Register() {
         setOtp("");
         authToast({ title: "OTP sent", description: "Enter the verification code to create your account." });
       } catch (err) {
-        const message = (err as { data?: { error?: string } })?.data?.error ?? "OTP send failed";
-        authToast({ title: "OTP failed", description: message, variant: "destructive" });
+        authToast({ title: "OTP failed", description: getFriendlyErrorMessage(err, "OTP could not be sent. Please try again."), variant: "destructive" });
       }
       return;
     }
@@ -104,9 +115,11 @@ export default function Register() {
       authToast({ title: "Invalid OTP", description: "Please check the code and try again.", variant: "destructive" });
       return;
     }
-    registerMutation.mutate(
-      {
-        data: {
+    setRegistering(true);
+    try {
+      const res = await customFetch<RegisterResponse>("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
           name: data.name,
           email: data.email || undefined,
           phone: data.phone,
@@ -118,6 +131,7 @@ export default function Register() {
           shopCategory: data.shopCategory,
           shopAddress: data.shopAddress,
           city: data.city,
+          district: data.district,
           state: data.state,
           pincode: data.pincode,
           gstNumber: data.gstNumber,
@@ -126,39 +140,33 @@ export default function Register() {
           vehicleType: data.vehicleType,
           vehicleNumber: data.vehicleNumber,
           licenseNumber: data.licenseNumber,
-        } as any,
-      },
-      {
-        onSuccess: (res) => {
-          login(res.token);
-          if (data.role === "vendor") {
-            authToast({ title: "Shop registration submitted", description: "Admin approve korle product add korte parben." });
-            setLocation("/vendor");
-            return;
-          }
-          if (data.role === "delivery_partner") {
-            authToast({ title: "Delivery registration submitted", description: "Admin approve korle delivery panel unlock hobe." });
-            setLocation("/delivery");
-            return;
-          }
-          authToast({ title: "Welcome to Chowdhary Mart!", description: `Account created for ${res.user.name}` });
-          setLocation("/");
-        },
-        onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Registration failed";
-          authToast({ title: "Registration failed", description: msg, variant: "destructive" });
-        },
-      }
-    );
+        }),
+      });
+      login(res.token);
+      authToast({ title: "Welcome to Chowdhary Mart!", description: `Account created for ${res.user.name}` });
+      setLocation("/");
+    } catch (err) {
+      authToast({ title: "Registration failed", description: getFriendlyErrorMessage(err, "Could not create account. Please check the details."), variant: "destructive" });
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  const onInvalid = (formErrors: unknown) => {
+    authToast({
+      title: "Please complete the form",
+      description: getFirstFormError(formErrors, "Name, mobile, password and terms are required."),
+      variant: "destructive",
+    });
   };
 
   return (
-    <div className="native-page-scroll relative min-h-[100dvh] overflow-x-hidden bg-[#f7f8fb] px-3 py-5 sm:px-4 sm:py-8">
+    <div className="native-page-scroll relative min-h-[100dvh] overflow-x-hidden bg-[#f7f8fb] px-3 py-3 sm:px-4 sm:py-8">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_8%,rgba(249,115,22,.18),transparent_28%),radial-gradient(circle_at_88%_18%,rgba(37,99,235,.14),transparent_28%),linear-gradient(135deg,#fff7ed_0%,#f8fafc_48%,#eff6ff_100%)]" />
       <main className="relative mx-auto grid w-full max-w-5xl gap-5 lg:grid-cols-[0.9fr_1.1fr]">
         <section className="hidden rounded-[32px] bg-gray-950 p-8 text-white shadow-2xl lg:block">
           <div className="flex items-center gap-3">
-            <img src="/app-logo.png" alt="Chowdhary Mart" className="h-14 w-14 rounded-2xl bg-white object-cover" />
+            <img src="/app-logo.png" alt="Chowdhary Mart" className="h-14 w-14 flex-shrink-0 rounded-2xl bg-white object-contain p-1" />
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.3em] text-white/50">CHOWDHARY MART</p>
               <h1 className="text-2xl font-black">Secure account setup</h1>
@@ -171,19 +179,19 @@ export default function Register() {
           </div>
         </section>
 
-        <section className="rounded-[28px] border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur sm:p-6">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-blue-600 text-white shadow-lg">
+        <section className="rounded-[24px] border border-white/70 bg-white/95 p-3 shadow-xl backdrop-blur sm:rounded-[28px] sm:p-6">
+          <div className="mb-5 flex items-start gap-3">
+            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-blue-600 text-white shadow-lg sm:h-14 sm:w-14">
               <RoleIcon className="h-7 w-7" />
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">CHOWDHARY MART</p>
-              <h1 className="truncate text-2xl font-black">{roleMeta.title}</h1>
-              <p className="text-sm text-muted-foreground">{roleMeta.subtitle}</p>
+              <h1 className="text-xl font-black leading-tight sm:text-2xl">{roleMeta.title}</h1>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">{roleMeta.subtitle}</p>
             </div>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" autoComplete="off">
+          <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-4" autoComplete="off" noValidate>
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
               <Label className="mb-2 block text-xs font-bold uppercase tracking-wide text-muted-foreground">Account type</Label>
               <Select value={role} onValueChange={(v) => { setValue("role", v as "customer" | "vendor" | "delivery_partner"); setOtpSent(false); setOtp(""); }}>
@@ -228,9 +236,9 @@ export default function Register() {
               {errors.confirmPassword && <p className="text-xs text-red-500">{errors.confirmPassword.message}</p>}
             </div>
             {role === "vendor" && (
-              <div className="rounded-xl border bg-blue-50 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Store className="h-5 w-5 text-blue-700" />
+              <div className="rounded-2xl border bg-blue-50 p-3 sm:p-4">
+                <div className="mb-3 flex items-start gap-2">
+                  <Store className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-700" />
                   <div>
                     <p className="font-semibold text-blue-950">Shop owner registration</p>
                     <p className="text-xs text-blue-700">Admin details verify kore approve korle seller panel unlock hobe. GST optional.</p>
@@ -247,15 +255,27 @@ export default function Register() {
                     <FieldInput label="Shop / pickup address *" name="shopAddress" register={register} placeholder="Full shop address" />
                   </div>
                   <FieldInput label="City *" name="city" register={register} placeholder="Kolkata" />
-                  <FieldInput label="State *" name="state" register={register} placeholder="West Bengal" />
+                  <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
+                    <IndiaStateDistrictSelects
+                      state={watch("state") || ""}
+                      district={watch("district") || ""}
+                      onStateChange={(state, district) => {
+                        setValue("state", state, { shouldValidate: true, shouldDirty: true });
+                        setValue("district", district, { shouldValidate: true, shouldDirty: true });
+                      }}
+                      onDistrictChange={(district) => setValue("district", district, { shouldValidate: true, shouldDirty: true })}
+                    />
+                    <input type="hidden" {...register("state")} />
+                    <input type="hidden" {...register("district")} />
+                  </div>
                   <FieldInput label="Pincode *" name="pincode" register={register} placeholder="700156" />
                 </div>
               </div>
             )}
             {role === "delivery_partner" && (
-              <div className="rounded-2xl border bg-emerald-50 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Bike className="h-5 w-5 text-emerald-700" />
+              <div className="rounded-2xl border bg-emerald-50 p-3 sm:p-4">
+                <div className="mb-3 flex items-start gap-2">
+                  <Bike className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-700" />
                   <div>
                     <p className="font-semibold text-emerald-950">Delivery partner verification</p>
                     <p className="text-xs text-emerald-700">Admin approval-er age dashboard locked thakbe.</p>
@@ -296,8 +316,8 @@ export default function Register() {
               <span>I agree to ChowdharyMart terms, privacy policy and 5km local delivery rules.</span>
             </label>
             {errors.termsAccepted && <p className="text-xs text-red-500">{errors.termsAccepted.message}</p>}
-            <Button type="submit" className="h-12 w-full rounded-2xl text-base font-bold" disabled={registerMutation.isPending} data-testid="btn-register">
-              {registerMutation.isPending ? "Creating account..." : otpSent ? "Verify OTP and create account" : "Send OTP"}
+            <Button type="submit" className="h-12 w-full rounded-2xl text-base font-bold" disabled={registering} data-testid="btn-register">
+              {registering ? "Creating account..." : otpSent ? "Verify OTP and create account" : "Send OTP"}
             </Button>
           </form>
           <p className="text-center text-sm text-muted-foreground mt-4">
@@ -314,7 +334,7 @@ function FieldInput({ label, name, register, placeholder }: { label: string; nam
   return (
     <div className="space-y-1">
       <Label htmlFor={String(name)}>{label}</Label>
-      <Input id={String(name)} placeholder={placeholder} {...register(name)} />
+      <Input id={String(name)} className="h-12 rounded-2xl" placeholder={placeholder} {...register(name)} />
     </div>
   );
 }

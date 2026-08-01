@@ -32,6 +32,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { BadgePercent, Heart, LocateFixed, Minus, PackageCheck, Plus, RotateCcw, Shield, ShoppingCart, Star, Store, Truck, Zap } from "lucide-react";
 import { getSavedDeliveryLocation, nearestDeliveryLocation, saveDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
 import { getBrowserLocation } from "@/lib/live-location";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 const COLOR_SWATCHES: Record<string, string> = {
   black: "#111827",
@@ -291,10 +292,7 @@ export default function ProductDetail() {
           toast({ title: "Added to cart" });
         },
         onError: (err: unknown) => {
-          const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-            ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-            ?? "Could not add to cart";
-          toast({ title: msg, variant: "destructive" });
+          toast({ title: "Could not add to cart", description: getFriendlyErrorMessage(err, "Please check the selected options and try again."), variant: "destructive" });
         },
       }
     );
@@ -322,10 +320,7 @@ export default function ProductDetail() {
           setLocation("/checkout");
         },
         onError: (err: unknown) => {
-          const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-            ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-            ?? "Order failed";
-          toast({ title: msg, variant: "destructive" });
+          toast({ title: "Order failed", description: getFriendlyErrorMessage(err, "Please check the selected options and try again."), variant: "destructive" });
         },
       }
     );
@@ -599,10 +594,27 @@ export default function ProductDetail() {
               </div>
             )}
           </div>
+
+          <div className="grid grid-cols-2 gap-2 rounded-2xl border bg-white p-2 shadow-sm md:hidden">
+            {qty > 0 ? (
+              <div className="flex h-12 items-center gap-1 rounded-xl border bg-gray-50 p-1">
+                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => handleAdjust(qty - 1)} data-testid="btn-decrease-mobile"><Minus className="h-4 w-4" /></Button>
+                <span className="flex-1 text-center text-base font-black">{qty}</span>
+                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => handleAdjust(qty + 1)} data-testid="btn-increase-mobile"><Plus className="h-4 w-4" /></Button>
+              </div>
+            ) : (
+              <Button size="lg" variant="outline" onClick={handleAdd} disabled={addToCart.isPending || !available} className="h-12 rounded-xl font-black" data-testid="btn-add-cart-mobile">
+                <ShoppingCart className="mr-2 h-5 w-5" /> Add
+              </Button>
+            )}
+            <Button size="lg" onClick={handleOrderNow} disabled={addToCart.isPending || !available} className="h-12 rounded-xl bg-yellow-400 font-black text-gray-950 hover:bg-yellow-300" data-testid="btn-order-now-mobile">
+              Buy now
+            </Button>
+          </div>
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-3 rounded-lg border bg-white p-3 shadow-sm">
+      <section className="hidden grid-cols-2 gap-3 rounded-lg border bg-white p-3 shadow-sm md:grid">
         {qty > 0 ? (
           <div className="flex items-center gap-2 rounded-lg border p-1">
             <Button variant="ghost" size="icon" onClick={() => handleAdjust(qty - 1)} data-testid="btn-decrease"><Minus className="h-4 w-4" /></Button>

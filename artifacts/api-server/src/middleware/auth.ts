@@ -1,11 +1,13 @@
 import type { Request, Response, NextFunction } from "express";
+import { eq } from "drizzle-orm";
+import { db, usersTable } from "@workspace/db";
 import { verifyToken, type JwtPayload } from "../lib/auth";
 
 export interface AuthRequest extends Request {
   user?: JwtPayload;
 }
 
-export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     res.status(401).json({ error: "Unauthorized" });
@@ -13,7 +15,17 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   }
   try {
     const token = header.slice(7);
-    req.user = verifyToken(token);
+    const payload = verifyToken(token);
+    const [user] = await db
+      .select({ id: usersTable.id, role: usersTable.role, isActive: usersTable.isActive })
+      .from(usersTable)
+      .where(eq(usersTable.id, payload.userId))
+      .limit(1);
+    if (!user || !user.isActive || user.role !== payload.role) {
+      res.status(401).json({ error: "Invalid or expired token" });
+      return;
+    }
+    req.user = payload;
     next();
   } catch {
     res.status(401).json({ error: "Invalid or expired token" });

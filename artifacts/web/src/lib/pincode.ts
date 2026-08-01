@@ -5,9 +5,10 @@ export type DeliveryLocation = {
   area: string;
   lat: number;
   lng: number;
-  source?: "pincode" | "gps" | "places";
+  source?: "pincode" | "gps" | "places" | "map";
   accuracy?: number;
   capturedAt?: string;
+  zoneId?: number;
 };
 
 export const DELIVERY_LOCATION_STORAGE_KEY = "ekart_delivery_location";

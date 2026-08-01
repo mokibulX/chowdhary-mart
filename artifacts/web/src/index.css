@@ -301,6 +301,11 @@ html.is-offline body::before {
     max-width: 100%;
   }
 
+  img,
+  video {
+    height: auto;
+  }
+
   button,
   a,
   input,
@@ -373,6 +378,11 @@ html.is-offline body::before {
     -webkit-overflow-scrolling: touch;
   }
 
+  .app-content > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   html.capacitor-native .app-content {
     flex: 1 1 auto;
     height: auto;
@@ -388,6 +398,12 @@ html.is-offline body::before {
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .lch-clean-scroll {
+    scroll-behavior: smooth;
+    overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
   }
 

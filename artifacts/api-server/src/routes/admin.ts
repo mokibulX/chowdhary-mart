@@ -5,6 +5,7 @@ import {
   deliveryPartnersTable, productsTable, categoriesTable,
   homepageSectionsTable, homepageSectionProductsTable, walletTransactionsTable,
   serviceZonesTable, sellerZoneAssignmentsTable, riderZoneAssignmentsTable, zoneChangeRequestsTable,
+  mediaLibraryTable,
 } from "@workspace/db";
 import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { generateReferralCode, hashPassword } from "../lib/auth";
@@ -17,6 +18,63 @@ const router = Router();
 router.use(requireAuth, requireRole("admin"));
 
 const homepageAuditLog: Array<Record<string, unknown>> = [];
+let mediaLibraryReady: Promise<void> | null = null;
+
+function ensureMediaLibraryTable() {
+  mediaLibraryReady ??= (async () => {
+    await db.execute(sql`
+      create table if not exists media_library (
+        id serial primary key,
+        title varchar(180) not null,
+        description text,
+        image_url text not null,
+        storage_path text,
+        storage_provider varchar(40),
+        mime_type varchar(80),
+        size_bytes integer,
+        category_id integer references categories(id) on delete set null,
+        source_type varchar(40) not null default 'admin_upload',
+        tags json default '[]'::json,
+        is_approved boolean not null default true,
+        created_by_admin_id integer references users(id) on delete set null,
+        created_at timestamp not null default now(),
+        updated_at timestamp not null default now()
+      )
+    `);
+    await db.execute(sql`alter table media_library add column if not exists storage_path text`);
+    await db.execute(sql`alter table media_library add column if not exists storage_provider varchar(40)`);
+    await db.execute(sql`alter table media_library add column if not exists mime_type varchar(80)`);
+    await db.execute(sql`alter table media_library add column if not exists size_bytes integer`);
+    await db.execute(sql`create index if not exists media_library_category_created_idx on media_library (category_id, created_at desc)`);
+    await db.execute(sql`create index if not exists media_library_approved_created_idx on media_library (is_approved, created_at desc)`);
+    await db.execute(sql`create index if not exists media_library_title_idx on media_library using gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(description, '')))`);
+  })();
+  return mediaLibraryReady;
+}
+
+function mediaPayload(body: Record<string, unknown>, adminId?: number) {
+  const title = String(body.title ?? "").trim();
+  const imageUrl = String(body.imageUrl ?? "").trim();
+  if (title.length < 2) throw new Error("Image title is required");
+  if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
+    throw new Error("Storage image URL is required. Upload the file first; do not save base64 images in database.");
+  }
+  return {
+    title,
+    imageUrl,
+    storagePath: String(body.storagePath ?? "").trim() || null,
+    storageProvider: String(body.storageProvider ?? "").trim() || null,
+    mimeType: String(body.mimeType ?? "").trim() || null,
+    sizeBytes: body.sizeBytes ? Number(body.sizeBytes) : null,
+    description: String(body.description ?? "").trim() || null,
+    categoryId: body.categoryId ? Number(body.categoryId) : null,
+    sourceType: String(body.sourceType ?? "admin_upload").trim() || "admin_upload",
+    tags: Array.isArray(body.tags) ? body.tags.map((item) => String(item).trim()).filter(Boolean) : String(body.tags ?? "").split(",").map((item) => item.trim()).filter(Boolean),
+    isApproved: body.isApproved !== undefined ? Boolean(body.isApproved) : true,
+    createdByAdminId: adminId ?? null,
+    updatedAt: new Date(),
+  };
+}
 
 function auditHomepage(req: AuthRequest, action: string, payload: Record<string, unknown>) {
   homepageAuditLog.unshift({
@@ -604,6 +662,86 @@ router.get("/coupons", async (req: AuthRequest, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/admin/media-library
+router.get("/media-library", async (req: AuthRequest, res) => {
+  try {
+    await ensureMediaLibraryTable();
+    const categoryId = Number(req.query.categoryId ?? 0);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 60, 1), 100);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const q = String(req.query.q ?? "").trim();
+    const conditions = [];
+    if (categoryId) conditions.push(eq(mediaLibraryTable.categoryId, categoryId));
+    if (q) {
+      const term = `%${q}%`;
+      conditions.push(sql`(${mediaLibraryTable.title} ilike ${term} or coalesce(${mediaLibraryTable.description}, '') ilike ${term} or ${mediaLibraryTable.tags}::text ilike ${term})`);
+    }
+    const whereClause = conditions.length ? and(...conditions) : undefined;
+    const [rows, [{ count }]] = await Promise.all([
+      db
+        .select({ item: mediaLibraryTable, category: categoriesTable })
+        .from(mediaLibraryTable)
+        .leftJoin(categoriesTable, eq(mediaLibraryTable.categoryId, categoriesTable.id))
+        .where(whereClause)
+        .orderBy(desc(mediaLibraryTable.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.select({ count: sql<number>`count(*)` }).from(mediaLibraryTable).where(whereClause),
+    ]);
+    const total = Number(count ?? 0);
+    res.json({
+      items: rows.map(({ item, category }) => ({ ...item, category })),
+      total,
+      limit,
+      offset,
+      hasMore: offset + limit < total,
+    });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load image library" });
+  }
+});
+
+// POST /api/admin/media-library
+router.post("/media-library", async (req: AuthRequest, res) => {
+  try {
+    await ensureMediaLibraryTable();
+    const payload = mediaPayload(req.body, req.user?.userId);
+    const [item] = await db.insert(mediaLibraryTable).values(payload).returning();
+    res.status(201).json(item);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not save image" });
+  }
+});
+
+// PATCH /api/admin/media-library/:id
+router.patch("/media-library/:id", async (req: AuthRequest, res) => {
+  try {
+    await ensureMediaLibraryTable();
+    const id = Number(req.params.id);
+    const payload = mediaPayload(req.body, req.user?.userId);
+    const [item] = await db.update(mediaLibraryTable).set(payload).where(eq(mediaLibraryTable.id, id)).returning();
+    if (!item) { res.status(404).json({ error: "Image not found" }); return; }
+    res.json(item);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not update image" });
+  }
+});
+
+// DELETE /api/admin/media-library/:id
+router.delete("/media-library/:id", async (req: AuthRequest, res) => {
+  try {
+    await ensureMediaLibraryTable();
+    await db.delete(mediaLibraryTable).where(eq(mediaLibraryTable.id, Number(req.params.id)));
+    res.json({ message: "Image removed from library" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: "Could not delete image" });
   }
 });
 

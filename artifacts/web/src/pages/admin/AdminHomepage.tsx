@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Eye, GripVertical, LayoutGrid, Megaphone, Pin, Plus, Search, Trash2 } from "lucide-react";
+import { DateTextInput } from "@/components/DateTextInput";
 
 const EMPTY_SECTION = {
   title: "",
@@ -319,7 +320,19 @@ export default function AdminHomepage() {
 }
 
 function Field({ label, value, onChange, textarea, type = "text", required }: { label: string; value: string; onChange: (value: string) => void; textarea?: boolean; type?: string; required?: boolean }) {
-  return <div className="space-y-1"><Label>{label}</Label>{textarea ? <Textarea value={value ?? ""} onChange={(event) => onChange(event.target.value)} /> : <Input type={type} value={value ?? ""} onChange={(event) => onChange(event.target.value)} required={required} />}</div>;
+  const isDateLike = type === "date" || type === "datetime-local";
+  return (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      {textarea ? (
+        <Textarea value={value ?? ""} onChange={(event) => onChange(event.target.value)} />
+      ) : isDateLike ? (
+        <DateTextInput mode={type === "datetime-local" ? "datetime-local" : "date"} value={value ?? ""} onChange={onChange} required={required} />
+      ) : (
+        <Input type={type} value={value ?? ""} onChange={(event) => onChange(event.target.value)} required={required} />
+      )}
+    </div>
+  );
 }
 
 function SelectField({ label, value, onChange, items }: { label: string; value: string; onChange: (value: string) => void; items: string[] }) {

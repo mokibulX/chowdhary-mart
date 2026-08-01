@@ -8,6 +8,7 @@ import { useAddToCart, useGetCart, getGetCartQueryKey } from "@workspace/api-cli
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 interface Product {
   id: number;
@@ -86,8 +87,7 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
           if (goCheckout) setLocation("/checkout");
         },
         onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Failed to add product";
-          toast({ title: "Error", description: msg, variant: "destructive" });
+          toast({ title: "Could not add product", description: getFriendlyErrorMessage(err, "Failed to add product."), variant: "destructive" });
         },
       }
     );

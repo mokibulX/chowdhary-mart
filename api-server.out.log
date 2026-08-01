@@ -1,0 +1,16 @@
+[09:29:40.879] [32mINFO[39m (21552): [36mConfigured admin account synced[39m
+    [35madminEmail[39m: "chowdhary909090@gmail.com"
+[09:29:40.908] [32mINFO[39m (21552): [36mServer listening[39m
+    [35mport[39m: 5000
+[09:29:43.207] [32mINFO[39m (21552): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 1,
+      "requestId": "3a2c5f43-5143-4864-b66f-c9e5d21f3595",
+      "correlationId": "3a2c5f43-5143-4864-b66f-c9e5d21f3595",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1508

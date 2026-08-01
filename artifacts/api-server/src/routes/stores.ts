@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { db, storesTable, bannersTable } from "@workspace/db";
 
 const router = Router();
@@ -8,8 +8,29 @@ const router = Router();
 router.get("/", async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 20, 50);
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const radiusKm = Math.max(0.5, Math.min(25, Number(req.query.radiusKm ?? req.query.distance ?? 5) || 5));
+    const hasLocation = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    const conditions = [
+      eq(storesTable.isActive, true),
+      eq(storesTable.isOpen, true),
+    ];
+    if (hasLocation) {
+      conditions.push(sql`
+        (
+          2 * 6371 * asin(
+            sqrt(
+              power(sin((radians(${storesTable.lat}) - radians(${lat})) / 2), 2) +
+              cos(radians(${lat})) * cos(radians(${storesTable.lat})) *
+              power(sin((radians(${storesTable.lng}) - radians(${lng})) / 2), 2)
+            )
+          )
+        ) <= coalesce(${storesTable.radiusKm}, ${radiusKm})
+      `);
+    }
     const stores = await db.select().from(storesTable)
-      .where(eq(storesTable.isActive, true))
+      .where(and(...conditions))
       .orderBy(desc(storesTable.rating))
       .limit(limit);
     res.json(stores);

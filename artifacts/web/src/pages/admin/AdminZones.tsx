@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MapPin, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { IndiaStateSelect } from "@/components/IndiaLocationSelects";
 
 const QUERY_KEY = ["/api/admin/service-zones"];
 
@@ -72,7 +73,7 @@ export default function AdminZones() {
           <Field label="Code" value={form.zoneCode} onChange={(value) => setForm({ ...form, zoneCode: value })} placeholder="KOL-AREA-5K" />
           <Field label="Name" value={form.zoneName} onChange={(value) => setForm({ ...form, zoneName: value })} placeholder="Zone name" />
           <Field label="City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} placeholder="Kolkata" />
-          <Field label="State" value={form.state} onChange={(value) => setForm({ ...form, state: value })} placeholder="West Bengal" />
+          <IndiaStateSelect label="State" value={form.state} onChange={(value) => setForm({ ...form, state: value })} />
           <Field label="Latitude" value={form.centreLatitude} onChange={(value) => setForm({ ...form, centreLatitude: value })} />
           <Field label="Longitude" value={form.centreLongitude} onChange={(value) => setForm({ ...form, centreLongitude: value })} />
           <Field label="Radius meters" value={form.radiusMeters} onChange={(value) => setForm({ ...form, radiusMeters: value })} />
@@ -149,7 +150,7 @@ function ZoneCard({ zone, save, remove, busy }: { zone: any; save: (data: any) =
         <Field label="Code" value={draft.zoneCode} onChange={(value) => setDraft({ ...draft, zoneCode: value })} />
         <Field label="Zone name" value={draft.zoneName} onChange={(value) => setDraft({ ...draft, zoneName: value })} />
         <Field label="City" value={draft.city} onChange={(value) => setDraft({ ...draft, city: value })} />
-        <Field label="State" value={draft.state} onChange={(value) => setDraft({ ...draft, state: value })} />
+        <IndiaStateSelect label="State" value={draft.state} onChange={(value) => setDraft({ ...draft, state: value })} />
         <Field label="Latitude" value={draft.centreLatitude} onChange={(value) => setDraft({ ...draft, centreLatitude: value })} />
         <Field label="Longitude" value={draft.centreLongitude} onChange={(value) => setDraft({ ...draft, centreLongitude: value })} />
         <Field label="Radius meters" value={draft.radiusMeters} onChange={(value) => setDraft({ ...draft, radiusMeters: value })} />

@@ -134,15 +134,15 @@ router.post("/", async (req: AuthRequest, res) => {
     if (!Number.isFinite(selectedLat) || !Number.isFinite(selectedLng) || !selectedAddress) {
       return { status: 400, body: { error: "Please confirm your exact delivery location on the map before placing the order." } };
     }
+    const serviceRadiusKm = Math.max(0.1, safeNum(store.radiusKm, 5));
     const shopDistanceKm = distanceKm(store.lat, store.lng, selectedLat, selectedLng);
-    if (shopDistanceKm > 5) {
+    if (shopDistanceKm > serviceRadiusKm) {
       return { status: 400, body: { error: "Sorry! We currently deliver only within a 5 KM service area." } };
     }
     const customerZones = await getEligibleRegistrationZones("seller", selectedLat, selectedLng);
     const customerZone = customerZones.find((zone) => zone.insideServiceZone && zone.acceptingOrders);
-    if (!customerZone) return { status: 400, body: { error: "This address is outside our current delivery area." } };
-    const shopZoneId = store.zoneId ?? customerZone.id;
-    if (shopZoneId !== customerZone.id && process.env.CROSS_ZONE_DELIVERY_ENABLED !== "true") {
+    const shopZoneId = store.zoneId ?? customerZone?.id ?? null;
+    if (customerZone && shopZoneId !== customerZone.id && process.env.CROSS_ZONE_DELIVERY_ENABLED !== "true") {
       return { status: 400, body: { error: "Your cart store is outside the selected delivery zone. Please switch to a nearby store." } };
     }
 
@@ -198,8 +198,8 @@ router.post("/", async (req: AuthRequest, res) => {
       orderNumber: generateOrderNumber(),
       userId,
       storeId: cart.storeId,
-      zoneId: customerZone.id,
-      customerZoneId: customerZone.id,
+      zoneId: customerZone?.id ?? store.zoneId ?? null,
+      customerZoneId: customerZone?.id ?? null,
       shopZoneId,
       riderZoneId: assignedPartner?.currentZoneId ?? null,
       addressId,

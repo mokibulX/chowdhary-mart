@@ -14,6 +14,24 @@ async function getDP(userId: number) {
   return dp;
 }
 
+async function getLatestAssignedTracking(orderId: number) {
+  const rows = await db.select().from(orderTrackingTable)
+    .where(eq(orderTrackingTable.orderId, orderId))
+    .orderBy(desc(orderTrackingTable.updatedAt))
+    .limit(25);
+  return rows.find(row => row.deliveryPartnerId !== null) ?? null;
+}
+
+function isRejectedTracking(message?: string | null) {
+  return message?.toLowerCase().includes("rejected") ?? false;
+}
+
+async function assertDeliveryAssignment(orderId: number, deliveryPartnerId: number) {
+  const latestAssigned = await getLatestAssignedTracking(orderId);
+  if (!latestAssigned || isRejectedTracking(latestAssigned.message)) return false;
+  return latestAssigned.deliveryPartnerId === deliveryPartnerId;
+}
+
 // GET /api/delivery/orders
 router.get("/orders", async (req: AuthRequest, res) => {
   try {
@@ -113,6 +131,12 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
     const [store] = await db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
     if (store?.zoneId && !zones.includes(store.zoneId)) { res.status(403).json({ error: "Pickup store is outside your service zone." }); return; }
 
+    const latestAssigned = await getLatestAssignedTracking(orderId);
+    if (latestAssigned && !isRejectedTracking(latestAssigned.message) && latestAssigned.deliveryPartnerId !== dp.id) {
+      res.status(409).json({ error: "This order has already been accepted by another delivery partner." });
+      return;
+    }
+
     await db.insert(orderTrackingTable).values({
       orderId,
       deliveryPartnerId: dp.id,
@@ -134,14 +158,20 @@ router.post("/orders/:orderId/reject", async (req: AuthRequest, res) => {
   try {
     const dp = await getDP(req.user!.userId);
     const orderId = Number(req.params.orderId);
-    if (dp) {
-      await db.insert(orderTrackingTable).values({
-        orderId,
-        deliveryPartnerId: dp.id,
-        status: "confirmed",
-        message: "Delivery partner rejected the order",
-      });
+    if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    const zones = await riderZoneIds(req.user!.userId);
+    if (order.zoneId && !zones.includes(order.zoneId)) {
+      res.status(403).json({ error: "This order belongs to another service zone." });
+      return;
     }
+    await db.insert(orderTrackingTable).values({
+      orderId,
+      deliveryPartnerId: dp.id,
+      status: "confirmed",
+      message: "Delivery partner rejected the order",
+    });
     res.json({ message: "Order rejected" });
   } catch (err) {
     req.log.error(err);
@@ -159,6 +189,10 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     const [targetOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
     const zones = await riderZoneIds(req.user!.userId);
     if (!targetOrder || (targetOrder.zoneId && !zones.includes(targetOrder.zoneId))) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
+    if (!(await assertDeliveryAssignment(orderId, dp.id))) {
+      res.status(403).json({ error: "This order is not assigned to this delivery partner." });
+      return;
+    }
 
     const update: Partial<typeof ordersTable.$inferInsert> = { status, riderZoneId: targetOrder.zoneId ?? dp.currentZoneId ?? null, updatedAt: new Date() };
     if (status === "delivered") update.deliveredAt = new Date();
@@ -200,6 +234,10 @@ router.patch("/location", async (req: AuthRequest, res) => {
     };
     const dp = await getDP(req.user!.userId);
     if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
+    if (orderId && !(await assertDeliveryAssignment(Number(orderId), dp.id))) {
+      res.status(403).json({ error: "Cannot update location for an order assigned to another delivery partner." });
+      return;
+    }
 
     // Update current location on partner
     await db.update(deliveryPartnersTable)

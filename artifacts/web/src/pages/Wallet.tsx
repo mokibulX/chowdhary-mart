@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckCircle2, CreditCard, Save, Send, Star, TrendingDown, TrendingUp, Wallet as WalletIcon, XCircle } from "lucide-react";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 export default function Wallet() {
   const { user } = useAuth();
@@ -85,8 +86,7 @@ export default function Wallet() {
       qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
       toast({ title: "Money added", description: `Rs.${Number(amount).toFixed(0)} added through UPI.` });
     } catch (err) {
-      const msg = (err as { data?: { error?: string } })?.data?.error ?? "Payment failed";
-      toast({ title: "UPI payment failed", description: msg, variant: "destructive" });
+      toast({ title: "UPI payment failed", description: getFriendlyErrorMessage(err, "Payment failed."), variant: "destructive" });
     } finally {
       setIsAdding(false);
     }
@@ -131,10 +131,7 @@ export default function Wallet() {
       refreshWallet();
       toast({ title: user.role === "admin" ? "Transfer completed" : "Transfer request sent", description: user.role === "admin" ? "Money has been debited from admin wallet." : "Admin approval hole bank/UPI transfer complete hobe." });
     } catch (err) {
-      const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-        ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-        ?? "Transfer request failed";
-      toast({ title: msg, variant: "destructive" });
+      toast({ title: "Transfer request failed", description: getFriendlyErrorMessage(err, "Please check transfer details and try again."), variant: "destructive" });
     } finally {
       setIsTransferring(false);
     }

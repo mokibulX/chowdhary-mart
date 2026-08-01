@@ -1,10 +1,13 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { validateRuntimeEnv } from "@workspace/db/env";
+import { loadEnv, validateRuntimeEnv } from "@workspace/db/env";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
+import { ensureConfiguredAdmin } from "./lib/bootstrap-admin";
 
+loadEnv();
 validateRuntimeEnv({ requireDatabase: true, requireJwt: true });
+await ensureConfiguredAdmin();
 
 const rawPort = process.env["PORT"];
 

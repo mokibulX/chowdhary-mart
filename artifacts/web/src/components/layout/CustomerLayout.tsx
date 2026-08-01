@@ -1,15 +1,17 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { customFetch, getGetCartQueryKey, useGetCart } from "@workspace/api-client-react";
 import {
   Bell,
+  Camera,
   ChevronDown,
   Grid2X2,
   Headphones,
   Heart,
   Home,
+  ImagePlus,
   Loader2,
   LocateFixed,
   MapPin,
@@ -34,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { getSavedDeliveryLocation, lookupPincode, nearestDeliveryLocation, PINCODE_LOCATIONS, saveDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
 import { getBrowserLocation } from "@/lib/live-location";
 import { useI18n } from "@/lib/i18n";
+import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 
 interface CustomerLayoutProps {
   children: ReactNode;
@@ -71,6 +74,8 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState<any[]>([]);
   const [placesLoading, setPlacesLoading] = useState(false);
+  const cameraSearchRef = useRef<HTMLInputElement | null>(null);
+  const gallerySearchRef = useRef<HTMLInputElement | null>(null);
 
   const { data: cart } = useGetCart({
     query: { enabled: !!user, queryKey: getGetCartQueryKey() },
@@ -170,6 +175,41 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
     recognition.start();
   };
 
+  const imageSearchKeyword = (file: File) => {
+    const text = file.name.toLowerCase();
+    const match = [
+      [/tomato|tamatar/, "tomato"],
+      [/potato|aloo|alu/, "potato"],
+      [/onion|peyaj|piyaz/, "onion"],
+      [/milk|dudh/, "milk"],
+      [/rice|chal/, "rice"],
+      [/shoe|chappal|sandal/, "chappal"],
+      [/shirt|tshirt|kurti|dress|fashion|kapor|kapda/, "shirt"],
+      [/phone|mobile|iphone|android/, "mobile"],
+      [/headphone|earphone|airpod|earbud/, "headphones"],
+      [/watch|smartwatch/, "smart watch"],
+      [/bag|backpack/, "bag"],
+    ].find(([pattern]) => (pattern as RegExp).test(text));
+    return String(match?.[1] || "");
+  };
+
+  const handleImageSearch = (file?: File | null) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const keyword = imageSearchKeyword(file);
+    if (keyword) {
+      setSearch(keyword);
+      saveRecentSearch(keyword);
+      setLocation(`/search?q=${encodeURIComponent(keyword)}&image=1`);
+      setSuggestOpen(false);
+      return;
+    }
+    const fallback = search.trim() || "fresh";
+    setSearch(fallback);
+    saveRecentSearch(fallback);
+    setLocation(`/search?q=${encodeURIComponent(fallback)}&image=1`);
+    setSuggestOpen(false);
+  };
+
   useEffect(() => {
     const syncLocation = () => {
       const saved = getSavedDeliveryLocation();
@@ -209,6 +249,20 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
     if (closeDialog) setLocationOpen(false);
   };
 
+  const applyMapLocation = (point: PickupLocation) => {
+    const fallbackNearest = nearestDeliveryLocation(point.lat, point.lng)?.location;
+    applyLocation({
+      pincode: point.pincode || fallbackNearest?.pincode || "",
+      city: point.city || fallbackNearest?.city || "Selected city",
+      state: point.state || fallbackNearest?.state || "",
+      area: point.area || point.address || fallbackNearest?.area || "Selected map location",
+      lat: point.lat,
+      lng: point.lng,
+      source: "map",
+      capturedAt: new Date().toISOString(),
+    });
+  };
+
   const applyPincode = (value = pincodeInput, closeDialog = true) => {
     const found = lookupPincode(value);
     if (!found) {
@@ -218,15 +272,32 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
     applyLocation({ ...found, source: "pincode" }, closeDialog);
   };
 
+  const getComponent = (components: any[] | undefined, type: string) =>
+    components?.find((item) => item.types?.includes(type))?.long_name ?? "";
+
   const applyLiveGps = async () => {
     setLocatingGps(true);
     setPincodeError("");
     try {
       const gps = await getBrowserLocation();
       const nearest = nearestDeliveryLocation(gps.lat, gps.lng);
+      let mapped: Partial<DeliveryLocation> = {};
+      try {
+        const data = await customFetch<any>(`/api/maps/geocode?latlng=${gps.lat},${gps.lng}`, { responseType: "json" });
+        const result = data?.results?.[0];
+        const components = result?.address_components ?? [];
+        mapped = {
+          pincode: getComponent(components, "postal_code") || nearest.location.pincode,
+          city: getComponent(components, "locality") || getComponent(components, "administrative_area_level_2") || nearest.location.city,
+          state: getComponent(components, "administrative_area_level_1") || nearest.location.state,
+          area: result?.formatted_address || `Live GPS near ${nearest.location.area}`,
+        };
+      } catch {
+        mapped = {};
+      }
       applyLocation({
         ...nearest.location,
-        area: `Live GPS near ${nearest.location.area}`,
+        ...mapped,
         lat: gps.lat,
         lng: gps.lng,
         source: "gps",
@@ -293,6 +364,8 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
 
   const renderSearchBox = ({ mobile = false }: { mobile?: boolean } = {}) => (
     <form data-search-root onSubmit={submitSearch} className="relative min-w-0 w-full">
+      <input ref={cameraSearchRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => handleImageSearch(event.target.files?.[0])} />
+      <input ref={gallerySearchRef} type="file" accept="image/*" className="hidden" onChange={(event) => handleImageSearch(event.target.files?.[0])} />
       <div className={`relative flex items-center rounded-2xl bg-white text-gray-950 shadow-sm ring-1 ring-black/5 transition-all duration-200 focus-within:shadow-lg focus-within:shadow-blue-950/15 focus-within:ring-2 focus-within:ring-orange-300 ${mobile ? "h-12" : "h-11 xl:h-12"}`}>
         <Search className="ml-4 h-4 w-4 flex-shrink-0 text-gray-500" />
         <Input
@@ -321,6 +394,28 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
         >
           <Mic className="h-4 w-4" />
         </button>
+        <button
+          type="button"
+          className="mr-1 rounded-full p-1.5 text-gray-500 hover:bg-gray-100"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => cameraSearchRef.current?.click()}
+          aria-label="Camera product search"
+          title="Camera product search"
+        >
+          <Camera className="h-4 w-4" />
+        </button>
+        {!mobile && (
+          <button
+            type="button"
+            className="mr-1 rounded-full p-1.5 text-gray-500 hover:bg-gray-100"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => gallerySearchRef.current?.click()}
+            aria-label="Upload product photo"
+            title="Upload product photo"
+          >
+            <ImagePlus className="h-4 w-4" />
+          </button>
+        )}
         <Button type="submit" size="sm" className="mr-1.5 hidden h-8 rounded-xl bg-orange-500 px-4 text-xs font-bold hover:bg-orange-600 lg:inline-flex">
           Search
         </Button>
@@ -479,6 +574,28 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
               <Navigation className="h-4 w-4" />
               {locatingGps ? t("Getting live GPS...") : t("Use my live GPS location")}
             </Button>
+            <div className="overflow-hidden rounded-2xl border bg-white">
+              <PickupLocationPicker
+                mode="inline"
+                initial={deliveryLocation.lat && deliveryLocation.lng ? {
+                  lat: deliveryLocation.lat,
+                  lng: deliveryLocation.lng,
+                  address: deliveryLocation.area || "Selected delivery location",
+                  distanceKm: null,
+                  available: true,
+                  pincode: deliveryLocation.pincode,
+                  city: deliveryLocation.city,
+                  state: deliveryLocation.state,
+                  area: deliveryLocation.area,
+                } : null}
+                title="Select live delivery location"
+                subtitle="GPS use korun, map move/tap korun. Pincode and nearby products will update automatically."
+                confirmLabel="Use This Location"
+                compact
+                onClose={() => undefined}
+                onConfirm={applyMapLocation}
+              />
+            </div>
             <div className="space-y-2 rounded-lg border bg-white p-3">
               <Label htmlFor="google-place">Search address / landmark</Label>
               <div className="flex gap-2">

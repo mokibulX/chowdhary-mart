@@ -1,17 +1,52 @@
 import { setBaseUrl } from "@workspace/api-client-react";
 
-function isLocalhostUrl(value?: string | null) {
+export function isNativeAppRuntime() {
+  return Boolean((window as any).Capacitor?.isNativePlatform?.());
+}
+
+export function isLocalhostUrl(value?: string | null) {
   return Boolean(value && /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?/i.test(value.trim()));
 }
 
-export async function initMobileRuntime() {
-  const isNative = Boolean((window as any).Capacitor?.isNativePlatform?.());
-  document.documentElement.classList.toggle("capacitor-native", isNative);
+export function toWebsocketUrl(value: string) {
+  return value.replace(/^https:\/\//i, "wss://").replace(/^http:\/\//i, "ws://");
+}
+
+export function getRuntimeApiBaseUrl() {
+  const isNative = isNativeAppRuntime();
+  const publicApiUrl = import.meta.env.VITE_PUBLIC_API_URL?.trim();
   const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
   const mobileApiUrl = import.meta.env.VITE_MOBILE_API_URL?.trim();
-  const apiUrl = isNative && isLocalhostUrl(configuredApiUrl)
-    ? mobileApiUrl || "http://10.0.2.2:5000"
-    : configuredApiUrl;
+  if (isNative && publicApiUrl) return publicApiUrl;
+  if (isNative && isLocalhostUrl(configuredApiUrl)) return mobileApiUrl || publicApiUrl || "http://10.0.2.2:5000";
+  return configuredApiUrl || publicApiUrl || "";
+}
+
+export function getRuntimeWebsocketUrl() {
+  const isNative = isNativeAppRuntime();
+  const publicWsUrl = import.meta.env.VITE_PUBLIC_WEBSOCKET_URL?.trim();
+  const configuredWsUrl = import.meta.env.VITE_WEBSOCKET_URL?.trim();
+  const mobileWsUrl = import.meta.env.VITE_MOBILE_WEBSOCKET_URL?.trim();
+  const apiUrl = getRuntimeApiBaseUrl();
+  if (isNative && publicWsUrl) return publicWsUrl;
+  if (isNative && isLocalhostUrl(configuredWsUrl)) {
+    if (mobileWsUrl) return mobileWsUrl;
+    if (apiUrl) return toWebsocketUrl(apiUrl);
+    return "ws://10.0.2.2:5000";
+  }
+  return configuredWsUrl || publicWsUrl || (apiUrl ? toWebsocketUrl(apiUrl) : window.location.origin);
+}
+
+export function resolveRuntimeApiUrl(path: string) {
+  const apiUrl = getRuntimeApiBaseUrl();
+  if (!apiUrl || !path.startsWith("/")) return path;
+  return `${apiUrl.replace(/\/+$/, "")}${path}`;
+}
+
+export async function initMobileRuntime() {
+  const isNative = isNativeAppRuntime();
+  document.documentElement.classList.toggle("capacitor-native", isNative);
+  const apiUrl = getRuntimeApiBaseUrl();
   if (apiUrl) setBaseUrl(apiUrl);
 
   if (!isNative) return;

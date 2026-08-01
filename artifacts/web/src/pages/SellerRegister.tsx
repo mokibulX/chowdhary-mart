@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { customFetch, useRegister } from "@workspace/api-client-react";
+import { customFetch } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, CheckCircle2, ClipboardCheck, Eye, EyeOff, LocateFixed, MapPin, PackagePlus, ShieldCheck, Store } from "lucide-react";
 import { isDemoOtp, testMode } from "@/lib/test-mode";
 import { getBrowserLocation } from "@/lib/live-location";
+import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
+import { IndiaStateDistrictSelects } from "@/components/IndiaLocationSelects";
 
 type SellerForm = {
   name: string;
@@ -23,6 +26,7 @@ type SellerForm = {
   shopCategory: string;
   shopAddress: string;
   city: string;
+  district: string;
   state: string;
   pincode: string;
   gstNumber: string;
@@ -32,6 +36,7 @@ type SellerForm = {
   lng: string;
   selectedZoneId: string;
 };
+type RegisterResponse = { token: string };
 
 const initialForm: SellerForm = {
   name: "",
@@ -43,6 +48,7 @@ const initialForm: SellerForm = {
   shopCategory: "Grocery, Fashion, Electronics",
   shopAddress: "",
   city: "Kolkata",
+  district: "North 24 Parganas",
   state: "West Bengal",
   pincode: "",
   gstNumber: "",
@@ -58,7 +64,7 @@ export default function SellerRegister() {
   const { login } = useAuth();
   const { toast } = useToast();
   const authToast = (options: Parameters<typeof toast>[0]) => toast({ duration: 2000, ...options });
-  const registerMutation = useRegister();
+  const [registering, setRegistering] = useState(false);
   const [form, setForm] = useState<SellerForm>(initialForm);
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState("");
@@ -66,6 +72,17 @@ export default function SellerRegister() {
   const [zones, setZones] = useState<any[]>([]);
   const [zoneBusy, setZoneBusy] = useState(false);
   const [gpsBusy, setGpsBusy] = useState(false);
+  const formLat = Number(form.lat);
+  const formLng = Number(form.lng);
+  const currentPickupLocation: PickupLocation | null = form.lat && form.lng && Number.isFinite(formLat) && Number.isFinite(formLng)
+    ? {
+        lat: formLat,
+        lng: formLng,
+        address: form.shopAddress || `${formLat.toFixed(6)}, ${formLng.toFixed(6)}`,
+        distanceKm: null,
+        available: true,
+      }
+    : null;
 
   const update = (key: keyof SellerForm, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -88,17 +105,17 @@ export default function SellerRegister() {
       update("lng", String(gps.lng));
       authToast({ title: "Live GPS added", description: "Nearest service zones loaded." });
     } catch (error) {
-      authToast({ title: "GPS permission needed", description: error instanceof Error ? error.message : "Could not get live location.", variant: "destructive" });
+      authToast({ title: "GPS permission needed", description: getFriendlyErrorMessage(error, "Could not get live location."), variant: "destructive" });
     } finally {
       setGpsBusy(false);
     }
   };
 
   const validate = () => {
-    const required: Array<keyof SellerForm> = ["name", "email", "phone", "password", "shopName", "shopAddress", "city", "state", "pincode", "upiId"];
+    const required: Array<keyof SellerForm> = ["name", "email", "phone", "password", "shopName", "shopAddress", "city", "district", "state", "pincode", "upiId"];
     const missing = required.find((key) => !form[key].trim());
     if (missing) {
-      authToast({ title: "Details required", description: "Owner details, shop address, pincode and UPI ID fill korun. GST optional.", variant: "destructive" });
+      authToast({ title: "Complete required details", description: "Owner name, email, mobile, password, shop name, address, pincode and UPI ID are required.", variant: "destructive" });
       return false;
     }
     if (!/^\d{10}$/.test(form.phone.replace(/\D/g, ""))) {
@@ -146,10 +163,7 @@ export default function SellerRegister() {
         setOtp("");
         authToast({ title: "OTP sent", description: testMode.allowDemoOtp ? `Demo OTP: ${testMode.demoOtpCode}` : "Enter the verification code to submit shop registration." });
       } catch (error) {
-        const msg = (error as { response?: { data?: { error?: string } }; data?: { error?: string } })?.response?.data?.error
-          ?? (error as { data?: { error?: string } })?.data?.error
-          ?? "OTP send failed";
-        authToast({ title: "OTP failed", description: msg, variant: "destructive" });
+        authToast({ title: "OTP failed", description: getFriendlyErrorMessage(error, "OTP could not be sent. Please try again."), variant: "destructive" });
       }
       return;
     }
@@ -157,9 +171,11 @@ export default function SellerRegister() {
       authToast({ title: "Invalid OTP", description: "Please check the code and try again.", variant: "destructive" });
       return;
     }
-    registerMutation.mutate(
-      {
-        data: {
+    setRegistering(true);
+    try {
+      const res = await customFetch<RegisterResponse>("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
           ...form,
           phone: form.phone.replace(/\D/g, ""),
           email: form.email.trim().toLowerCase(),
@@ -171,26 +187,20 @@ export default function SellerRegister() {
           selectedZoneId: Number(form.selectedZoneId),
           shopLatitude: Number(form.lat),
           shopLongitude: Number(form.lng),
-        } as any,
-      },
-      {
-        onSuccess: (res) => {
-          login(res.token);
-          authToast({ title: "Shop registration submitted", description: "Admin approve korle seller panel-e product add korte parben. Existing account thakleo application submit hoyeche." });
-          setLocation("/vendor");
-        },
-        onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } }; data?: { error?: string } })?.response?.data?.error
-            ?? (err as { data?: { error?: string } })?.data?.error
-            ?? "Registration failed";
-          authToast({ title: "Registration failed", description: msg, variant: "destructive" });
-        },
-      },
-    );
+        }),
+      });
+      login(res.token);
+      authToast({ title: "Shop registration submitted", description: "Admin approve korle seller panel-e product add korte parben. Existing account thakleo application submit hoyeche." });
+      setLocation("/vendor");
+    } catch (err) {
+      authToast({ title: "Registration failed", description: getFriendlyErrorMessage(err, "Could not submit shop registration. Please check the details."), variant: "destructive" });
+    } finally {
+      setRegistering(false);
+    }
   };
 
   return (
-    <div className="native-page-scroll min-h-[100dvh] bg-gray-50 pb-24 sm:px-4 sm:py-6">
+    <div className="native-page-scroll min-h-[100dvh] overflow-x-hidden bg-gradient-to-b from-orange-50 via-white to-blue-50 pb-24 sm:px-4 sm:py-6">
       <header className="sticky top-0 z-30 border-b bg-white/95 px-3 py-3 backdrop-blur lg:hidden">
         <div className="flex items-center gap-3">
           <Button type="button" variant="outline" size="icon" className="h-10 w-10 rounded-full" onClick={() => window.history.back()}>
@@ -234,15 +244,15 @@ export default function SellerRegister() {
           </div>
         </section>
 
-        <Card className="overflow-hidden rounded-[26px] border bg-white shadow-sm">
-          <CardContent className="p-4 sm:p-5 md:p-6">
-            <div className="mb-5 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Card className="min-w-0 overflow-hidden rounded-[24px] border bg-white/95 shadow-xl sm:rounded-[26px]">
+          <CardContent className="p-3 sm:p-5 md:p-6">
+            <div className="mb-5 flex items-start gap-3">
+              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <Store className="h-6 w-6" />
               </div>
-              <div>
-                <h2 className="text-xl font-bold">Shop owner registration</h2>
-                <p className="text-sm text-muted-foreground">GST optional. Admin approval required.</p>
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold leading-tight sm:text-xl">Shop owner registration</h2>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">GST optional. Admin approval required.</p>
               </div>
             </div>
 
@@ -267,19 +277,52 @@ export default function SellerRegister() {
                 <Field label="GST number (optional)" value={form.gstNumber} onChange={(value) => update("gstNumber", value)} />
                 <Field label="PAN number (optional)" value={form.panNumber} onChange={(value) => update("panNumber", value)} />
                 <Field label="City *" value={form.city} onChange={(value) => update("city", value)} />
-                <Field label="State *" value={form.state} onChange={(value) => update("state", value)} />
+                <IndiaStateDistrictSelects
+                  state={form.state}
+                  district={form.district}
+                  onStateChange={(state, district) => setForm((current) => ({ ...current, state, district }))}
+                  onDistrictChange={(district) => update("district", district)}
+                />
                 <Field label="Pincode *" value={form.pincode} onChange={(value) => update("pincode", value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" />
                 <Field label="Latitude" value={form.lat} onChange={(value) => update("lat", value)} />
                 <Field label="Longitude" value={form.lng} onChange={(value) => update("lng", value)} />
               </div>
 
-              <div className="rounded-2xl border bg-orange-50 p-4">
-                <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="rounded-3xl border bg-white p-2 shadow-sm sm:p-4">
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="font-bold">Exact shop pickup point</p>
+                    <p className="text-xs text-muted-foreground">Delivery partner ei pin-e giye item receive korbe.</p>
+                  </div>
+                  <Badge className={currentPickupLocation ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}>
+                    {currentPickupLocation ? "Selected" : "Required"}
+                  </Badge>
+                </div>
+                <PickupLocationPicker
+                  mode="inline"
+                  initial={currentPickupLocation}
+                  locateFirst={!currentPickupLocation}
+                  title="Set exact shop location"
+                  subtitle="GPS use korun, map move korun, ba tap kore pickup pin set korun."
+                  confirmLabel="Use This Shop Pickup Point"
+                  compact
+                  onClose={() => undefined}
+                  onConfirm={(location) => {
+                    update("lat", String(location.lat));
+                    update("lng", String(location.lng));
+                    update("shopAddress", location.address);
+                    authToast({ title: "Shop pickup point selected", description: location.address });
+                  }}
+                />
+              </div>
+
+              <div className="rounded-2xl border bg-orange-50 p-3 sm:p-4">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="font-bold text-orange-950">Service zone</p>
                     <p className="text-xs text-orange-800">Only admin-created active seller zones can be selected.</p>
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={captureGps} disabled={gpsBusy}>
+                  <Button type="button" variant="outline" size="sm" className="w-full rounded-xl sm:w-auto" onClick={captureGps} disabled={gpsBusy}>
                     <LocateFixed className="mr-2 h-4 w-4" /> {gpsBusy ? "Reading..." : "Use GPS"}
                   </Button>
                 </div>
@@ -325,8 +368,8 @@ export default function SellerRegister() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={registerMutation.isPending}>
-                {registerMutation.isPending ? "Submitting..." : otpSent ? "Verify OTP and submit" : "Send OTP and continue"}
+              <Button type="submit" className="w-full" disabled={registering}>
+                {registering ? "Submitting..." : otpSent ? "Verify OTP and submit" : "Send OTP and continue"}
               </Button>
 
               <div className="flex flex-col gap-2 rounded-xl bg-green-50 p-3 text-sm text-green-900 sm:flex-row sm:items-center">

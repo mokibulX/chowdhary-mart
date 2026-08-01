@@ -4,9 +4,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
 import {
   useListVendorProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useListCategories,
-  getListVendorProductsQueryKey, getListCategoriesQueryKey
+  getListVendorProductsQueryKey, getListCategoriesQueryKey, customFetch
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BadgePercent, CheckCircle2, ImagePlus, Plus, Pencil, Trash2, Package, AlertTriangle, X } from "lucide-react";
-import { fileToDataUrl } from "@/lib/live-location";
+import { uploadImageFile } from "@/lib/image-upload";
+import { getFriendlyErrorMessage, getFirstFormError } from "@/lib/error-message";
 
 const schema = z.object({
   name: z.string().min(2, "Name required"),
@@ -130,6 +131,11 @@ export default function VendorProducts() {
   const isAvailable = watch("isAvailable");
   const isFeatured = watch("isFeatured");
   const selectedCategoryId = watch("categoryId");
+  const { data: libraryImages = [], isLoading: loadingLibrary } = useQuery({
+    queryKey: ["/api/vendor/media-library", selectedCategoryId],
+    queryFn: () => customFetch<any[]>(`/api/vendor/media-library?limit=40${selectedCategoryId ? `&categoryId=${selectedCategoryId}` : ""}`, { responseType: "json" }),
+    enabled: !!user && !!selectedCategoryId && dialogOpen,
+  });
   const selectedCategory = (categories as any[] | undefined)?.find((item) => Number(item.id) === Number(selectedCategoryId));
   const isFashionCategory = selectedCategory?.name?.toLowerCase().includes("fashion") || selectedCategory?.name?.toLowerCase().includes("cloth");
   const isFootwearProduct = watch("name")?.toLowerCase().includes("shoe") || watch("name")?.toLowerCase().includes("sandal") || watch("name")?.toLowerCase().includes("chappal");
@@ -232,10 +238,7 @@ export default function VendorProducts() {
       toast({ title: editId ? "Product updated" : "Product created" });
     };
     const onError = (err: unknown) => {
-      const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-        ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-        ?? "Operation failed";
-      toast({ title: msg, variant: "destructive" });
+      toast({ title: "Product save failed", description: getFriendlyErrorMessage(err, "Please check product details and try again."), variant: "destructive" });
     };
     if (editId) {
       update.mutate({ productId: editId, data: payload }, { onSuccess, onError });
@@ -274,12 +277,18 @@ export default function VendorProducts() {
     const files = Array.from(event.target.files ?? []).filter(file => file.type.startsWith("image/"));
     if (!files.length) return;
 
-    Promise.all(files.map(fileToDataUrl)).then(urls => {
-      setImageUrls(prev => [...prev, ...urls.filter(Boolean)]);
-      toast({ title: `${urls.length} photo added` });
+    Promise.all(files.map((file) => uploadImageFile(file, "seller-products"))).then((uploads) => {
+      const urls = uploads.map((item) => item.imageUrl).filter(Boolean);
+      setImageUrls(prev => [...prev, ...urls]);
+      toast({ title: `${urls.length} photo uploaded`, description: "Storage URL saved for this product." });
     }).catch((error) => {
-      toast({ title: "Photo upload failed", description: error instanceof Error ? error.message : "Try another image", variant: "destructive" });
+      toast({ title: "Photo upload failed", description: getFriendlyErrorMessage(error, "Please try another image."), variant: "destructive" });
     });
+  };
+  const addLibraryImage = (url: string) => {
+    if (!url) return;
+    setImageUrls((prev) => prev.includes(url) ? prev : [...prev, url]);
+    toast({ title: "Library image added", description: "Image added to this product photo list." });
   };
 
   const goNextStep = async () => {
@@ -288,6 +297,15 @@ export default function VendorProducts() {
       return;
     }
     setProductStep((step) => Math.min(PRODUCT_STEPS.length - 1, step + 1));
+  };
+
+  const onInvalid = (formErrors: unknown) => {
+    toast({
+      title: "Complete product details",
+      description: getFirstFormError(formErrors, "Name, category, price, MRP and stock are required."),
+      variant: "destructive",
+    });
+    setProductStep(0);
   };
 
   return (
@@ -331,7 +349,7 @@ export default function VendorProducts() {
           {(products as any[] | undefined)?.filter((item) => item.isFeatured).slice(0, 4).map((p) => (
             <button key={p.id} type="button" onClick={() => openEdit(p)} className="flex items-center gap-3 rounded-lg border bg-orange-50/60 p-3 text-left transition-colors hover:border-primary/40">
               <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-md bg-white">
-                {p.images?.[0] ? <img src={p.images[0]} alt={p.name} className="h-full w-full object-contain p-1" /> : <Package className="m-4 h-6 w-6 text-gray-300" />}
+                {p.images?.[0] ? <img src={p.images[0]} alt={p.name} loading="lazy" decoding="async" className="h-full w-full object-contain p-1" /> : <Package className="m-4 h-6 w-6 text-gray-300" />}
               </div>
               <div className="min-w-0">
                 <p className="line-clamp-1 text-sm font-semibold">{p.name}</p>
@@ -362,7 +380,7 @@ export default function VendorProducts() {
             <div key={p.id} className="bg-white border rounded-xl overflow-hidden group" data-testid={`product-${p.id}`}>
               <div className="aspect-square bg-gray-50 relative overflow-hidden">
                 {p.images?.[0] ? (
-                  <img src={p.images[0]} alt={p.name} className="w-full h-full object-contain p-4" />
+                  <img src={p.images[0]} alt={p.name} loading="lazy" decoding="async" className="w-full h-full object-contain p-4" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center"><Package className="w-10 h-10 text-gray-200" /></div>
                 )}
@@ -432,7 +450,7 @@ export default function VendorProducts() {
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Product" : "Add New Product"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+          <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-3" noValidate>
             <div className="grid grid-cols-5 gap-1 rounded-xl border bg-gray-50 p-2">
               {PRODUCT_STEPS.map((step, index) => (
                 <button
@@ -608,6 +626,35 @@ export default function VendorProducts() {
                     </Button>
                   </div>
                 </div>
+                <div className="rounded-xl border bg-orange-50/50 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-bold">Admin Image Library</p>
+                      <p className="text-xs text-muted-foreground">Category-wise approved photos. Tap an image to use it for this product.</p>
+                    </div>
+                    <Badge variant="outline">{libraryImages.length} images</Badge>
+                  </div>
+                  {loadingLibrary ? (
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                      {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="aspect-square rounded-lg" />)}
+                    </div>
+                  ) : libraryImages.length ? (
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                      {libraryImages.slice(0, 15).map((item: any) => (
+                        <button key={item.id} type="button" onClick={() => addLibraryImage(item.imageUrl)} className="overflow-hidden rounded-lg border bg-white text-left shadow-sm transition hover:border-primary">
+                          <div className="aspect-square bg-white">
+                            <img src={item.imageUrl} alt={item.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                          </div>
+                          <p className="truncate px-1.5 py-1 text-[11px] font-medium">{item.title}</p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-lg border border-dashed bg-white p-3 text-xs text-muted-foreground">
+                      No approved library image for this category yet. Admin can add images from Catalog Management → Image Library.
+                    </p>
+                  )}
+                </div>
                 {!imageUrls.length ? (
                   <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-center text-sm text-muted-foreground">
                     Add one or more product photos. Main image will be the first image.
@@ -617,7 +664,7 @@ export default function VendorProducts() {
                     {imageUrls.map((url, index) => (
                       <div key={`${index}-${url.slice(0, 12)}`} className="flex items-center gap-2">
                         <div className="h-12 w-12 overflow-hidden rounded-md border bg-gray-50">
-                          {url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
+                          {url ? <img src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
                         </div>
                         <Input
                           value={url}
@@ -680,7 +727,7 @@ export default function VendorProducts() {
                   <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Customer preview</p>
                   <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
                     <div className="aspect-square overflow-hidden rounded-lg bg-gray-50">
-                      {imageUrls[0] ? <img src={imageUrls[0]} alt="" className="h-full w-full object-contain p-3" /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No image</div>}
+                      {imageUrls[0] ? <img src={imageUrls[0]} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain p-3" /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No image</div>}
                     </div>
                     <div className="min-w-0">
                       <h3 className="line-clamp-2 text-lg font-bold">{watch("name") || "Product title"}</h3>
@@ -843,6 +890,35 @@ export default function VendorProducts() {
                   </Button>
                 </div>
               </div>
+              <div className="rounded-xl border bg-orange-50/50 p-3">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold">Admin Image Library</p>
+                    <p className="text-xs text-muted-foreground">Category-wise approved photos. Tap an image to use it for this product.</p>
+                  </div>
+                  <Badge variant="outline">{libraryImages.length} images</Badge>
+                </div>
+                {loadingLibrary ? (
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                    {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="aspect-square rounded-lg" />)}
+                  </div>
+                ) : libraryImages.length ? (
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                    {libraryImages.slice(0, 15).map((item: any) => (
+                      <button key={item.id} type="button" onClick={() => addLibraryImage(item.imageUrl)} className="overflow-hidden rounded-lg border bg-white text-left shadow-sm transition hover:border-primary">
+                        <div className="aspect-square bg-white">
+                          <img src={item.imageUrl} alt={item.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                        </div>
+                        <p className="truncate px-1.5 py-1 text-[11px] font-medium">{item.title}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-dashed bg-white p-3 text-xs text-muted-foreground">
+                    No approved library image for this category yet. Admin can add images from Catalog Management to Image Library.
+                  </p>
+                )}
+              </div>
               {!imageUrls.length ? (
                 <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-center text-sm text-muted-foreground">
                   Add one or more product photos.
@@ -852,7 +928,7 @@ export default function VendorProducts() {
                   {imageUrls.map((url, index) => (
                     <div key={`${index}-${url.slice(0, 12)}`} className="flex items-center gap-2">
                       <div className="h-12 w-12 overflow-hidden rounded-md border bg-gray-50">
-                        {url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
+                        {url ? <img src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
                       </div>
                       <Input
                         value={url}

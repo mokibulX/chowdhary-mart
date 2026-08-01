@@ -48,8 +48,25 @@ router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
       .orderBy(desc(orderTrackingTable.updatedAt)),
     ]);
 
-    let deliveryPartnerInfo = null;
     const latestTracking = timeline[0];
+    if (req.user!.role === "customer" && order.userId !== req.user!.userId) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+    if (req.user!.role === "vendor" && store?.userId !== req.user!.userId) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+    if (req.user!.role === "delivery_partner") {
+      const [dpForUser] = await db.select().from(deliveryPartnersTable)
+        .where(eq(deliveryPartnersTable.userId, req.user!.userId)).limit(1);
+      if (!dpForUser || latestTracking?.deliveryPartnerId !== dpForUser.id) {
+        res.status(404).json({ error: "Order not found" });
+        return;
+      }
+    }
+
+    let deliveryPartnerInfo = null;
     let latestLiveLocation = null as null | typeof liveLocationsTable.$inferSelect;
     if (latestTracking?.deliveryPartnerId) {
       const [dp] = await db.select().from(deliveryPartnersTable)

@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import path from "node:path";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { errorHandler } from "./middleware/error-handler";
@@ -34,8 +35,12 @@ app.use(
   }),
 );
 app.use(cors(getCorsOptions()));
+app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), {
+  immutable: true,
+  maxAge: "30d",
+}));
 app.use(express.json({
-  limit: process.env.REQUEST_JSON_LIMIT ?? "1mb",
+  limit: process.env.REQUEST_JSON_LIMIT ?? "8mb",
   verify: (req, _res, buf) => {
     if (req.url?.startsWith("/api/webhooks/razorpay")) {
       (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);

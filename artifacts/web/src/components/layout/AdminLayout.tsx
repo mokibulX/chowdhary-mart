@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowLeft, Home, LayoutDashboard, Users, ShoppingBag, Store, Tag, LogOut, Grid3X3, ShieldCheck, Menu, Wallet, MapPinned, PanelsTopLeft } from "lucide-react";
+import { ArrowLeft, Home, LayoutDashboard, Users, ShoppingBag, Store, Tag, LogOut, Images, ShieldCheck, Menu, Wallet, MapPinned, PanelsTopLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -12,7 +12,7 @@ const NAV = [
   { href: "/admin/approvals", label: "Shop Approvals", icon: ShieldCheck },
   { href: "/admin/zones", label: "Service Zones", icon: MapPinned },
   { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
-  { href: "/admin/catalog", label: "Catalog CRUD", icon: Grid3X3 },
+  { href: "/admin/catalog", label: "Catalog & Image Library", icon: Images },
   { href: "/admin/homepage", label: "Homepage Management", icon: PanelsTopLeft },
   { href: "/admin/stores", label: "Stores", icon: Store },
   { href: "/admin/coupons", label: "Coupons", icon: Tag },
@@ -93,33 +93,35 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <aside className="fixed inset-y-0 z-10 hidden w-56 flex-col bg-slate-900 text-white md:flex">
-        <div className="p-5 border-b border-slate-700">
-          <Button variant="ghost" size="sm" className="mb-3 w-full justify-start text-slate-300 hover:text-white" onClick={() => window.history.back()}>
+      <aside className="app-scroll-panel sticky top-0 z-10 hidden h-[100dvh] w-72 shrink-0 flex-col overflow-y-auto bg-slate-950 text-white md:flex">
+        <div className="border-b border-white/10 p-5">
+          <Button variant="ghost" size="sm" className="mb-3 w-full justify-start rounded-xl text-slate-300 hover:bg-white/10 hover:text-white" onClick={() => window.history.back()}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
           </Button>
           <Link href="/">
-            <Button variant="outline" size="sm" className="mb-3 w-full justify-start border-white/20 bg-white/10 text-white hover:bg-white/20">
+            <Button variant="outline" size="sm" className="mb-4 w-full justify-start rounded-xl border-white/15 bg-white/10 text-white hover:bg-white/20">
               <Home className="mr-2 h-4 w-4" /> Shop Home
             </Button>
           </Link>
           <Link href="/">
-          <div className="flex items-center gap-2 text-lg font-bold text-white">
-            <img src="/app-logo.png" alt="Chowdhary Mart" className="h-10 w-10 rounded-xl bg-white object-cover" />
-            Chowdhary Mart
-          </div>
+            <div className="flex items-center gap-3 text-white">
+              <img src="/app-logo.png" alt="Chowdhary Mart" className="h-14 w-14 shrink-0 rounded-2xl bg-white object-contain p-1" />
+              <div className="min-w-0">
+                <div className="leading-tight text-xl font-black">Chowdhary Mart</div>
+                <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Admin Panel</div>
+              </div>
+            </div>
           </Link>
-          <div className="text-xs text-slate-400 mt-0.5">Admin Panel</div>
         </div>
         {navItems()}
-        <div className="p-3 border-t border-slate-700">
-          <div className="text-xs text-slate-400 px-3 mb-2 truncate">{user?.name}</div>
-          <Button variant="ghost" size="sm" className="w-full justify-start text-slate-300 hover:text-red-400" onClick={logout} data-testid="btn-logout">
+        <div className="border-t border-white/10 p-3">
+          <div className="mb-2 truncate rounded-xl bg-white/5 px-3 py-2 text-xs text-slate-300">{user?.name}</div>
+          <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl text-slate-300 hover:bg-red-500/10 hover:text-red-300" onClick={logout} data-testid="btn-logout">
             <LogOut className="w-4 h-4 mr-2" />Sign Out
           </Button>
         </div>
       </aside>
-      <main className="app-content mobile-bottom-safe min-w-0 px-3 py-4 sm:px-4 md:ml-56 md:p-6">
+      <main className="app-content mobile-bottom-safe min-w-0 flex-1 px-3 py-4 sm:px-4 md:p-6">
         {children}
       </main>
     </div>

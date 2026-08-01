@@ -16,6 +16,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Store, Clock, Star, ImagePlus, LocateFixed, MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getBrowserLocation } from "@/lib/live-location";
+import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
+import { uploadImageFile } from "@/lib/image-upload";
+import { getFirstFormError, getFriendlyErrorMessage } from "@/lib/error-message";
 
 const schema = z.object({
   name: z.string().min(2, "Store name required"),
@@ -50,6 +53,17 @@ export default function VendorStore() {
     defaultValues: { isOpen: true, deliveryFee: 49, freeDeliveryAbove: 299, minOrderValue: 99, estimatedDeliveryMins: 40 },
   });
   const isOpen = watch("isOpen");
+  const watchedLat = Number(watch("lat") ?? 0);
+  const watchedLng = Number(watch("lng") ?? 0);
+  const currentPickupLocation: PickupLocation | null = Number.isFinite(watchedLat) && Number.isFinite(watchedLng) && watchedLat !== 0 && watchedLng !== 0
+    ? {
+        lat: watchedLat,
+        lng: watchedLng,
+        address: watch("pickupAddress") || `${watchedLat.toFixed(6)}, ${watchedLng.toFixed(6)}`,
+        distanceKm: null,
+        available: true,
+      }
+    : null;
 
   useEffect(() => {
     if (store) {
@@ -105,13 +119,14 @@ export default function VendorStore() {
           toast({ title: "Store settings saved" });
         },
         onError: (err: unknown) => {
-          const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-            ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-            ?? "Failed to save";
-          toast({ title: "Failed to save", description: msg, variant: "destructive" });
+          toast({ title: "Failed to save", description: getFriendlyErrorMessage(err, "Please check store details and try again."), variant: "destructive" });
         },
       }
     );
+  };
+
+  const onInvalid = (formErrors: unknown) => {
+    toast({ title: "Complete store details", description: getFirstFormError(formErrors, "Store name and delivery settings are required."), variant: "destructive" });
   };
 
   const handleImageUpload = (field: "logoUrl" | "bannerUrl", event: React.ChangeEvent<HTMLInputElement>) => {
@@ -121,11 +136,11 @@ export default function VendorStore() {
       toast({ title: "Please select an image file", variant: "destructive" });
       return;
     }
-    resizeImageToDataUrl(file).then((dataUrl) => {
-      setValue(field, dataUrl, { shouldDirty: true });
-      toast({ title: field === "logoUrl" ? "Store logo added" : "Store banner added" });
+    uploadImageFile(file, field === "logoUrl" ? "seller-store/logos" : "seller-store/banners").then((uploaded) => {
+      setValue(field, uploaded.imageUrl, { shouldDirty: true });
+      toast({ title: field === "logoUrl" ? "Store logo uploaded" : "Store banner uploaded" });
     }).catch((error) => {
-      toast({ title: "Image upload failed", description: (error as Error).message, variant: "destructive" });
+      toast({ title: "Image upload failed", description: getFriendlyErrorMessage(error, "Please choose another image."), variant: "destructive" });
     });
   };
 
@@ -137,7 +152,7 @@ export default function VendorStore() {
       setValue("lng", Number(gps.lng.toFixed(6)), { shouldDirty: true });
       toast({ title: "Pickup GPS saved", description: "Delivery partners can identify your store pickup point." });
     } catch (error) {
-      toast({ title: "GPS failed", description: (error as Error).message, variant: "destructive" });
+      toast({ title: "GPS failed", description: getFriendlyErrorMessage(error, "Please allow location permission and try again."), variant: "destructive" });
     } finally {
       setLocatingGps(false);
     }
@@ -164,7 +179,7 @@ export default function VendorStore() {
         )}
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+      <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-5" noValidate>
         {/* Basic info */}
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Store className="w-4 h-4" />Store Info</CardTitle></CardHeader>
@@ -225,6 +240,21 @@ export default function VendorStore() {
             <Button type="button" variant="outline" className="w-full" onClick={usePickupGps} disabled={locatingGps}>
               <LocateFixed className="mr-2 h-4 w-4" /> {locatingGps ? "Getting GPS..." : "Use live GPS as pickup point"}
             </Button>
+            <PickupLocationPicker
+              mode="inline"
+              initial={currentPickupLocation}
+              locateFirst={!currentPickupLocation}
+              title="Set exact store pickup point"
+              subtitle="Use GPS, search, tap or move the map. Delivery partner will come to this pin."
+              confirmLabel="Use This Store Pickup Point"
+              onClose={() => undefined}
+              onConfirm={(location) => {
+                setValue("lat", location.lat, { shouldDirty: true });
+                setValue("lng", location.lng, { shouldDirty: true });
+                setValue("pickupAddress", location.address, { shouldDirty: true });
+                toast({ title: "Store pickup point selected", description: location.address });
+              }}
+            />
             <p className="text-xs text-muted-foreground">Rapido-style pickup point: delivery partner and admin will see this store location on live tracking.</p>
           </CardContent>
         </Card>
@@ -277,33 +307,4 @@ export default function VendorStore() {
       </form>
     </div>
   );
-}
-
-function resizeImageToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Could not read image"));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Could not load image"));
-      img.onload = () => {
-        const maxWidth = 1200;
-        const scale = Math.min(1, maxWidth / img.width);
-        const width = Math.max(1, Math.round(img.width * scale));
-        const height = Math.max(1, Math.round(img.height * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Image compression not supported"));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.72));
-      };
-      img.src = String(reader.result ?? "");
-    };
-    reader.readAsDataURL(file);
-  });
 }

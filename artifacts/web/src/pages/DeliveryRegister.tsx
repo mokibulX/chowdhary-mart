@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { customFetch, useRegister } from "@workspace/api-client-react";
+import { customFetch } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,9 @@ import {
   Upload,
   WalletCards,
 } from "lucide-react";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
+import { IndiaStateDistrictSelects, IndiaStateSelect } from "@/components/IndiaLocationSelects";
+import { DateTextInput } from "@/components/DateTextInput";
 
 type DeliveryForm = {
   countryCode: string;
@@ -99,6 +102,7 @@ type DeliveryForm = {
   termsAccepted: boolean;
   privacyConsent: boolean;
 };
+type RegisterResponse = { token: string };
 
 const draftKey = "cm_delivery_partner_registration_draft";
 const challenges = ["Blink your eyes", "Turn your head left", "Smile clearly", "Look up once", "Move closer to the camera"];
@@ -185,7 +189,7 @@ export default function DeliveryRegister() {
   const { login } = useAuth();
   const { toast } = useToast();
   const authToast = (options: Parameters<typeof toast>[0]) => toast({ duration: 2000, ...options });
-  const registerMutation = useRegister();
+  const [registering, setRegistering] = useState(false);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<DeliveryForm>(() => {
     try {
@@ -243,7 +247,7 @@ export default function DeliveryRegister() {
       if (file.size > 5 * 1024 * 1024) throw new Error("Image must be under 5 MB.");
       update(key, await fileToDataUrl(file) as any);
     } catch (error) {
-      authToast({ title: "Photo upload failed", description: error instanceof Error ? error.message : "Try another image.", variant: "destructive" });
+      authToast({ title: "Photo upload failed", description: getFriendlyErrorMessage(error, "Please upload a clear image under 5 MB."), variant: "destructive" });
     }
   };
 
@@ -255,7 +259,7 @@ export default function DeliveryRegister() {
       update("lng", String(gps.lng));
       authToast({ title: "Live location added", description: "GPS location saved with your address." });
     } catch (error) {
-      authToast({ title: "GPS permission needed", description: error instanceof Error ? error.message : "Could not get location.", variant: "destructive" });
+      authToast({ title: "GPS permission needed", description: getFriendlyErrorMessage(error, "Could not get location."), variant: "destructive" });
     } finally {
       setGpsBusy(false);
     }
@@ -273,7 +277,7 @@ export default function DeliveryRegister() {
       setStep(1);
       authToast({ title: "OTP sent", description: testMode.allowDemoOtp ? `Demo OTP: ${testMode.demoOtpCode}` : "Enter the code from your mobile. It expires in 5 minutes." });
     } catch (error) {
-      authToast({ title: "OTP failed", description: errorMessage(error), variant: "destructive" });
+      authToast({ title: "OTP failed", description: getFriendlyErrorMessage(error, "OTP could not be sent. Please try again."), variant: "destructive" });
     } finally {
       setOtpBusy(false);
     }
@@ -287,7 +291,7 @@ export default function DeliveryRegister() {
       authToast({ title: "Mobile verified" });
       setStep(1);
     } catch (error) {
-      authToast({ title: "OTP verification failed", description: errorMessage(error), variant: "destructive" });
+      authToast({ title: "OTP verification failed", description: getFriendlyErrorMessage(error, "OTP is invalid or expired."), variant: "destructive" });
     } finally {
       setOtpBusy(false);
     }
@@ -344,7 +348,7 @@ export default function DeliveryRegister() {
     });
   };
 
-  const submit = () => {
+  const submit = async () => {
     for (let index = 0; index < stepTitles.length; index += 1) {
       if (index === 5 && !licenceRequired) continue;
       const error = validateStep(index);
@@ -354,9 +358,11 @@ export default function DeliveryRegister() {
         return;
       }
     }
-    registerMutation.mutate(
-      {
-        data: {
+    setRegistering(true);
+    try {
+      const res = await customFetch<RegisterResponse>("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
           ...form,
           email: form.email || undefined,
           phone: form.phone.replace(/\D/g, ""),
@@ -370,22 +376,21 @@ export default function DeliveryRegister() {
           selectedZoneId: Number(form.selectedZoneId),
           currentLatitude: Number(form.lat),
           currentLongitude: Number(form.lng),
-        } as any,
-      },
-      {
-        onSuccess: (res) => {
-          localStorage.removeItem(draftKey);
-          login(res.token);
-          authToast({ title: "Application submitted", description: "Admin review pending. Approval hole delivery panel active hobe." });
-          setLocation("/delivery");
-        },
-        onError: (error: unknown) => authToast({ title: "Registration failed", description: errorMessage(error), variant: "destructive" }),
-      },
-    );
+        }),
+      });
+      localStorage.removeItem(draftKey);
+      login(res.token);
+      authToast({ title: "Application submitted", description: "Admin review pending. Approval hole delivery panel active hobe." });
+      setLocation("/delivery");
+    } catch (error) {
+      authToast({ title: "Registration failed", description: getFriendlyErrorMessage(error, "Could not submit delivery registration. Please check the details."), variant: "destructive" });
+    } finally {
+      setRegistering(false);
+    }
   };
 
   return (
-    <div className="native-page-scroll min-h-[100dvh] bg-gray-50 pb-28 lg:pb-0">
+    <div className="native-page-scroll min-h-[100dvh] overflow-x-hidden bg-gradient-to-b from-emerald-50 via-white to-blue-50 pb-28 lg:pb-0">
       <header className="sticky top-0 z-30 border-b bg-white/95 px-3 py-3 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between gap-3">
           <button type="button" className="flex h-11 w-11 items-center justify-center rounded-full border bg-white" onClick={() => step > 0 ? setStep((current) => current - 1) : window.history.back()} aria-label="Back">
@@ -425,8 +430,8 @@ export default function DeliveryRegister() {
           </div>
         </section>
 
-        <Card className="min-w-0 rounded-[26px] border bg-white shadow-sm lg:rounded-2xl">
-          <CardContent className="min-w-0 p-4 pb-28 sm:p-6 lg:pb-6">
+        <Card className="min-w-0 overflow-hidden rounded-[24px] border bg-white/95 shadow-xl lg:rounded-2xl">
+          <CardContent className="min-w-0 p-3 pb-32 sm:p-6 lg:pb-6">
             <div className="mb-5 hidden lg:block">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -438,12 +443,37 @@ export default function DeliveryRegister() {
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-100">
                 <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${((step + 1) / stepTitles.length) * 100}%` }} />
               </div>
-              <div className="mt-3 flex max-w-full gap-2 overflow-x-auto pb-1">
-                {stepTitles.map((title, index) => (
-                  <button key={title} type="button" disabled={index === 5 && !licenceRequired} onClick={() => setStep(index)} className={`whitespace-nowrap rounded-full px-3 py-1 text-xs disabled:opacity-50 ${index === step ? "bg-primary text-white" : index < step ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"}`}>
-                    {index + 1}. {title}
-                  </button>
-                ))}
+              <div className="mt-4 rounded-2xl border bg-gray-50 p-3">
+                <div className="grid grid-cols-[repeat(13,minmax(0,1fr))] items-center gap-1">
+                  {stepTitles.map((title, index) => {
+                    const disabled = index === 5 && !licenceRequired;
+                    const active = index === step;
+                    const done = index < step;
+                    return (
+                      <button
+                        key={title}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => setStep(index)}
+                        aria-label={`Step ${index + 1}: ${title}`}
+                        title={`${index + 1}. ${title}`}
+                        className={`relative flex h-9 min-h-0 items-center justify-center rounded-xl text-xs font-black transition-all disabled:cursor-not-allowed disabled:opacity-35 ${
+                          active
+                            ? "bg-primary text-white shadow-md shadow-orange-500/20"
+                            : done
+                              ? "bg-green-100 text-green-700 hover:bg-green-200"
+                              : "bg-white text-gray-500 ring-1 ring-gray-200 hover:text-gray-900"
+                        }`}
+                      >
+                        {done ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                  <span className="font-bold text-gray-950">{step + 1}. {stepTitles[step]}</span>
+                  <span className="rounded-full bg-white px-2 py-1 font-semibold text-muted-foreground ring-1 ring-gray-200">{Math.round(((step + 1) / stepTitles.length) * 100)}% complete</span>
+                </div>
               </div>
             </div>
 
@@ -467,7 +497,15 @@ export default function DeliveryRegister() {
                   OTP sent to <b>{form.countryCode} {form.phone || "your mobile"}</b>. Code expires in 5 minutes.
                 </div>
                 <Field label="OTP code" value={form.otp} onChange={(value) => update("otp", value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" />
-                {testMode.allowDemoOtp && <p className="text-xs font-semibold text-amber-700">Demo OTP: {testMode.demoOtpCode}</p>}
+                {testMode.allowDemoOtp && (
+                  <button
+                    type="button"
+                    className="inline-flex w-fit items-center rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-800 ring-1 ring-amber-200 hover:bg-amber-200"
+                    onClick={() => update("otp", testMode.demoOtpCode || "123456")}
+                  >
+                    Use demo OTP: {testMode.demoOtpCode || "123456"}
+                  </button>
+                )}
                 <Button className="h-12 w-full rounded-2xl" type="button" onClick={verifyOtp} disabled={otpBusy || otpVerified}>{otpVerified ? "Verified" : "Verify OTP"}</Button>
               </Panel>
             )}
@@ -508,8 +546,14 @@ export default function DeliveryRegister() {
                   <Field label="Area" value={form.area} onChange={(value) => update("area", value)} />
                   <Field label="Landmark" value={form.landmark} onChange={(value) => update("landmark", value)} />
                   <Field label="City" value={form.city} onChange={(value) => update("city", value)} />
-                  <Field label="District" value={form.district} onChange={(value) => update("district", value)} />
-                  <Field label="State" value={form.state} onChange={(value) => update("state", value)} />
+                  <IndiaStateDistrictSelects
+                    state={form.state}
+                    district={form.district}
+                    onStateChange={(state, district) => setForm((current) => ({ ...current, state, district }))}
+                    onDistrictChange={(district) => update("district", district)}
+                    stateLabel="State"
+                    districtLabel="District"
+                  />
                   <Field label="Pincode *" value={form.pincode} onChange={(value) => update("pincode", value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" />
                   <Field label="Latitude" value={form.lat} onChange={(value) => update("lat", value)} />
                   <Field label="Longitude" value={form.lng} onChange={(value) => update("lng", value)} />
@@ -592,7 +636,7 @@ export default function DeliveryRegister() {
                       <Field label="Issue date" value={form.licenseIssueDate} onChange={(value) => update("licenseIssueDate", value)} type="date" />
                       <Field label="Expiry date *" value={form.licenseExpiry} onChange={(value) => update("licenseExpiry", value)} type="date" />
                       <Field label="Licence class" value={form.licenseClass} onChange={(value) => update("licenseClass", value)} />
-                      <Field label="Issuing state" value={form.licenseState} onChange={(value) => update("licenseState", value)} />
+                      <IndiaStateSelect label="Issuing state" value={form.licenseState} onChange={(value) => update("licenseState", value)} />
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <ImageInput label="Licence front *" value={form.licenseFrontImage} onFile={(file) => setImage("licenseFrontImage", file)} />
@@ -698,8 +742,8 @@ export default function DeliveryRegister() {
               {step < stepTitles.length - 1 ? (
                 <Button className="h-12 rounded-2xl" type="button" onClick={next}>Continue</Button>
               ) : (
-                <Button className="h-12 rounded-2xl" type="button" onClick={submit} disabled={registerMutation.isPending}>
-                  {registerMutation.isPending ? "Submitting..." : "Submit for admin review"}
+                <Button className="h-12 rounded-2xl" type="button" onClick={submit} disabled={registering}>
+                  {registering ? "Submitting..." : "Submit for admin review"}
                 </Button>
               )}
               <Button className="col-span-2 h-11 rounded-2xl lg:hidden" type="button" variant="ghost" onClick={() => authToast({ title: "Draft saved", description: "Registration data saved on this device." })}>Save Draft</Button>
@@ -713,15 +757,15 @@ export default function DeliveryRegister() {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="min-w-0 space-y-4 rounded-[24px] border bg-white p-4 shadow-sm sm:p-5">
-      <h3 className="text-lg font-bold">{title}</h3>
+    <section className="min-w-0 space-y-4 rounded-[22px] border bg-white p-3 shadow-sm sm:rounded-[24px] sm:p-5">
+      <h3 className="text-base font-bold leading-tight sm:text-lg">{title}</h3>
       {children}
     </section>
   );
 }
 
 function Feature({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return <div className="flex gap-3 rounded-xl bg-white/10 p-3">{icon}<span>{text}</span></div>;
+  return <div className="flex min-w-0 gap-3 rounded-xl bg-white/10 p-3">{icon}<span className="min-w-0">{text}</span></div>;
 }
 
 function Field({ label, value, onChange, type = "text", inputMode, placeholder, disabled }: {
@@ -736,7 +780,11 @@ function Field({ label, value, onChange, type = "text", inputMode, placeholder, 
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
-      <Input className="h-12 rounded-2xl" value={value} onChange={(event) => onChange(event.target.value)} type={type} inputMode={inputMode} placeholder={placeholder} disabled={disabled} />
+      {type === "date" ? (
+        <DateTextInput className="h-12 min-w-0 rounded-2xl" value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} />
+      ) : (
+        <Input className="h-12 min-w-0 rounded-2xl" value={value} onChange={(event) => onChange(event.target.value)} type={type} inputMode={inputMode} placeholder={placeholder} disabled={disabled} />
+      )}
     </div>
   );
 }
@@ -752,7 +800,7 @@ function PasswordField({ label, value, onChange, visible, setVisible }: {
     <div className="space-y-1.5">
       <Label>{label}</Label>
       <div className="relative">
-        <Input value={value} onChange={(event) => onChange(event.target.value)} type={visible ? "text" : "password"} className="h-12 rounded-2xl pr-10" autoComplete="new-password" />
+        <Input value={value} onChange={(event) => onChange(event.target.value)} type={visible ? "text" : "password"} className="h-12 min-w-0 rounded-2xl pr-10" autoComplete="new-password" />
         <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-gray-100" onClick={() => setVisible(!visible)} aria-label={visible ? "Hide password" : "Show password"}>
           {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
@@ -763,11 +811,11 @@ function PasswordField({ label, value, onChange, visible, setVisible }: {
 
 function ImageInput({ label, value, onFile, capture }: { label: string; value: string; onFile: (file?: File) => void; capture?: boolean }) {
   return (
-    <div className="space-y-2 rounded-[22px] border bg-gray-50 p-3">
+    <div className="min-w-0 space-y-2 rounded-[22px] border bg-gray-50 p-3">
       <Label>{label}</Label>
       {value ? (
-        <div className="flex items-center gap-3">
-          <img src={value} alt="" className="h-24 w-24 rounded-2xl object-cover" />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <img src={value} alt="" className="h-24 w-full rounded-2xl object-cover sm:w-24" />
           <div className="text-sm text-green-700"><CheckCircle2 className="mb-1 h-5 w-5" /> Photo added</div>
         </div>
       ) : (
@@ -775,7 +823,7 @@ function ImageInput({ label, value, onFile, capture }: { label: string; value: s
           <Camera className="mr-2 h-4 w-4" /> No photo selected
         </div>
       )}
-      <label className="inline-flex h-12 cursor-pointer items-center rounded-2xl border bg-white px-4 text-sm font-medium hover:bg-gray-50">
+      <label className="inline-flex h-12 w-full cursor-pointer items-center justify-center rounded-2xl border bg-white px-4 text-sm font-medium hover:bg-gray-50 sm:w-auto">
         <Upload className="mr-2 h-4 w-4" /> Upload / Camera
         <input className="hidden" type="file" accept="image/*" capture={capture ? "user" : undefined} onChange={(event) => onFile(event.target.files?.[0])} />
       </label>
@@ -799,12 +847,6 @@ function ReviewLine({ label, value }: { label: string; value: string }) {
       <p className="mt-1 break-words font-semibold">{value}</p>
     </div>
   );
-}
-
-function errorMessage(error: unknown) {
-  return (error as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-    ?? (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-    ?? (error instanceof Error ? error.message : "Please try again.");
 }
 
 function envFlag(name: string, fallback: boolean) {

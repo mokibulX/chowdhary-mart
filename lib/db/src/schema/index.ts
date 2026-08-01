@@ -18,3 +18,4 @@ export * from "./zones";
 export * from "./operations";
 export * from "./otp";
 export * from "./push-tokens";
+export * from "./media-library";

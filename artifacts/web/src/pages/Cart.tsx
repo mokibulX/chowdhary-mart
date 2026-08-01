@@ -10,12 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { ShoppingCart, Trash2, Plus, Minus, ArrowRight, Tag, X } from "lucide-react";
 import { Link } from "wouter";
 import { useState } from "react";
-
-function getErrorMessage(err: unknown, fallback: string) {
-  return (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-    ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-    ?? fallback;
-}
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 export default function Cart() {
   const { user } = useAuth();
@@ -37,7 +32,7 @@ export default function Cart() {
       { data: { productId: item.productId, qty, selectedSize: item.selectedSize, selectedColor: item.selectedColor } as any },
       {
         onSuccess: () => qc.invalidateQueries({ queryKey: getGetCartQueryKey() }),
-        onError: (err: unknown) => toast({ title: getErrorMessage(err, "Could not update cart"), variant: "destructive" }),
+        onError: (err: unknown) => toast({ title: "Cart update failed", description: getFriendlyErrorMessage(err, "Could not update cart."), variant: "destructive" }),
       }
     );
   };
@@ -62,8 +57,7 @@ export default function Cart() {
           toast({ title: "Coupon applied!", description: `You save ₹${data.discount}` });
         },
         onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Invalid coupon";
-          toast({ title: "Coupon error", description: msg, variant: "destructive" });
+          toast({ title: "Coupon error", description: getFriendlyErrorMessage(err, "Invalid coupon."), variant: "destructive" });
         },
       }
     );

@@ -22,6 +22,7 @@ import paymentsRouter from "./payments";
 import razorpayWebhookRouter from "./razorpay-webhook";
 import mapsRouter from "./maps";
 import publicRouter from "./public";
+import uploadsRouter from "./uploads";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use("/payments", paymentsRouter);
 router.use("/webhooks", razorpayWebhookRouter);
 router.use("/maps", mapsRouter);
 router.use("/public", publicRouter);
+router.use("/uploads", uploadsRouter);
 
 export default router;

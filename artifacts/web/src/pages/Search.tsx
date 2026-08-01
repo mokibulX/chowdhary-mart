@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { useListCategories, getListCategoriesQueryKey } from "@workspace/api-client-react";
+import { customFetch, useListCategories, getListCategoriesQueryKey } from "@workspace/api-client-react";
 import { ProductCard } from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronDown, Mic, Search as SearchIcon, SlidersHorizontal, X } from "lucide-react";
-import { useInfiniteProducts } from "@/hooks/use-infinite-products";
-import { getSavedDeliveryLocation } from "@/lib/pincode";
+import { Camera, ChevronDown, ImagePlus, Mic, Search as SearchIcon, SlidersHorizontal, X } from "lucide-react";
+import { getSavedDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
+import { resolveRuntimeApiUrl } from "@/lib/mobile-runtime";
 
 const SUGGESTIONS = ["mobile", "grocery", "shoes", "headphones", "rice", "shirt", "home decor", "smart watch"];
 const TYPO_CORRECTIONS: Record<string, string> = {
@@ -37,6 +37,34 @@ const CATEGORY_IMAGES = [
   "https://images.unsplash.com/photo-1531415074968-036ba1b575da?auto=format&fit=crop&w=240&q=80",
 ];
 
+const IMAGE_KEYWORDS: Array<[RegExp, string]> = [
+  [/(tomato|tamatar|টমেটো|टमाटर)/i, "tomato"],
+  [/(potato|aloo|alu|আলু|आलू)/i, "potato"],
+  [/(onion|peyaj|piyaz|পেঁয়াজ|प्याज)/i, "onion"],
+  [/(milk|dudh|দুধ|दूध)/i, "milk"],
+  [/(rice|chal|চাল|चावल)/i, "rice"],
+  [/(shoe|chappal|sandal|চপ্পল|जूता)/i, "chappal"],
+  [/(shirt|tshirt|kurti|dress|fashion|কাপড়|कपड़ा)/i, "shirt"],
+  [/(phone|mobile|iphone|android|মোবাইল)/i, "mobile"],
+  [/(headphone|earphone|airpod|earbud)/i, "headphones"],
+  [/(watch|smartwatch)/i, "smart watch"],
+  [/(bag|backpack)/i, "bag"],
+];
+
+function inferImageSearchKeyword(file: File) {
+  const haystack = `${file.name} ${file.type}`.toLowerCase();
+  return IMAGE_KEYWORDS.find(([pattern]) => pattern.test(haystack))?.[1] || "";
+}
+
+function backendSearchTerm(value: string) {
+  const text = value.trim().toLowerCase();
+  if (/(grocery|grocer|kirana|daily|essential)/.test(text)) return "fresh";
+  if (/(vegetable|sabji|sobji|veg)/.test(text)) return "fresh";
+  if (/(fashion|cloth|kapor|kapda)/.test(text)) return "shirt";
+  if (/(electronics)/.test(text)) return "mobile";
+  return value;
+}
+
 export default function Search() {
   const [location, setLocation] = useLocation();
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
@@ -53,19 +81,34 @@ export default function Search() {
   const [brand, setBrand] = useState("all");
   const [inStock, setInStock] = useState(params.get("inStock") ?? "true");
   const [radiusKm, setRadiusKm] = useState(params.get("radiusKm") ?? "5");
+  const [categoryKeyword, setCategoryKeyword] = useState(params.get("category") ?? "");
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
+  const [imageSearchPreview, setImageSearchPreview] = useState("");
+  const [imageSearchStatus, setImageSearchStatus] = useState("");
+  const [productResult, setProductResult] = useState<{ items: any[]; total: number }>({ items: [], total: 0 });
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [deliveryLocation, setDeliveryLocation] = useState<DeliveryLocation>(() => getSavedDeliveryLocation());
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const { data: categories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
 
   useEffect(() => {
     const nextParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     const nextQ = nextParams.get("q") ?? "";
-    const nextCategory = nextParams.get("categoryId") ? Number(nextParams.get("categoryId")) : undefined;
+    const categoryNameParam = nextParams.get("category");
+    const matchedCategory = categoryNameParam && categories
+      ? categories.find((cat: any) => String(cat.slug ?? cat.name).toLowerCase() === categoryNameParam.toLowerCase())
+      : undefined;
+    const nextCategory = nextParams.get("categoryId") ? Number(nextParams.get("categoryId")) : matchedCategory?.id;
     const nextSort = nextParams.get("sort") ?? "newest";
-    setQ(nextQ);
-    setInputVal(nextQ);
-    setLastSubmittedQ(nextQ);
+    const categoryFallback = categoryNameParam && !nextQ ? categoryNameParam : "";
+    setQ(nextQ || categoryFallback);
+    setInputVal(nextQ || categoryFallback);
+    setLastSubmittedQ(nextQ || categoryFallback);
+    setCategoryKeyword(categoryFallback);
     setCategoryId(nextCategory);
     setSort(nextSort);
     setMinPrice(nextParams.get("minPrice") ?? "");
@@ -75,7 +118,7 @@ export default function Search() {
     setBrand(nextParams.get("brand") ?? "all");
     setInStock(nextParams.get("inStock") ?? "true");
     setRadiusKm(nextParams.get("radiusKm") ?? "5");
-  }, [location]);
+  }, [categories, location]);
 
   useEffect(() => {
     const stored = localStorage.getItem("ekart_recent_searches");
@@ -95,11 +138,9 @@ export default function Search() {
     return () => window.clearTimeout(timer);
   }, [inputVal]);
 
-  const { data: categories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
-
   const queryParams = {
-    q: q || undefined,
-    categoryId: categoryId || undefined,
+    q: (q || categoryKeyword) ? backendSearchTerm(q || categoryKeyword) : undefined,
+    categoryId: categoryKeyword ? undefined : categoryId || undefined,
     sort: sort as any,
     minPrice: minPrice ? Number(minPrice) : undefined,
     maxPrice: maxPrice ? Number(maxPrice) : undefined,
@@ -107,12 +148,73 @@ export default function Search() {
     discount: minDiscount !== "0" ? Number(minDiscount) : undefined,
     brand: brand !== "all" ? brand : undefined,
     inStock: inStock === "true" ? true : undefined,
-    radiusKm: radiusKm ? Number(radiusKm) : undefined,
-    lat: getSavedDeliveryLocation().lat,
-    lng: getSavedDeliveryLocation().lng,
+    radiusKm: radiusKm ? Number(radiusKm) : 5,
+    lat: deliveryLocation.lat,
+    lng: deliveryLocation.lng,
   };
 
-  const { products, total, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteProducts(queryParams);
+  const productSearchUrl = useMemo(() => {
+    const cleanEntries = Object.entries(queryParams)
+      .filter(([, value]) => value !== undefined && value !== "")
+      .map(([key, value]) => [key, String(value)]);
+    const search = new URLSearchParams(cleanEntries).toString();
+    return `/api/products${search ? `?${search}` : ""}`;
+  }, [
+    q,
+    categoryKeyword,
+    categoryId,
+    sort,
+    minPrice,
+    maxPrice,
+    minRating,
+    minDiscount,
+    brand,
+    inStock,
+    radiusKm,
+    deliveryLocation.lat,
+    deliveryLocation.lng,
+  ]);
+
+  useEffect(() => {
+    const syncLocation = () => setDeliveryLocation(getSavedDeliveryLocation());
+    window.addEventListener("delivery-location-change", syncLocation);
+    return () => window.removeEventListener("delivery-location-change", syncLocation);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setProductsLoading(true);
+    fetch(resolveRuntimeApiUrl(productSearchUrl), {
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Product search failed: ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        setProductResult({
+          items: Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [],
+          total: Number(data?.total ?? data?.items?.length ?? (Array.isArray(data) ? data.length : 0)),
+        });
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") {
+          setProductResult({ items: [], total: 0 });
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setProductsLoading(false);
+      });
+    return () => controller.abort();
+  }, [productSearchUrl]);
+
+  const products = productResult.items;
+  const total = productResult.total;
+  const isLoading = productsLoading;
+  const hasNextPage = false;
+  const fetchNextPage = async () => undefined;
+  const isFetchingNextPage = false;
 
   const brands = useMemo(() => {
     const names = products.map((product: any) => product.brand?.name || product.brandName).filter(Boolean);
@@ -187,6 +289,38 @@ export default function Search() {
     recognition.start();
   };
 
+  const handleImageSearchFile = (file?: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setImageSearchStatus("Please select a product photo.");
+      return;
+    }
+    if (imageSearchPreview) URL.revokeObjectURL(imageSearchPreview);
+    const preview = URL.createObjectURL(file);
+    setImageSearchPreview(preview);
+    const keyword = inferImageSearchKeyword(file);
+    if (keyword) {
+      setImageSearchStatus(`Photo matched: ${keyword}`);
+      setInputVal(keyword);
+      setQ(keyword);
+      setLastSubmittedQ(keyword);
+      setLocation(buildSearchUrl({ q: keyword, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
+      return;
+    }
+    const fallback = inputVal.trim() || "fresh";
+    setImageSearchStatus(`Photo added. Showing local matches for ${fallback}.`);
+    setInputVal(fallback);
+    setQ(fallback);
+    setLastSubmittedQ(fallback);
+    setLocation(buildSearchUrl({ q: fallback, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
+  };
+
+  useEffect(() => {
+    return () => {
+      if (imageSearchPreview) URL.revokeObjectURL(imageSearchPreview);
+    };
+  }, [imageSearchPreview]);
+
   const resetFilters = () => {
     setCategoryId(undefined);
     setSort("newest");
@@ -203,6 +337,8 @@ export default function Search() {
   return (
     <div className="w-full max-w-full space-y-4 overflow-x-hidden">
       <form onSubmit={handleSearch} className="rounded-lg border bg-white p-3 shadow-sm">
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => handleImageSearchFile(event.target.files?.[0])} />
+        <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => handleImageSearchFile(event.target.files?.[0])} />
         <div className="flex gap-2">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -217,6 +353,21 @@ export default function Search() {
             </button>
           </div>
           <Button className="h-11" type="submit" data-testid="btn-search">Search</Button>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
+          <Button type="button" variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={() => cameraInputRef.current?.click()}>
+            <Camera className="mr-2 h-4 w-4" /> Camera search
+          </Button>
+          <Button type="button" variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={() => galleryInputRef.current?.click()}>
+            <ImagePlus className="mr-2 h-4 w-4" /> Upload photo
+          </Button>
+          {imageSearchPreview && (
+            <div className="col-span-2 flex min-w-0 items-center gap-2 rounded-xl bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-800 sm:col-span-1">
+              <img src={imageSearchPreview} alt="Search preview" className="h-8 w-8 rounded-lg object-cover" />
+              <span className="truncate">{imageSearchStatus}</span>
+              <button type="button" onClick={() => { URL.revokeObjectURL(imageSearchPreview); setImageSearchPreview(""); setImageSearchStatus(""); }}><X className="h-4 w-4" /></button>
+            </div>
+          )}
         </div>
         <div className="mt-3 flex max-w-full gap-2 overflow-x-auto pb-1">
           {(liveSuggestions.length ? liveSuggestions : SUGGESTIONS).map((item) => (
@@ -255,7 +406,7 @@ export default function Search() {
         <div className="flex max-w-full gap-3 overflow-x-auto pb-1">
           <button
             type="button"
-            onClick={() => { setCategoryId(undefined); setLocation(buildSearchUrl({ q, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }}
+            onClick={() => { setCategoryId(undefined); setCategoryKeyword(""); setLocation(buildSearchUrl({ q, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }}
             className="min-w-[68px] text-center"
           >
             <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 bg-gray-950 text-xs font-bold text-white shadow-sm ${!categoryId ? "ring-2 ring-primary/40" : ""}`}>
@@ -264,7 +415,7 @@ export default function Search() {
             <p className="mt-1 line-clamp-1 text-[10px] font-semibold">All</p>
           </button>
           {categories?.map((cat, index) => (
-            <button key={cat.id} type="button" onClick={() => { setCategoryId(cat.id); setLocation(buildSearchUrl({ q, categoryId: cat.id, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }} className="min-w-[68px] text-center">
+            <button key={cat.id} type="button" onClick={() => { setCategoryId(cat.id); setCategoryKeyword(cat.name); setInputVal(cat.name); setQ(cat.name); setLocation(buildSearchUrl({ q: cat.name, category: cat.name, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }} className="min-w-[68px] text-center">
               <div className={`mx-auto h-14 w-14 overflow-hidden rounded-full border-2 border-white bg-gray-50 shadow-sm ring-1 ring-gray-200 ${categoryId === cat.id ? "ring-2 ring-primary" : ""}`}>
                 <img src={cat.imageUrl || CATEGORY_IMAGES[index % CATEGORY_IMAGES.length]} alt={cat.name} className="h-full w-full object-cover" />
               </div>
@@ -276,7 +427,7 @@ export default function Search() {
 
       <section className="rounded-lg border bg-white p-3 shadow-sm">
         <div className="flex min-w-0 items-center gap-2">
-          <Select value={categoryId ? String(categoryId) : "all"} onValueChange={(value) => { const nextCategory = value === "all" ? undefined : Number(value); setCategoryId(nextCategory); setLocation(buildSearchUrl({ q, categoryId: nextCategory, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }}>
+          <Select value={categoryId ? String(categoryId) : "all"} onValueChange={(value) => { const nextCategory = value === "all" ? undefined : Number(value); const nextName = categories?.find((cat: any) => cat.id === nextCategory)?.name ?? ""; setCategoryId(nextCategory); setCategoryKeyword(nextName); if (nextName) { setInputVal(nextName); setQ(nextName); } setLocation(buildSearchUrl({ q: nextName || q, category: nextName || undefined, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }}>
             <SelectTrigger className="h-9 min-w-0 flex-1"><SelectValue placeholder="Category" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
@@ -392,7 +543,7 @@ export default function Search() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-            {filteredProducts.map((product) => <ProductCard key={product.id} product={product} />)}
+            {filteredProducts.map((product: any) => <ProductCard key={product.id} product={product} />)}
           </div>
           <div ref={loadMoreRef} className="flex min-h-16 items-center justify-center py-4">
             {isFetchingNextPage ? (
@@ -414,6 +565,7 @@ export default function Search() {
 function buildSearchUrl(filters: Record<string, any>) {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", String(filters.q));
+  if (filters.category) params.set("category", String(filters.category));
   if (filters.categoryId) params.set("categoryId", String(filters.categoryId));
   if (filters.sort && filters.sort !== "newest") params.set("sort", String(filters.sort));
   if (filters.minPrice) params.set("minPrice", String(filters.minPrice));

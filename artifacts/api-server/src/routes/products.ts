@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, ilike, and, desc, asc, sql } from "drizzle-orm";
+import { eq, ilike, and, desc, asc, sql, or } from "drizzle-orm";
 import { db, productsTable, categoriesTable, storesTable, reviewsTable } from "@workspace/db";
 
 const router = Router();
@@ -26,6 +26,43 @@ function asTags(value: unknown) {
   return Array.isArray(value) ? value.map((item) => String(item).toLowerCase()) : [];
 }
 
+function expandedSearchTerms(q: string) {
+  const value = q.trim().toLowerCase();
+  if (!value) return [];
+  const terms = new Set([value]);
+  if (/(grocery|grocer|kirana|daily|essential)/.test(value)) {
+    ["grocery", "vegetable", "fresh", "milk", "rice", "potato", "tomato", "onion"].forEach((term) => terms.add(term));
+  }
+  if (/(vegetable|sabji|sobji|veg)/.test(value)) {
+    ["vegetable", "fresh", "potato", "tomato", "onion"].forEach((term) => terms.add(term));
+  }
+  if (/(mobile|phone|electronics)/.test(value)) {
+    ["mobile", "phone", "electronics", "charger", "headphone"].forEach((term) => terms.add(term));
+  }
+  if (/(fashion|cloth|kapor|dress)/.test(value)) {
+    ["fashion", "shirt", "dress", "kurti", "clothing"].forEach((term) => terms.add(term));
+  }
+  return [...terms];
+}
+
+function validLocation(lat: number, lng: number) {
+  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+}
+
+function storeDistanceCondition(lat: number, lng: number, radiusKm: number) {
+  return sql`
+    (
+      2 * 6371 * asin(
+        sqrt(
+          power(sin((radians(${storesTable.lat}) - radians(${lat})) / 2), 2) +
+          cos(radians(${lat})) * cos(radians(${storesTable.lat})) *
+          power(sin((radians(${storesTable.lng}) - radians(${lng})) / 2), 2)
+        )
+      )
+    ) <= coalesce(${storesTable.radiusKm}, ${radiusKm})
+  `;
+}
+
 // GET /api/products
 router.get("/", async (req, res) => {
   try {
@@ -37,12 +74,32 @@ router.get("/", async (req, res) => {
 
     const limit = Math.min(Number(limitQ) || 40, 100);
     const offset = Number(offsetQ) || 0;
+    const terms = q ? expandedSearchTerms(q) : [];
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const radiusKm = Math.max(0.5, Math.min(25, Number(req.query.radiusKm ?? req.query.distance ?? 5) || 5));
+    const hasLocation = validLocation(lat, lng);
 
-    const conditions = [eq(productsTable.isAvailable, true)];
+    const conditions = [
+      eq(productsTable.isAvailable, true),
+      sql`${productsTable.stock} > 0`,
+      eq(storesTable.isActive, true),
+      eq(storesTable.isOpen, true),
+    ];
     if (categoryId) conditions.push(eq(productsTable.categoryId, Number(categoryId)));
     if (storeId) conditions.push(eq(productsTable.storeId, Number(storeId)));
     if (featured === "true") conditions.push(eq(productsTable.isFeatured, true));
-    if (q) conditions.push(ilike(productsTable.name, `%${q}%`));
+    if (hasLocation) conditions.push(storeDistanceCondition(lat, lng, radiusKm));
+    if (terms.length) {
+      conditions.push(or(...terms.flatMap((term) => [
+        ilike(productsTable.name, `%${term}%`),
+        ilike(productsTable.description, `%${term}%`),
+        ilike(productsTable.sku, `%${term}%`),
+        sql`${productsTable.tags}::text ilike ${`%${term}%`}`,
+        ilike(categoriesTable.name, `%${term}%`),
+        ilike(storesTable.name, `%${term}%`),
+      ]))!);
+    }
 
     let orderBy;
     switch (sort) {
@@ -53,17 +110,23 @@ router.get("/", async (req, res) => {
     }
 
     const [items, countResult] = await Promise.all([
-      db.select().from(productsTable)
+      db.select({ product: productsTable, store: storesTable, category: categoriesTable }).from(productsTable)
+        .innerJoin(storesTable, eq(productsTable.storeId, storesTable.id))
+        .leftJoin(categoriesTable, eq(productsTable.categoryId, categoriesTable.id))
         .where(and(...conditions))
         .orderBy(orderBy)
         .limit(limit)
         .offset(offset),
-      db.select({ count: sql<number>`count(*)` }).from(productsTable).where(and(...conditions))
+      db.select({ count: sql<number>`count(distinct ${productsTable.id})` })
+        .from(productsTable)
+        .innerJoin(storesTable, eq(productsTable.storeId, storesTable.id))
+        .leftJoin(categoriesTable, eq(productsTable.categoryId, categoriesTable.id))
+        .where(and(...conditions))
     ]);
 
     const total = Number(countResult[0]?.count ?? 0);
 
-    res.json({ items, total, hasMore: offset + limit < total });
+    res.json({ items: items.map(({ product, store, category }) => ({ ...product, store, category })), total, hasMore: offset + limit < total });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

@@ -20,6 +20,8 @@ import { Camera, LocateFixed, MapPin, Navigation, Plus, Pencil, Trash2 } from "l
 import { Link } from "wouter";
 import { getSavedDeliveryLocation, lookupPincode } from "@/lib/pincode";
 import { fileToDataUrl, getBrowserLocation } from "@/lib/live-location";
+import { getFirstFormError, getFriendlyErrorMessage } from "@/lib/error-message";
+import { IndiaStateSelect } from "@/components/IndiaLocationSelects";
 
 const schema = z.object({
   label: z.string().optional().or(z.literal("")),
@@ -60,6 +62,7 @@ export default function Addresses() {
     defaultValues: { label: "home", state: "West Bengal", isDefault: false },
   });
   const pincodeValue = watch("pincode");
+  const stateValue = watch("state");
   const latValue = watch("lat");
   const lngValue = watch("lng");
 
@@ -92,7 +95,7 @@ export default function Addresses() {
       });
       return location;
     } catch (error) {
-      toast({ title: "Location needed", description: (error as Error).message, variant: "destructive" });
+      toast({ title: "Location needed", description: getFriendlyErrorMessage(error, "Please allow GPS location and try again."), variant: "destructive" });
       throw error;
     } finally {
       setLocationLoading(false);
@@ -108,7 +111,7 @@ export default function Addresses() {
       setPhotoPreview(dataUrl);
       toast({ title: "Address photo added" });
     } catch (error) {
-      toast({ title: "Photo could not be added", description: (error as Error).message, variant: "destructive" });
+      toast({ title: "Photo could not be added", description: getFriendlyErrorMessage(error, "Please choose another image."), variant: "destructive" });
     }
   };
 
@@ -158,12 +161,20 @@ export default function Addresses() {
       setDialogOpen(false);
       toast({ title: editId ? "Address updated" : "Address added" });
     };
-    const onError = () => toast({ title: "Failed to save address", variant: "destructive" });
+    const onError = (error: unknown) => toast({ title: "Failed to save address", description: getFriendlyErrorMessage(error, "Please check address details and try again."), variant: "destructive" });
     if (editId) {
       update.mutate({ addressId: editId, data: payload as any }, { onSuccess, onError });
     } else {
       create.mutate({ data: payload as any }, { onSuccess, onError });
     }
+  };
+
+  const onInvalid = (formErrors: unknown) => {
+    toast({
+      title: "Complete address details",
+      description: getFirstFormError(formErrors, "Name, mobile, address, city, state and 6 digit pincode are required."),
+      variant: "destructive",
+    });
   };
 
   const handleDelete = (id: number) => {
@@ -241,7 +252,7 @@ export default function Addresses() {
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Address" : "Add New Address"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+          <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-3" noValidate>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Label</Label>
@@ -290,8 +301,8 @@ export default function Addresses() {
               </div>
             </div>
             <div className="space-y-1">
-              <Label>State *</Label>
-              <Input {...register("state")} data-testid="input-addr-state" />
+              <IndiaStateSelect label="State *" value={stateValue || ""} onChange={(value) => setValue("state", value, { shouldValidate: true, shouldDirty: true })} />
+              <input type="hidden" {...register("state")} data-testid="input-addr-state" />
             </div>
             <input type="hidden" {...register("lat")} />
             <input type="hidden" {...register("lng")} />

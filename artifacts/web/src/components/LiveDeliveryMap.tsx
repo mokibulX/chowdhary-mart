@@ -1,15 +1,18 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Bike, Clock, Crosshair, Home, MapPin, MessageCircle, Navigation, Package, Phone, Route, ShieldCheck, Store, UserRound } from "lucide-react";
+import { Bike, Clock, Crosshair, Expand, Home, MapPin, MessageCircle, Navigation, Package, Phone, Route, ShieldCheck, Store, UserRound, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
+import { getRuntimeWebsocketUrl } from "@/lib/mobile-runtime";
+import { customFetch } from "@workspace/api-client-react";
 
 declare global {
   interface Window {
     google?: any;
     __cmGoogleMapsPromise?: Promise<any>;
     gm_authFailure?: () => void;
+    __cmGoogleMapsRuntimeConfig?: { key: string; mapStyleId?: string | null };
   }
 }
 
@@ -58,34 +61,31 @@ function getEnv(name: string) {
   return env[`VITE_${name}`] || env[name] || "";
 }
 
-function isNativeApp() {
-  return Boolean((window as any).Capacitor?.isNativePlatform?.());
-}
-
-function isLocalhostUrl(value?: string | null) {
-  return Boolean(value && /^(https?:\/\/|wss?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?/i.test(value.trim()));
-}
-
-function toWebsocketUrl(value: string) {
-  return value.replace(/^https:\/\//i, "wss://").replace(/^http:\/\//i, "ws://");
+async function getMapsRuntimeConfig() {
+  if (window.__cmGoogleMapsRuntimeConfig?.key) return window.__cmGoogleMapsRuntimeConfig;
+  try {
+    const config = await customFetch<{ browserKey?: string | null; key?: string; mapStyleId?: string | null }>("/api/maps/config", { responseType: "json" });
+    const key = config?.browserKey || config?.key;
+    if (key) {
+      window.__cmGoogleMapsRuntimeConfig = { key, mapStyleId: config.mapStyleId };
+      return window.__cmGoogleMapsRuntimeConfig;
+    }
+  } catch {
+    // Static APK/browser builds still work with Vite-injected map keys.
+  }
+  const key = getEnv("MAPS_API_KEY") || getEnv("GOOGLE_MAPS_API_KEY");
+  const mapStyleId = getEnv("MAP_STYLE_ID") || null;
+  return key ? { key, mapStyleId } : null;
 }
 
 function getRealtimeUrl() {
-  const configuredWs = getEnv("WEBSOCKET_URL");
-  const mobileWs = getEnv("MOBILE_WEBSOCKET_URL");
-  const mobileApi = getEnv("MOBILE_API_URL");
-  const api = getEnv("API_URL");
-  if (isNativeApp() && isLocalhostUrl(configuredWs)) {
-    if (mobileWs) return mobileWs;
-    if (mobileApi) return toWebsocketUrl(mobileApi);
-    return "ws://10.0.2.2:5000";
-  }
-  return configuredWs || (mobileApi && isNativeApp() ? toWebsocketUrl(mobileApi) : api) || window.location.origin;
+  return getRuntimeWebsocketUrl();
 }
 
-function loadGoogleMaps() {
-  const apiKey = getEnv("MAPS_API_KEY") || getEnv("GOOGLE_MAPS_API_KEY");
-  const mapStyleId = getEnv("MAP_STYLE_ID");
+async function loadGoogleMaps() {
+  const runtime = await getMapsRuntimeConfig();
+  const apiKey = runtime?.key;
+  const mapStyleId = runtime?.mapStyleId || getEnv("MAP_STYLE_ID");
   if (!apiKey) return Promise.reject(new Error("Google Maps API key missing"));
   if (window.google?.maps) return Promise.resolve(window.google);
   if (window.__cmGoogleMapsPromise) return window.__cmGoogleMapsPromise;
@@ -111,6 +111,8 @@ function loadGoogleMaps() {
     script.dataset.cmGoogleMaps = "true";
     window.gm_authFailure = () => {
       window.dispatchEvent(new CustomEvent("cm-google-maps-auth-failure"));
+      window.__cmGoogleMapsPromise = undefined;
+      script.remove();
       reject(new Error("Google Maps key is not allowed for this app. Check API, billing and referrer settings."));
     };
     script.onload = () => {
@@ -119,7 +121,11 @@ function loadGoogleMaps() {
         else reject(new Error("Google Maps could not initialize"));
       }, 50);
     };
-    script.onerror = () => reject(new Error("Google Maps failed to load"));
+    script.onerror = () => {
+      window.__cmGoogleMapsPromise = undefined;
+      script.remove();
+      reject(new Error("Google Maps failed to load"));
+    };
     document.head.appendChild(script);
   });
   return window.__cmGoogleMapsPromise;
@@ -216,6 +222,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<any>(null);
   const directionRenderer = useRef<any>(null);
+  const routePolyline = useRef<any>(null);
   const trafficLayer = useRef<any>(null);
   const riderOverlay = useRef<any>(null);
   const staticMarkers = useRef<any[]>([]);
@@ -226,6 +233,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
   const [trafficOn, setTrafficOn] = useState(false);
   const [liveGps, setLiveGps] = useState<any>(null);
   const [fallbackMap, setFallbackMap] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const status = String(tracking?.status ?? "pending");
   const isDelivered = status === "delivered";
@@ -306,10 +314,10 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
           mapTypeId: mapType,
           mapId: getEnv("MAP_STYLE_ID") || undefined,
           disableDefaultUI: true,
-          clickableIcons: false,
+          clickableIcons: true,
           gestureHandling: "greedy",
           backgroundColor: "#f8fafc",
-          styles: getEnv("MAP_STYLE_ID") ? undefined : CLEAN_MAP_STYLE,
+          styles: getEnv("MAP_STYLE_ID") ? undefined : PLACE_LABEL_MAP_STYLE,
         });
         directionRenderer.current = new google.maps.DirectionsRenderer({
           map: mapInstance.current,
@@ -335,6 +343,8 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
     return () => {
       cancelled = true;
       window.removeEventListener("cm-google-maps-auth-failure", handleAuthFailure);
+      routePolyline.current?.setMap(null);
+      routePolyline.current = null;
     };
   }, [compact, googleKeyMissing]);
 
@@ -342,6 +352,18 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
     if (!ready || !mapInstance.current || !window.google?.maps) return;
     mapInstance.current.setMapTypeId(mapType);
   }, [mapType, ready]);
+
+  useEffect(() => {
+    if (!ready || !mapInstance.current || !window.google?.maps) return;
+    window.setTimeout(() => {
+      window.google.maps.event.trigger(mapInstance.current, "resize");
+      if (boundsPoints.length) {
+        const bounds = new window.google.maps.LatLngBounds();
+        boundsPoints.forEach((point) => bounds.extend(point));
+        mapInstance.current.fitBounds(bounds, compact ? 48 : 84);
+      }
+    }, 80);
+  }, [fullscreen, ready, boundsPoints.length, compact]);
 
   useEffect(() => {
     if (!ready || !trafficLayer.current || !mapInstance.current) return;
@@ -396,11 +418,30 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
 
   useEffect(() => {
     if (!ready || !window.google?.maps || !directionRenderer.current) return;
+    const google = window.google;
+    const clearFallbackRoute = () => {
+      routePolyline.current?.setMap(null);
+      routePolyline.current = null;
+    };
+    const drawFallbackRoute = (path: LatLng[]) => {
+      clearFallbackRoute();
+      if (!path.length || !mapInstance.current) return;
+      routePolyline.current = new google.maps.Polyline({
+        path,
+        map: mapInstance.current,
+        strokeColor: "#0757ee",
+        strokeOpacity: 0.95,
+        strokeWeight: compact ? 5 : 7,
+      });
+      const bounds = new google.maps.LatLngBounds();
+      path.forEach((point) => bounds.extend(point));
+      mapInstance.current.fitBounds(bounds, compact ? 48 : 84);
+    };
     if (routeUnavailable || isDelivered) {
       directionRenderer.current.setDirections({ routes: [] });
+      clearFallbackRoute();
       return;
     }
-    const google = window.google;
     const service = new google.maps.DirectionsService();
     service.route({
       origin,
@@ -410,17 +451,32 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
       provideRouteAlternatives: false,
     }, (result: any, routeStatus: string) => {
       if (routeStatus === "OK" && result) {
+        clearFallbackRoute();
         directionRenderer.current.setDirections(result);
         setError("");
       } else {
         directionRenderer.current.setDirections({ routes: [] });
-        setError(`Google Directions unavailable: ${routeStatus}. No fake route is shown.`);
+        customFetch<any>(`/api/maps/directions?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}`, { responseType: "json" })
+          .then((data) => {
+            const fallbackPath = data?.routes?.[0]?.path;
+            if (Array.isArray(fallbackPath) && fallbackPath.length) {
+              drawFallbackRoute(fallbackPath.map((point: LatLng) => ({ lat: Number(point.lat), lng: Number(point.lng) })).filter((point: LatLng) => Number.isFinite(point.lat) && Number.isFinite(point.lng)));
+              setError("");
+              return;
+            }
+            clearFallbackRoute();
+            setError(`Google Directions unavailable: ${routeStatus}. No road route was returned.`);
+          })
+          .catch(() => {
+            clearFallbackRoute();
+            setError(`Google Directions unavailable: ${routeStatus}. No fake route is shown.`);
+          });
       }
     });
   }, [ready, origin?.lat, origin?.lng, destination?.lat, destination?.lng, status, routeUnavailable, isDelivered]);
 
   return (
-    <div className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${className}`}>
+    <div className={`${fullscreen ? "fixed inset-0 z-[120] rounded-none border-0 bg-white shadow-none" : "overflow-hidden rounded-2xl border bg-white shadow-sm"} ${className}`}>
       <style>{`
         .cm-rider-marker { position:absolute; z-index:5; height:78px; width:68px; border:0; background:transparent; padding:0; cursor:pointer; }
         .cm-rider-photo { position:absolute; left:50%; top:0; display:block; height:48px; width:48px; transform:translateX(-50%); overflow:hidden; border:4px solid #22c55e; border-radius:999px; background:#fff; box-shadow:0 12px 24px rgba(15,23,42,.28); }
@@ -429,7 +485,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
         .cm-rider-bike svg { height:23px; width:23px; }
       `}</style>
 
-      <div className={`relative bg-slate-100 ${compact ? "h-[330px]" : "h-[76dvh] min-h-[560px] sm:h-[700px]"}`}>
+      <div className={`relative bg-slate-100 ${fullscreen ? "h-[100dvh] min-h-[100dvh]" : compact ? "h-[330px]" : "h-[76dvh] min-h-[560px] sm:h-[700px]"}`}>
         <div ref={mapRef} className="h-full w-full" />
         {shouldShowFallbackMap && (
           <FallbackRouteMap
@@ -450,7 +506,13 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
           </div>
         )}
 
-        <div className="absolute bottom-3 left-3 right-3 z-10 rounded-3xl bg-white/95 p-4 shadow-2xl backdrop-blur">
+        <div className="absolute right-3 top-3 z-30 flex flex-col gap-2">
+          <Button size="icon" className="rounded-full bg-white text-slate-900 shadow-xl hover:bg-white" onClick={() => setFullscreen((value) => !value)} aria-label={fullscreen ? "Exit fullscreen map" : "Open fullscreen map"}>
+            {fullscreen ? <X className="h-5 w-5" /> : <Expand className="h-5 w-5" />}
+          </Button>
+        </div>
+
+        <div className={`absolute left-3 right-3 z-10 rounded-3xl bg-white/95 p-4 shadow-2xl backdrop-blur ${fullscreen ? "bottom-3 max-h-[38dvh] overflow-y-auto" : "bottom-3"}`}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <Badge className="mb-2 bg-blue-100 text-blue-700 hover:bg-blue-100">
@@ -666,11 +728,16 @@ function customerMarkerSvg() {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><filter id="s" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#0f172a" flood-opacity=".28"/></filter><g filter="url(#s)"><path fill="#ef4444" d="M24 3c8.3 0 15 6.4 15 14.4 0 11.2-15 27.6-15 27.6S9 28.6 9 17.4C9 9.4 15.7 3 24 3Z"/><circle cx="24" cy="18" r="10" fill="#fff"/><path fill="#ef4444" d="m16 20 8-7 8 7h-2v8h-5v-5h-2v5h-5v-8z"/></g></svg>`;
 }
 
-const CLEAN_MAP_STYLE = [
-  { featureType: "poi.business", stylers: [{ visibility: "off" }] },
-  { featureType: "poi.medical", stylers: [{ visibility: "off" }] },
-  { featureType: "poi.school", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
+const PLACE_LABEL_MAP_STYLE = [
+  { featureType: "poi", elementType: "labels", stylers: [{ visibility: "on" }] },
+  { featureType: "poi.business", elementType: "labels", stylers: [{ visibility: "on" }] },
+  { featureType: "poi.attraction", elementType: "labels", stylers: [{ visibility: "on" }] },
+  { featureType: "poi.government", elementType: "labels", stylers: [{ visibility: "on" }] },
+  { featureType: "poi.medical", elementType: "labels", stylers: [{ visibility: "on" }] },
+  { featureType: "poi.place_of_worship", elementType: "labels", stylers: [{ visibility: "on" }] },
+  { featureType: "poi.school", elementType: "labels", stylers: [{ visibility: "on" }] },
+  { featureType: "poi.sports_complex", elementType: "labels", stylers: [{ visibility: "on" }] },
+  { featureType: "transit", elementType: "labels", stylers: [{ visibility: "on" }] },
   { featureType: "road", elementType: "geometry", stylers: [{ saturation: -20 }, { lightness: 20 }] },
   { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
   { featureType: "water", stylers: [{ color: "#dbeafe" }] },

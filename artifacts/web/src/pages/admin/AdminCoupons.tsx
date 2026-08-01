@@ -14,6 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Tag, Clock, Pencil, Trash2, Power } from "lucide-react";
+import { getFirstFormError, getFriendlyErrorMessage } from "@/lib/error-message";
+import { DateTextInput } from "@/components/DateTextInput";
 
 const optionalNumber = (min = 0) =>
   z.preprocess(
@@ -73,16 +75,24 @@ export default function AdminCoupons() {
   };
 
   const toggleCoupon = async (coupon: any) => {
-    await customFetch(`/api/admin/coupons/${coupon.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !coupon.isActive }) });
-    refresh();
-    toast({ title: !coupon.isActive ? "Coupon activated" : "Coupon deactivated" });
+    try {
+      await customFetch(`/api/admin/coupons/${coupon.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !coupon.isActive }) });
+      refresh();
+      toast({ title: !coupon.isActive ? "Coupon activated" : "Coupon deactivated" });
+    } catch (error) {
+      toast({ title: "Coupon update failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
   };
 
   const deleteCoupon = async (coupon: any) => {
     if (!confirm(`Delete coupon ${coupon.code}?`)) return;
-    await customFetch(`/api/admin/coupons/${coupon.id}`, { method: "DELETE" });
-    refresh();
-    toast({ title: "Coupon deleted" });
+    try {
+      await customFetch(`/api/admin/coupons/${coupon.id}`, { method: "DELETE" });
+      refresh();
+      toast({ title: "Coupon deleted" });
+    } catch (error) {
+      toast({ title: "Coupon delete failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
   };
 
   const onSubmit = async (data: FormData) => {
@@ -106,10 +116,7 @@ export default function AdminCoupons() {
         setEditing(null);
         toast({ title: "Coupon updated" });
       } catch (err: unknown) {
-        const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-          ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-          ?? "Failed to update coupon";
-        toast({ title: "Error", description: msg, variant: "destructive" });
+        toast({ title: "Coupon update failed", description: getFriendlyErrorMessage(err, "Please check coupon details and try again."), variant: "destructive" });
       }
       return;
     }
@@ -126,13 +133,18 @@ export default function AdminCoupons() {
           toast({ title: "Coupon created" });
         },
         onError: (err: unknown) => {
-          const msg = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-            ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-            ?? "Failed to create coupon";
-          toast({ title: "Error", description: msg, variant: "destructive" });
+          toast({ title: "Coupon create failed", description: getFriendlyErrorMessage(err, "Please check coupon details and try again."), variant: "destructive" });
         },
       }
     );
+  };
+
+  const onInvalid = (formErrors: unknown) => {
+    toast({
+      title: "Complete coupon details",
+      description: getFirstFormError(formErrors, "Coupon code, description and discount value are required."),
+      variant: "destructive",
+    });
   };
 
   return (
@@ -204,7 +216,7 @@ export default function AdminCoupons() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>{editing ? "Edit Coupon" : "Create Coupon"}</DialogTitle></DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+          <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-3" noValidate>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Code *</Label>
@@ -254,7 +266,12 @@ export default function AdminCoupons() {
             </div>
             <div className="space-y-1">
               <Label>Expires At</Label>
-              <Input type="date" {...register("expiresAt")} data-testid="input-expires" />
+              <input type="hidden" {...register("expiresAt")} />
+              <DateTextInput
+                value={watch("expiresAt") ?? ""}
+                onChange={(value) => setValue("expiresAt", value, { shouldDirty: true, shouldValidate: true })}
+                data-testid="input-expires"
+              />
             </div>
             <label className="flex items-start gap-2 rounded-xl border bg-amber-50 p-3 text-sm">
               <input type="checkbox" className="mt-1 accent-primary" {...register("isSpecial")} />

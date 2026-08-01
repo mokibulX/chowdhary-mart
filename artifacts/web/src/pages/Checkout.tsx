@@ -22,18 +22,13 @@ import { getSavedDeliveryLocation } from "@/lib/pincode";
 import { fileToDataUrl, getBrowserLocation } from "@/lib/live-location";
 import { testMode } from "@/lib/test-mode";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 const PAYMENT_METHODS = [
   { value: "cod", label: "Cash on Delivery", icon: Truck, desc: "Pay when delivered" },
   { value: "upi", label: "Online Payment", icon: CreditCard, desc: "UPI, cards, netbanking and wallets via Razorpay" },
 ] as const;
 const DEFAULT_DELIVERY_PHOTO = "https://images.unsplash.com/photo-1560518883-ce09059eeffa?auto=format&fit=crop&w=900&q=80";
-
-function getErrorMessage(err: unknown, fallback: string) {
-  return (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
-    ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-    ?? fallback;
-}
 
 export default function Checkout() {
   const { user } = useAuth();
@@ -92,7 +87,7 @@ export default function Checkout() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setCouponError(getErrorMessage(err, "Coupon could not be applied"));
+        setCouponError(getFriendlyErrorMessage(err, "Coupon could not be applied"));
       });
     return () => { cancelled = true; };
   }, [couponCode, subtotal, user]);
@@ -117,7 +112,7 @@ export default function Checkout() {
       setDeliveryPhoto(dataUrl);
       toast({ title: "Delivery place photo added" });
     } catch (error) {
-      toast({ title: "Photo could not be added", description: (error as Error).message, variant: "destructive" });
+      toast({ title: "Photo could not be added", description: getFriendlyErrorMessage(error, "Please choose another image."), variant: "destructive" });
     }
   };
 
@@ -148,7 +143,7 @@ export default function Checkout() {
       setLocationSaving(false);
       toast({
         title: "Live GPS required",
-        description: error instanceof Error ? error.message : "Please allow location permission and try again. Fake/static location cannot be used.",
+        description: getFriendlyErrorMessage(error, "Please allow location permission and try again. Fake/static location cannot be used."),
         variant: "destructive",
       });
       return;
@@ -177,9 +172,9 @@ export default function Checkout() {
         });
         orderAddressId = generatedAddress.id;
         qc.invalidateQueries({ queryKey: getListAddressesQueryKey() });
-      } catch {
+      } catch (error) {
         setLocationSaving(false);
-        toast({ title: "Delivery address could not be prepared", variant: "destructive" });
+        toast({ title: "Delivery address could not be prepared", description: getFriendlyErrorMessage(error, "Please check your address and try again."), variant: "destructive" });
         return;
       }
     } else if (activeAddress) {
@@ -204,9 +199,9 @@ export default function Checkout() {
           } as any,
         });
         qc.invalidateQueries({ queryKey: getListAddressesQueryKey() });
-      } catch {
+      } catch (error) {
         setLocationSaving(false);
-        toast({ title: "Could not update live delivery location", variant: "destructive" });
+        toast({ title: "Could not update live delivery location", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
         return;
       }
     }
@@ -236,8 +231,7 @@ export default function Checkout() {
         })
         .catch((err: unknown) => {
           setLocationSaving(false);
-          const msg = getErrorMessage(err, "Order failed");
-          toast({ title: "Order failed", description: msg, variant: "destructive" });
+          toast({ title: "Order failed", description: getFriendlyErrorMessage(err, "Order failed. Please try again."), variant: "destructive" });
         });
   };
 
@@ -267,6 +261,9 @@ export default function Checkout() {
           mode="inline"
           store={storePoint}
           initial={confirmedPickup}
+          title="Select exact delivery point"
+          subtitle="Live map starts at zoom 20. Move the map or tap your gate/handover point."
+          confirmLabel="Confirm This Delivery Point"
           onClose={() => undefined}
           onConfirm={(location) => {
             setConfirmedPickup(location);
@@ -397,7 +394,7 @@ export default function Checkout() {
                       },
                     });
                   } catch (error) {
-                    toast({ title: "Payment failed", description: getErrorMessage(error, "Razorpay payment could not be completed."), variant: "destructive" });
+                    toast({ title: "Payment failed", description: getFriendlyErrorMessage(error, "Razorpay payment could not be completed."), variant: "destructive" });
                   } finally {
                     setPaymentBusy(false);
                   }

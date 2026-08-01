@@ -32,6 +32,7 @@ import {
   User,
   WalletCards,
 } from "lucide-react";
+import { getFirstFormError, getFriendlyErrorMessage } from "@/lib/error-message";
 
 const schema = z.object({
   name: z.string().min(2, "Name is required"),
@@ -114,9 +115,17 @@ export default function Profile() {
           setManageOpen(false);
           toast({ title: "Profile updated" });
         },
-        onError: () => toast({ title: "Update failed", variant: "destructive" }),
+        onError: (error: unknown) => toast({ title: "Update failed", description: getFriendlyErrorMessage(error, "Please check your profile details and try again."), variant: "destructive" }),
       },
     );
+  };
+
+  const onInvalid = (formErrors: unknown) => {
+    toast({
+      title: "Complete profile details",
+      description: getFirstFormError(formErrors, "Name must be at least 2 characters."),
+      variant: "destructive",
+    });
   };
 
   const handleAvatarUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -201,7 +210,7 @@ export default function Profile() {
           <DialogHeader>
             <DialogTitle>Manage Account</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(saveProfile)} className="space-y-4">
+          <form onSubmit={handleSubmit(saveProfile, onInvalid)} className="space-y-4" noValidate>
             <div className="space-y-1">
               <Label htmlFor="name">Full name</Label>
               <Input id="name" {...register("name")} data-testid="input-name" />
