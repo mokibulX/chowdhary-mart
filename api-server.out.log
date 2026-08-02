@@ -26,3 +26,27 @@
       "statusCode": 200
     }
     [35mresponseTime[39m: 204
+[22:58:58.319] [32mINFO[39m (9268): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "requestId": "4b9e53ee-7df9-4c2f-8f0c-fee482d10abf",
+      "correlationId": "4b9e53ee-7df9-4c2f-8f0c-fee482d10abf",
+      "method": "GET",
+      "url": "/api/healthz"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 43
+[22:59:18.147] [32mINFO[39m (9268): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "requestId": "6b410ddc-1fd5-4863-abe0-07a4307cc90d",
+      "correlationId": "6b410ddc-1fd5-4863-abe0-07a4307cc90d",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2261
