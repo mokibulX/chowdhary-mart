@@ -154,13 +154,25 @@ function databaseUrlFromParts(role: DatabaseRole) {
   return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}${ssl}`;
 }
 
+function databaseUrlKind(value?: string) {
+  if (!value) return "missing";
+  try {
+    const url = new URL(value);
+    if (url.hostname.includes("pooler.supabase.com")) return "supabase-pooler";
+    if (/^db\.[^.]+\.supabase\.co$/i.test(url.hostname)) return "supabase-direct";
+  } catch {
+    return "other";
+  }
+  return "other";
+}
+
 export function getDatabaseUrlFor(
   role: DatabaseRole,
   { direct = false, required = true, allowPrimaryFallback = true }: { direct?: boolean; required?: boolean; allowPrimaryFallback?: boolean } = {},
 ) {
   const names = databaseEnvNames[role];
   const primaryNames = databaseEnvNames.primary;
-  const value = direct
+  const configuredValue = direct
     ? env(names.directUrl) ?? (role === "primary" ? env("DIRECT_URL") : undefined) ?? env(names.url) ?? databaseUrlFromParts(role)
     : env(names.url) ?? databaseUrlFromParts(role);
   const fallback =
@@ -169,7 +181,12 @@ export function getDatabaseUrlFor(
         ? env(primaryNames.directUrl) ?? env("DIRECT_URL") ?? env(primaryNames.url) ?? databaseUrlFromParts("primary")
         : env(primaryNames.url) ?? databaseUrlFromParts("primary")
       : undefined;
-  const resolved = value ?? fallback;
+  const shouldPreferPrimaryPooler =
+    !direct &&
+    role !== "primary" &&
+    databaseUrlKind(configuredValue) === "supabase-direct" &&
+    databaseUrlKind(fallback) === "supabase-pooler";
+  const resolved = shouldPreferPrimaryPooler ? fallback : configuredValue ?? fallback;
   if (!resolved && required) {
     throw new Error(
       `${role} database connection is not configured. Add ${names.url} to .env or provide ${names.host}, ${names.port}, ${names.name}, ${names.user} and ${names.password}.`,
