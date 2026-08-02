@@ -37,6 +37,7 @@ import { getSavedDeliveryLocation, lookupPincode, nearestDeliveryLocation, PINCO
 import { getBrowserLocation } from "@/lib/live-location";
 import { useI18n } from "@/lib/i18n";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
+import { searchProductByImage } from "@/lib/image-search";
 
 interface CustomerLayoutProps {
   children: ReactNode;
@@ -193,21 +194,33 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
     return String(match?.[1] || "");
   };
 
-  const handleImageSearch = (file?: File | null) => {
+  const handleImageSearch = async (file?: File | null) => {
     if (!file || !file.type.startsWith("image/")) return;
-    const keyword = imageSearchKeyword(file);
-    if (keyword) {
+    try {
+      const result = await searchProductByImage(file, {
+        lat: deliveryLocation.lat,
+        lng: deliveryLocation.lng,
+        radiusKm: 5,
+      });
+      if (result.matchType === "same" && result.exactProduct?.id) {
+        setSearch(result.exactProduct.name);
+        saveRecentSearch(result.exactProduct.name);
+        setLocation(`/product/${result.exactProduct.id}`);
+        setSuggestOpen(false);
+        return;
+      }
+      const keyword = result.query || imageSearchKeyword(file) || search.trim() || "fresh";
       setSearch(keyword);
       saveRecentSearch(keyword);
       setLocation(`/search?q=${encodeURIComponent(keyword)}&image=1`);
+    } catch {
+      const keyword = imageSearchKeyword(file) || search.trim() || "fresh";
+      setSearch(keyword);
+      saveRecentSearch(keyword);
+      setLocation(`/search?q=${encodeURIComponent(keyword)}&image=1`);
+    } finally {
       setSuggestOpen(false);
-      return;
     }
-    const fallback = search.trim() || "fresh";
-    setSearch(fallback);
-    saveRecentSearch(fallback);
-    setLocation(`/search?q=${encodeURIComponent(fallback)}&image=1`);
-    setSuggestOpen(false);
   };
 
   useEffect(() => {
@@ -364,8 +377,8 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
 
   const renderSearchBox = ({ mobile = false }: { mobile?: boolean } = {}) => (
     <form data-search-root onSubmit={submitSearch} className="relative min-w-0 w-full">
-      <input ref={cameraSearchRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => handleImageSearch(event.target.files?.[0])} />
-      <input ref={gallerySearchRef} type="file" accept="image/*" className="hidden" onChange={(event) => handleImageSearch(event.target.files?.[0])} />
+      <input ref={cameraSearchRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => { void handleImageSearch(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+      <input ref={gallerySearchRef} type="file" accept="image/*" className="hidden" onChange={(event) => { void handleImageSearch(event.target.files?.[0]); event.currentTarget.value = ""; }} />
       <div className={`relative flex items-center rounded-2xl bg-white text-gray-950 shadow-sm ring-1 ring-black/5 transition-all duration-200 focus-within:shadow-lg focus-within:shadow-blue-950/15 focus-within:ring-2 focus-within:ring-orange-300 ${mobile ? "h-12" : "h-11 xl:h-12"}`}>
         <Search className="ml-4 h-4 w-4 flex-shrink-0 text-gray-500" />
         <Input

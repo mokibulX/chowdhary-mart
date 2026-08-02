@@ -174,17 +174,17 @@ export default function AdminHomepage() {
             <h2 className="font-bold">Sections</h2>
             <Badge variant="outline">{sections.length}</Badge>
           </div>
-          <div className="max-h-[680px] space-y-2 overflow-y-auto p-3">
+          <div className="max-h-[680px] min-w-0 space-y-2 overflow-y-auto p-3">
             {isLoading ? <p className="p-4 text-sm text-muted-foreground">Loading sections...</p> : sections.map((section: any) => (
-              <button key={section.id} type="button" onClick={() => setSelectedSectionId(section.id)} className={`w-full rounded-lg border p-3 text-left transition-colors ${Number(selectedSection?.id) === Number(section.id) ? "border-primary bg-primary/5" : "bg-white hover:bg-gray-50"}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-semibold">{section.title}</p>
-                    <p className="text-xs text-muted-foreground">{section.sectionType} · {section.layoutType}</p>
+              <button key={section.id} type="button" onClick={() => setSelectedSectionId(section.id)} className={`w-full min-w-0 overflow-hidden rounded-lg border p-3 text-left transition-colors ${Number(selectedSection?.id) === Number(section.id) ? "border-primary bg-primary/5" : "bg-white hover:bg-gray-50"}`}>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 break-words font-semibold">{section.title || "Untitled section"}</p>
+                    <p className="mt-1 line-clamp-2 break-all text-xs text-muted-foreground">{section.sectionType} - {section.layoutType}</p>
                   </div>
-                  <Badge variant={section.isActive ? "default" : "secondary"}>{section.isActive ? "Live" : "Off"}</Badge>
+                  <Badge className="w-fit shrink-0 self-start" variant={section.isActive ? "default" : "secondary"}>{section.isActive ? "Live" : "Off"}</Badge>
                 </div>
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex flex-wrap gap-2">
                   <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEdit(section); }}>Edit</Button>
                   <Button type="button" size="sm" variant="ghost" className="text-red-600" onClick={(event) => { event.stopPropagation(); deleteSection(section); }}><Trash2 className="h-4 w-4" /></Button>
                 </div>

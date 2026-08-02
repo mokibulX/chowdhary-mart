@@ -28,6 +28,7 @@ export const PINCODE_LOCATIONS: DeliveryLocation[] = [
   { pincode: "110001", city: "New Delhi", state: "Delhi", area: "Connaught Place", lat: 28.6139, lng: 77.209 },
   { pincode: "400001", city: "Mumbai", state: "Maharashtra", area: "Fort", lat: 18.9388, lng: 72.8354 },
   { pincode: "560001", city: "Bengaluru", state: "Karnataka", area: "MG Road", lat: 12.9716, lng: 77.5946 },
+  { pincode: "560029", city: "Bengaluru", state: "Karnataka", area: "Tavarekere", lat: 12.9264, lng: 77.60527 },
   { pincode: "600001", city: "Chennai", state: "Tamil Nadu", area: "George Town", lat: 13.0827, lng: 80.2707 },
   { pincode: "500001", city: "Hyderabad", state: "Telangana", area: "Abids", lat: 17.385, lng: 78.4867 },
   { pincode: "411001", city: "Pune", state: "Maharashtra", area: "Camp", lat: 18.5204, lng: 73.8567 },

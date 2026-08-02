@@ -8,6 +8,7 @@ const RATE_LIMIT = 90;
 const buckets = new Map<string, { count: number; resetAt: number }>();
 const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
 const OSRM_BASE = "https://router.project-osrm.org";
+const OSM_TILE_MAX_ZOOM = 19;
 
 function env(name: string) {
   return process.env[name] || process.env[`VITE_${name}`] || "";
@@ -238,6 +239,86 @@ router.get("/config", mapsRateLimit, (_req, res) => {
     hasPlacesApi: Boolean(keyFor("PLACES_API_KEY")),
     mapStyleId: env("MAP_STYLE_ID") || null,
   });
+});
+
+router.get("/tile", mapsRateLimit, async (req, res) => {
+  try {
+    const requestedZ = Number(req.query.z);
+    const requestedX = Number(req.query.x);
+    const requestedY = Number(req.query.y);
+    if (!Number.isInteger(requestedZ) || !Number.isInteger(requestedX) || !Number.isInteger(requestedY)) {
+      res.status(400).json({ error: "Invalid map tile coordinate." });
+      return;
+    }
+
+    const z = Math.max(0, Math.min(OSM_TILE_MAX_ZOOM, requestedZ));
+    const max = 2 ** z;
+    if (requestedY < 0 || requestedY >= max) {
+      res.status(404).end();
+      return;
+    }
+    const x = ((requestedX % max) + max) % max;
+    const url = `https://tile.openstreetmap.org/${z}/${x}/${requestedY}.png`;
+    const response = await fetch(url, {
+      headers: {
+        Accept: "image/png,image/*;q=0.8,*/*;q=0.5",
+        "User-Agent": "ChowdharyMart/1.0 map tile proxy",
+      },
+    });
+
+    if (!response.ok) {
+      res.status(response.status === 404 ? 404 : 502).end();
+      return;
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.setHeader("Content-Type", response.headers.get("content-type") || "image/png");
+    res.setHeader("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400");
+    res.send(buffer);
+  } catch (err) {
+    req.log.error(err);
+    res.status(502).end();
+  }
+});
+
+router.get("/tile/:z/:x/:y", mapsRateLimit, async (req, res) => {
+  try {
+    const requestedZ = Number(req.params.z);
+    const requestedX = Number(req.params.x);
+    const requestedY = Number(req.params.y);
+    if (!Number.isInteger(requestedZ) || !Number.isInteger(requestedX) || !Number.isInteger(requestedY)) {
+      res.status(400).json({ error: "Invalid map tile coordinate." });
+      return;
+    }
+
+    const z = Math.max(0, Math.min(OSM_TILE_MAX_ZOOM, requestedZ));
+    const max = 2 ** z;
+    if (requestedY < 0 || requestedY >= max) {
+      res.status(404).end();
+      return;
+    }
+    const x = ((requestedX % max) + max) % max;
+    const url = `https://tile.openstreetmap.org/${z}/${x}/${requestedY}.png`;
+    const response = await fetch(url, {
+      headers: {
+        Accept: "image/png,image/*;q=0.8,*/*;q=0.5",
+        "User-Agent": "ChowdharyMart/1.0 map tile proxy",
+      },
+    });
+
+    if (!response.ok) {
+      res.status(response.status === 404 ? 404 : 502).end();
+      return;
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.setHeader("Content-Type", response.headers.get("content-type") || "image/png");
+    res.setHeader("Cache-Control", "public, max-age=604800, stale-while-revalidate=86400");
+    res.send(buffer);
+  } catch (err) {
+    req.log.error(err);
+    res.status(502).end();
+  }
 });
 
 router.get("/places/autocomplete", mapsRateLimit, async (req, res) => {

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Crosshair, Expand, Loader2, MapPin, Minus, Navigation, Plus, Search, X } from "lucide-react";
 import { customFetch } from "@workspace/api-client-react";
+import { resolveRuntimeApiUrl } from "@/lib/mobile-runtime";
 
 declare global {
   interface Window {
@@ -48,6 +49,7 @@ type Props = {
 };
 
 const SERVICE_RADIUS_KM = 5;
+const FALLBACK_TILE_MAX_ZOOM = 18;
 
 function env(name: string) {
   const values = import.meta.env as Record<string, string | undefined>;
@@ -212,6 +214,7 @@ export function PickupLocationPicker({
   const geocoder = useRef<any>(null);
   const autocomplete = useRef<any>(null);
   const idleTimer = useRef<number | null>(null);
+  const googleTileTimer = useRef<number | null>(null);
   const dragMoved = useRef(false);
   const [selected, setSelected] = useState<PickupLocation | null>(initial ?? null);
   const [busy, setBusy] = useState(false);
@@ -219,7 +222,7 @@ export function PickupLocationPicker({
   const [fallbackMap, setFallbackMap] = useState(true);
   const [search, setSearch] = useState("");
   const [fallbackCenter, setFallbackCenter] = useState<{ lat: number; lng: number } | null>(initial ? { lat: initial.lat, lng: initial.lng } : null);
-  const [fallbackZoom, setFallbackZoom] = useState(20);
+  const [fallbackZoom, setFallbackZoom] = useState(FALLBACK_TILE_MAX_ZOOM);
   const [fallbackDrag, setFallbackDrag] = useState<{ x: number; y: number; center: { lat: number; lng: number } } | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const storePoint = pointFrom(store);
@@ -396,7 +399,7 @@ export function PickupLocationPicker({
       map.current.setZoom(nextZoom);
       return;
     }
-    setFallbackZoom((value) => Math.min(21, Math.max(4, value + delta)));
+    setFallbackZoom((value) => Math.min(FALLBACK_TILE_MAX_ZOOM, Math.max(4, value + delta)));
   };
 
   useEffect(() => {
@@ -410,7 +413,6 @@ export function PickupLocationPicker({
     window.addEventListener("cm-google-maps-auth-failure", handleAuthFailure);
     loadGoogleMaps().then(async (google) => {
       if (cancelled || !mapRef.current) return;
-      setFallbackMap(false);
       geocoder.current = new google.maps.Geocoder();
       const firstPoint = initial ? { lat: initial.lat, lng: initial.lng } : defaultDeliveryPoint;
       const center = firstPoint;
@@ -423,6 +425,15 @@ export function PickupLocationPicker({
         mapTypeId: "roadmap",
         mapId: window.__cmGoogleMapsRuntimeConfig?.mapStyleId || env("MAP_STYLE_ID") || undefined,
         styles: window.__cmGoogleMapsRuntimeConfig?.mapStyleId || env("MAP_STYLE_ID") ? undefined : PLACE_LABEL_MAP_STYLE,
+      });
+      googleTileTimer.current = window.setTimeout(() => {
+        if (cancelled) return;
+        setFallbackMap(true);
+      }, 3500);
+      google.maps.event.addListenerOnce(map.current, "tilesloaded", () => {
+        if (googleTileTimer.current) window.clearTimeout(googleTileTimer.current);
+        googleTileTimer.current = null;
+        if (!cancelled) setFallbackMap(false);
       });
       if (storePoint) {
         storeMarker.current = new google.maps.Marker({
@@ -484,6 +495,7 @@ export function PickupLocationPicker({
       if (!initial && locateFirst) void locateMe();
     }).catch(async () => {
       setFallbackMap(true);
+      setFallbackZoom(FALLBACK_TILE_MAX_ZOOM);
       if (!selected) {
         try {
           const point = locateFirst ? await browserGps() : defaultDeliveryPoint;
@@ -502,6 +514,7 @@ export function PickupLocationPicker({
       marker.current = null;
       map.current = null;
       if (idleTimer.current) window.clearTimeout(idleTimer.current);
+      if (googleTileTimer.current) window.clearTimeout(googleTileTimer.current);
     };
   }, [active]);
 
@@ -518,18 +531,20 @@ export function PickupLocationPicker({
   if (!active) return null;
 
   const center = fallbackCenter ?? selected ?? storePoint ?? defaultDeliveryPoint;
-  const centerTileX = lngToTileX(center.lng, fallbackZoom);
-  const centerTileY = latToTileY(center.lat, fallbackZoom);
+  const tileZoom = Math.min(FALLBACK_TILE_MAX_ZOOM, fallbackZoom);
+  const centerTileX = lngToTileX(center.lng, tileZoom);
+  const centerTileY = latToTileY(center.lat, tileZoom);
   const fallbackTiles = Array.from({ length: 49 }, (_, index) => {
     const dx = (index % 7) - 3;
     const dy = Math.floor(index / 7) - 3;
     const x = Math.floor(centerTileX) + dx;
     const y = Math.floor(centerTileY) + dy;
-    const max = 2 ** fallbackZoom;
+    const max = 2 ** tileZoom;
     const wrappedX = ((x % max) + max) % max;
     return {
-      key: `${fallbackZoom}-${x}-${y}`,
-      src: `https://tile.openstreetmap.org/${fallbackZoom}/${wrappedX}/${y}.png`,
+      key: `${tileZoom}-${x}-${y}`,
+      src: resolveRuntimeApiUrl(`/api/maps/tile?z=${tileZoom}&x=${wrappedX}&y=${y}`),
+      fallbackSrc: `https://tile.openstreetmap.org/${tileZoom}/${wrappedX}/${y}.png`,
       left: `${(x - centerTileX) * 256}px`,
       top: `${(y - centerTileY) * 256}px`,
     };
@@ -558,6 +573,15 @@ export function PickupLocationPicker({
                   alt=""
                   draggable={false}
                   className="absolute h-64 w-64 max-w-none select-none"
+                  onError={(event) => {
+                    const image = event.currentTarget;
+                    if (image.dataset.triedDirect !== "true") {
+                      image.dataset.triedDirect = "true";
+                      image.src = tile.fallbackSrc;
+                      return;
+                    }
+                    image.style.display = "none";
+                  }}
                   style={{ left: tile.left, top: tile.top, transform: "translate(-50%, -50%)" }}
                 />
               ))}

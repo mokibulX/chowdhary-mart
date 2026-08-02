@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Camera, ChevronDown, ImagePlus, Mic, Search as SearchIcon, SlidersHorizontal, X } from "lucide-react";
 import { getSavedDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
 import { resolveRuntimeApiUrl } from "@/lib/mobile-runtime";
+import { searchProductByImage } from "@/lib/image-search";
 
 const SUGGESTIONS = ["mobile", "grocery", "shoes", "headphones", "rice", "shirt", "home decor", "smart watch"];
 const TYPO_CORRECTIONS: Record<string, string> = {
@@ -289,7 +290,7 @@ export default function Search() {
     recognition.start();
   };
 
-  const handleImageSearchFile = (file?: File | null) => {
+  const handleImageSearchFile = async (file?: File | null) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       setImageSearchStatus("Please select a product photo.");
@@ -298,21 +299,32 @@ export default function Search() {
     if (imageSearchPreview) URL.revokeObjectURL(imageSearchPreview);
     const preview = URL.createObjectURL(file);
     setImageSearchPreview(preview);
-    const keyword = inferImageSearchKeyword(file);
-    if (keyword) {
-      setImageSearchStatus(`Photo matched: ${keyword}`);
+    setImageSearchStatus("Checking product photo...");
+    try {
+      const result = await searchProductByImage(file, {
+        lat: deliveryLocation.lat,
+        lng: deliveryLocation.lng,
+        radiusKm,
+      });
+      if (result.matchType === "same" && result.exactProduct?.id) {
+        setImageSearchStatus(result.message || "Same product found.");
+        setLocation(`/product/${result.exactProduct.id}`);
+        return;
+      }
+      const keyword = result.query || inputVal.trim() || "fresh";
+      setImageSearchStatus(result.message || `Showing similar products for ${keyword}.`);
       setInputVal(keyword);
       setQ(keyword);
       setLastSubmittedQ(keyword);
       setLocation(buildSearchUrl({ q: keyword, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
-      return;
+    } catch (error) {
+      const fallback = inputVal.trim() || "fresh";
+      setImageSearchStatus(error instanceof Error ? error.message : `Photo added. Showing local matches for ${fallback}.`);
+      setInputVal(fallback);
+      setQ(fallback);
+      setLastSubmittedQ(fallback);
+      setLocation(buildSearchUrl({ q: fallback, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
     }
-    const fallback = inputVal.trim() || "fresh";
-    setImageSearchStatus(`Photo added. Showing local matches for ${fallback}.`);
-    setInputVal(fallback);
-    setQ(fallback);
-    setLastSubmittedQ(fallback);
-    setLocation(buildSearchUrl({ q: fallback, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
   };
 
   useEffect(() => {
@@ -337,8 +349,8 @@ export default function Search() {
   return (
     <div className="w-full max-w-full space-y-4 overflow-x-hidden">
       <form onSubmit={handleSearch} className="rounded-lg border bg-white p-3 shadow-sm">
-        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => handleImageSearchFile(event.target.files?.[0])} />
-        <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => handleImageSearchFile(event.target.files?.[0])} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => { void handleImageSearchFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+        <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { void handleImageSearchFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
         <div className="flex gap-2">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

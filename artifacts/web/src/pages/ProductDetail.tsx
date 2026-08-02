@@ -456,6 +456,22 @@ export default function ProductDetail() {
                 <span className="text-sm text-muted-foreground">{(product as any).reviewCount || 0} reviews</span>
               </div>
             )}
+            <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border bg-white p-2 shadow-sm md:hidden">
+              {qty > 0 ? (
+                <div className="flex h-12 items-center gap-1 rounded-xl border bg-gray-50 p-1">
+                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => handleAdjust(qty - 1)} data-testid="btn-decrease-mobile"><Minus className="h-4 w-4" /></Button>
+                  <span className="flex-1 text-center text-base font-black">{qty}</span>
+                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => handleAdjust(qty + 1)} data-testid="btn-increase-mobile"><Plus className="h-4 w-4" /></Button>
+                </div>
+              ) : (
+                <Button size="lg" variant="outline" onClick={handleAdd} disabled={addToCart.isPending || !available} className="h-12 rounded-xl font-black" data-testid="btn-add-cart-mobile">
+                  <ShoppingCart className="mr-2 h-5 w-5" /> Add
+                </Button>
+              )}
+              <Button size="lg" onClick={handleOrderNow} disabled={addToCart.isPending || !available} className="h-12 rounded-xl bg-yellow-400 font-black text-gray-950 hover:bg-yellow-300" data-testid="btn-order-now-mobile">
+                Order now
+              </Button>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-baseline gap-2">
@@ -595,22 +611,6 @@ export default function ProductDetail() {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2 rounded-2xl border bg-white p-2 shadow-sm md:hidden">
-            {qty > 0 ? (
-              <div className="flex h-12 items-center gap-1 rounded-xl border bg-gray-50 p-1">
-                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => handleAdjust(qty - 1)} data-testid="btn-decrease-mobile"><Minus className="h-4 w-4" /></Button>
-                <span className="flex-1 text-center text-base font-black">{qty}</span>
-                <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl" onClick={() => handleAdjust(qty + 1)} data-testid="btn-increase-mobile"><Plus className="h-4 w-4" /></Button>
-              </div>
-            ) : (
-              <Button size="lg" variant="outline" onClick={handleAdd} disabled={addToCart.isPending || !available} className="h-12 rounded-xl font-black" data-testid="btn-add-cart-mobile">
-                <ShoppingCart className="mr-2 h-5 w-5" /> Add
-              </Button>
-            )}
-            <Button size="lg" onClick={handleOrderNow} disabled={addToCart.isPending || !available} className="h-12 rounded-xl bg-yellow-400 font-black text-gray-950 hover:bg-yellow-300" data-testid="btn-order-now-mobile">
-              Buy now
-            </Button>
-          </div>
         </div>
       </section>
 
@@ -627,7 +627,7 @@ export default function ProductDetail() {
           </Button>
         )}
         <Button size="lg" onClick={handleOrderNow} disabled={addToCart.isPending || !available} className="bg-yellow-400 text-gray-950 hover:bg-yellow-300" data-testid="btn-order-now">
-          Buy now
+          Order now
         </Button>
       </section>
 
@@ -644,7 +644,7 @@ export default function ProductDetail() {
           </Button>
         )}
         <Button size="lg" onClick={handleOrderNow} disabled={addToCart.isPending || !available} className="bg-yellow-400 text-gray-950 hover:bg-yellow-300">
-          Buy now
+          Order now
         </Button>
       </div>
 
