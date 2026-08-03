@@ -1,0 +1,64 @@
+[10:48:59.050] [32mINFO[39m (20596): [36mConfigured admin account synced[39m
+    [35madminEmail[39m: "chowdhary909090@gmail.com"
+[10:48:59.065] [32mINFO[39m (20596): [36mServer listening[39m
+    [35mport[39m: 5000
+[10:49:02.424] [32mINFO[39m (20596): [36mrequest aborted[39m
+    [35mreq[39m: {
+      "id": 1,
+      "requestId": "780296cc-cfa5-4df3-9473-285736f674bc",
+      "correlationId": "780296cc-cfa5-4df3-9473-285736f674bc",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": null
+    }
+    [35mresponseTime[39m: 1950
+[10:49:03.700] [32mINFO[39m (20596): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 2,
+      "requestId": "4e0838e9-699b-4f23-b0dd-5e14a47382f4",
+      "correlationId": "4e0838e9-699b-4f23-b0dd-5e14a47382f4",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 258
+[11:01:33.732] [32mINFO[39m (20596): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "requestId": "118ac87d-0b25-4875-9bbd-576c8e724edf",
+      "correlationId": "118ac87d-0b25-4875-9bbd-576c8e724edf",
+      "method": "OPTIONS",
+      "url": "/api/admin/test-controls"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 14
+[11:01:33.768] [32mINFO[39m (20596): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "requestId": "28f1cadc-b71a-4c94-950c-8276f89f2728",
+      "correlationId": "28f1cadc-b71a-4c94-950c-8276f89f2728",
+      "method": "GET",
+      "url": "/api/admin/test-controls"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 18
+[11:01:34.826] [32mINFO[39m (20596): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 5,
+      "requestId": "f1e07f1a-124e-4776-9278-06ffb9041af8",
+      "correlationId": "f1e07f1a-124e-4776-9278-06ffb9041af8",
+      "method": "GET",
+      "url": "/api/admin/test-controls"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 4
