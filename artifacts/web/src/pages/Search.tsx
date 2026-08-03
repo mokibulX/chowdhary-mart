@@ -140,8 +140,8 @@ export default function Search() {
   }, [inputVal]);
 
   const queryParams = {
-    q: (q || categoryKeyword) ? backendSearchTerm(q || categoryKeyword) : undefined,
-    categoryId: categoryKeyword ? undefined : categoryId || undefined,
+    q: categoryId ? undefined : (q || categoryKeyword) ? backendSearchTerm(q || categoryKeyword) : undefined,
+    categoryId: categoryId || undefined,
     sort: sort as any,
     minPrice: minPrice ? Number(minPrice) : undefined,
     maxPrice: maxPrice ? Number(maxPrice) : undefined,
@@ -212,6 +212,7 @@ export default function Search() {
 
   const products = productResult.items;
   const total = productResult.total;
+  const hasCategories = Boolean(categories?.length);
   const isLoading = productsLoading;
   const hasNextPage = false;
   const fetchNextPage = async () => undefined;
@@ -414,33 +415,39 @@ export default function Search() {
         )}
       </form>
 
-      <section className="rounded-lg border bg-white p-3 shadow-sm">
-        <div className="flex max-w-full gap-3 overflow-x-auto pb-1">
-          <button
-            type="button"
-            onClick={() => { setCategoryId(undefined); setCategoryKeyword(""); setLocation(buildSearchUrl({ q, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }}
-            className="min-w-[68px] text-center"
-          >
-            <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 bg-gray-950 text-xs font-bold text-white shadow-sm ${!categoryId ? "ring-2 ring-primary/40" : ""}`}>
-              All
-            </div>
-            <p className="mt-1 line-clamp-1 text-[10px] font-semibold">All</p>
-          </button>
-          {categories?.map((cat, index) => (
-            <button key={cat.id} type="button" onClick={() => { setCategoryId(cat.id); setCategoryKeyword(cat.name); setInputVal(cat.name); setQ(cat.name); setLocation(buildSearchUrl({ q: cat.name, category: cat.name, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }} className="min-w-[68px] text-center">
-              <div className={`mx-auto h-14 w-14 overflow-hidden rounded-full border-2 border-white bg-gray-50 shadow-sm ring-1 ring-gray-200 ${categoryId === cat.id ? "ring-2 ring-primary" : ""}`}>
-                <img src={cat.imageUrl || CATEGORY_IMAGES[index % CATEGORY_IMAGES.length]} alt={cat.name} className="h-full w-full object-cover" />
+      {hasCategories && (
+        <section className="rounded-lg border bg-white p-3 shadow-sm">
+          <div className="lch-clean-scroll flex max-w-full gap-4 overflow-x-auto pb-1">
+            <button
+              type="button"
+              onClick={() => { setCategoryId(undefined); setCategoryKeyword(""); setInputVal(""); setQ(""); setLocation(buildSearchUrl({ q: "", sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }}
+              className="group min-w-[76px] text-center"
+            >
+              <div className={`lch-category-orbit lch-category-tone-0 mx-auto h-16 w-16 ${!categoryId ? "is-selected" : ""}`}>
+                <div className="lch-category-orbit-media flex items-center justify-center bg-gradient-to-br from-white to-slate-100 text-xs font-black text-slate-950">
+                  All
+                </div>
               </div>
-              <p className="mt-1 line-clamp-2 text-[10px] font-semibold leading-3">{cat.name}</p>
+              <p className="lch-category-luxury-text mt-2 line-clamp-1 text-[11px] font-extrabold">All</p>
             </button>
-          ))}
-        </div>
-      </section>
+            {(categories ?? []).map((cat, index) => (
+              <button key={cat.id} type="button" onClick={() => { setCategoryId(cat.id); setCategoryKeyword(cat.name); setInputVal(cat.name); setQ(""); setLocation(buildSearchUrl({ categoryId: cat.id, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }} className="group min-w-[76px] text-center">
+                <div className={`lch-category-orbit lch-category-tone-${index % 8} ${index % 2 ? "lch-category-reverse" : ""} mx-auto h-16 w-16 ${categoryId === cat.id ? "is-selected" : ""}`}>
+                  <div className="lch-category-orbit-media">
+                    <img src={cat.imageUrl || CATEGORY_IMAGES[index % CATEGORY_IMAGES.length]} alt={cat.name} className="h-full w-full object-cover" />
+                  </div>
+                </div>
+                <p className="lch-category-luxury-text mt-2 line-clamp-2 text-[11px] font-extrabold leading-3">{cat.name}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-lg border bg-white p-3 shadow-sm">
         <div className="flex min-w-0 items-center gap-2">
-          <Select value={categoryId ? String(categoryId) : "all"} onValueChange={(value) => { const nextCategory = value === "all" ? undefined : Number(value); const nextName = categories?.find((cat: any) => cat.id === nextCategory)?.name ?? ""; setCategoryId(nextCategory); setCategoryKeyword(nextName); if (nextName) { setInputVal(nextName); setQ(nextName); } setLocation(buildSearchUrl({ q: nextName || q, category: nextName || undefined, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }}>
-            <SelectTrigger className="h-9 min-w-0 flex-1"><SelectValue placeholder="Category" /></SelectTrigger>
+          <Select value={categoryId ? String(categoryId) : "all"} onValueChange={(value) => { const nextCategory = value === "all" ? undefined : Number(value); const nextName = categories?.find((cat: any) => cat.id === nextCategory)?.name ?? ""; setCategoryId(nextCategory); setCategoryKeyword(nextName); if (nextName) { setInputVal(nextName); setQ(""); } setLocation(buildSearchUrl({ categoryId: nextCategory, q: nextCategory ? undefined : q, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }} disabled={!hasCategories}>
+            <SelectTrigger className="h-9 min-w-0 flex-1"><SelectValue placeholder={hasCategories ? "Category" : "No category"} /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
               {categories?.map((cat) => <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>)}

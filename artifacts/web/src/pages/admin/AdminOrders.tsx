@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MapPin, Navigation, ShoppingBag, Trash2 } from "lucide-react";
 import { LiveDeliveryMap } from "@/components/LiveDeliveryMap";
+import { useToast } from "@/hooks/use-toast";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 const STATUS_COLORS: Record<string, string> = {
   delivered: "bg-green-100 text-green-700", cancelled: "bg-red-100 text-red-700",
@@ -23,6 +25,7 @@ const ORDER_STATUSES = ["pending", "confirmed", "preparing", "packed", "picked_u
 
 export default function AdminOrders() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const qc = useQueryClient();
   const [filter, setFilter] = useState("");
 
@@ -33,13 +36,23 @@ export default function AdminOrders() {
   const liveOrders = (orders as any[] | undefined)?.filter((order) => !["delivered", "cancelled"].includes(order.status)) ?? [];
   const refresh = () => qc.invalidateQueries({ queryKey: getListAdminOrdersQueryKey(params) });
   const updateOrder = async (id: number, status: string) => {
-    await customFetch(`/api/admin/orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
-    refresh();
+    try {
+      await customFetch(`/api/admin/orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      toast({ title: "Order updated" });
+      refresh();
+    } catch (error) {
+      toast({ title: "Order update failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
   };
   const deleteOrder = async (id: number) => {
-    if (!confirm("Delete this order?")) return;
-    await customFetch(`/api/admin/orders/${id}`, { method: "DELETE" });
-    refresh();
+    if (!confirm("Delete this order permanently?")) return;
+    try {
+      await customFetch(`/api/admin/orders/${id}`, { method: "DELETE" });
+      toast({ title: "Order permanently deleted" });
+      refresh();
+    } catch (error) {
+      toast({ title: "Order delete failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
   };
 
   return (

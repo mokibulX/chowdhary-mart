@@ -53,7 +53,11 @@ export default function AdminStores() {
     if (!confirm(`Delete ${store.name}? Ei store-er products and related orders database theke remove hoye jabe.`)) return;
     try {
       await customFetch(`/api/admin/stores/${store.id}`, { method: "DELETE" });
-      qc.invalidateQueries({ queryKey: getListAdminStoresQueryKey() });
+      qc.setQueryData(getListAdminStoresQueryKey(), (oldData: any) => {
+        if (!Array.isArray(oldData)) return oldData;
+        return oldData.filter((item) => Number(item.id) !== Number(store.id));
+      });
+      qc.invalidateQueries({ queryKey: getListAdminStoresQueryKey(), exact: false });
       toast({ title: "Store deleted", description: "Store, products and related order data removed." });
     } catch (error) {
       toast({ title: "Store delete failed", description: (error as Error).message, variant: "destructive" });

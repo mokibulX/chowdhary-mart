@@ -11,6 +11,8 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Eye, GripVertical, LayoutGrid, Megaphone, Pin, Plus, Search, Trash2 } from "lucide-react";
 import { DateTextInput } from "@/components/DateTextInput";
+import { useToast } from "@/hooks/use-toast";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 const EMPTY_SECTION = {
   title: "",
@@ -34,6 +36,7 @@ const LAYOUTS = ["horizontal_product_scroll", "product_grid", "hero_product", "c
 
 export default function AdminHomepage() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [sectionDialog, setSectionDialog] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
   const [form, setForm] = useState<any>(EMPTY_SECTION);
@@ -107,8 +110,14 @@ export default function AdminHomepage() {
 
   const deleteSection = async (section: any) => {
     if (!confirm(`Delete ${section.title}?`)) return;
-    await customFetch(`/api/admin/homepage/sections/${section.id}`, { method: "DELETE", responseType: "json" });
-    invalidate();
+    try {
+      await customFetch(`/api/admin/homepage/sections/${section.id}`, { method: "DELETE", responseType: "json" });
+      setSelectedSectionId((current) => Number(current) === Number(section.id) ? null : current);
+      toast({ title: "Section deleted" });
+      invalidate();
+    } catch (error) {
+      toast({ title: "Section delete failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
   };
 
   const addProduct = async (product: any) => {
@@ -123,8 +132,23 @@ export default function AdminHomepage() {
 
   const removeProduct = async (product: any) => {
     if (!selectedSection) return;
-    await customFetch(`/api/admin/homepage/sections/${selectedSection.id}/products/${product.id}`, { method: "DELETE", responseType: "json" });
-    invalidate();
+    try {
+      await customFetch(`/api/admin/homepage/sections/${selectedSection.id}/products/${product.id}`, { method: "DELETE", responseType: "json" });
+      qc.setQueryData(["/api/admin/homepage/preview", previewDevice], (current: any) => {
+        if (!current?.sections) return current;
+        return {
+          ...current,
+          sections: current.sections.map((section: any) => {
+            if (Number(section.databaseId ?? section.id) !== Number(selectedSection.id)) return section;
+            return { ...section, products: (section.products ?? []).filter((item: any) => Number(item.id) !== Number(product.id)) };
+          }),
+        };
+      });
+      toast({ title: "Product removed" });
+      invalidate();
+    } catch (error) {
+      toast({ title: "Product remove failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
   };
 
   const moveProduct = async (product: any, direction: -1 | 1) => {

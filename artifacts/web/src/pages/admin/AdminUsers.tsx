@@ -55,10 +55,19 @@ export default function AdminUsers() {
   };
 
   const deleteUser = async (target: any) => {
-    if (!confirm(`Delete ${target.name}?`)) return;
+    const sellerWarning = target.role === "vendor" ? "\n\nThis will also permanently delete this seller's store and all products." : "";
+    if (!confirm(`Delete ${target.name}?${sellerWarning}`)) return;
     try {
-      await customFetch(`/api/admin/users/${target.id}`, { method: "DELETE" });
-      toast({ title: "User deleted" });
+      await customFetch(`/api/admin/users/${target.id}`, { method: "DELETE", responseType: "json" });
+      qc.setQueriesData({ queryKey: ["/api/admin/users"] }, (current: any) => {
+        if (!Array.isArray(current)) return current;
+        return current.filter((item: any) => Number(item.id) !== Number(target.id));
+      });
+      qc.invalidateQueries({ queryKey: ["/api/admin/products"] });
+      qc.invalidateQueries({ queryKey: ["/api/products"] });
+      qc.invalidateQueries({ queryKey: ["/api/admin/stores"] });
+      qc.invalidateQueries({ queryKey: ["/api/stores"] });
+      toast({ title: target.role === "vendor" ? "Seller and products deleted" : "User deleted" });
       refresh();
     } catch (error) {
       toast({ title: "User delete failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });

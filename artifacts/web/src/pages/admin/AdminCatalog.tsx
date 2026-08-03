@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { customFetch } from "@workspace/api-client-react";
 import { uploadImageFile } from "@/lib/image-upload";
@@ -142,10 +142,10 @@ export default function AdminCatalog() {
 
   const endpoint = `/api/admin/${mode}`;
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: [endpoint] });
-    qc.invalidateQueries({ queryKey: ["/api/categories"] });
-    qc.invalidateQueries({ queryKey: ["/api/banners"] });
-    qc.invalidateQueries({ queryKey: ["/api/admin/media-library"] });
+    qc.invalidateQueries({ queryKey: [endpoint], exact: false });
+    qc.invalidateQueries({ queryKey: ["/api/categories"], exact: false });
+    qc.invalidateQueries({ queryKey: ["/api/banners"], exact: false });
+    qc.invalidateQueries({ queryKey: ["/api/admin/media-library"], exact: false });
   };
 
   const addProductToLibrary = async (item: any) => {
@@ -175,7 +175,7 @@ export default function AdminCatalog() {
     }
   };
 
-  const submit = async (event: React.FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     const validationError = validateCatalogForm(mode, form);
     if (validationError) {
@@ -185,11 +185,16 @@ export default function AdminCatalog() {
     try {
       const payload = buildPayload(mode, form);
       const url = editing ? `${endpoint}/${editing.id}` : endpoint;
-      await customFetch(url, {
+      const saved = await customFetch<any>(url, {
         method: editing ? "PATCH" : "POST",
         body: JSON.stringify(payload),
         responseType: "json",
       });
+      if (mode === "categories") {
+        const mergeCategory = (oldData: any) => upsertCatalogItemInCache(oldData, saved);
+        qc.setQueriesData({ queryKey: ["/api/admin/categories"], exact: false }, mergeCategory);
+        qc.setQueriesData({ queryKey: ["/api/categories"], exact: false }, mergeCategory);
+      }
       invalidate();
       setDialogOpen(false);
       toast({ title: editing ? `${singularTitle} updated` : `${singularTitle} created` });
@@ -202,11 +207,50 @@ export default function AdminCatalog() {
     if (!confirm(`Delete ${item.name ?? item.title}?`)) return;
     try {
       await customFetch(`${endpoint}/${item.id}`, { method: "DELETE", responseType: "json" });
+      qc.setQueriesData({ queryKey: [endpoint], exact: false }, (oldData: any) => removeCatalogItemFromCache(oldData, item.id));
+      if (mode === "categories") {
+        qc.setQueriesData({ queryKey: ["/api/categories"], exact: false }, (oldData: any) => removeCatalogItemFromCache(oldData, item.id));
+      }
+      if (mode === "products") {
+        qc.invalidateQueries({ queryKey: ["infinite-products"], exact: false });
+        qc.invalidateQueries({ queryKey: ["/api/products"], exact: false });
+        qc.invalidateQueries({ queryKey: ["/api/homepage"], exact: false });
+      }
       invalidate();
       toast({ title: `${singularTitle} deleted` });
     } catch (error) {
       toast({ title: `${singularTitle} delete failed`, description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
     }
+  };
+
+  const clearProductsAndSellers = async () => {
+    if (!confirm("Remove all products, stores and seller accounts? You can add fresh products after this.")) return;
+    try {
+      await customFetch("/api/admin/catalog/clear-products-sellers", { method: "POST", responseType: "json" });
+      qc.setQueriesData({ queryKey: ["/api/admin/products"], exact: false }, []);
+      qc.setQueriesData({ queryKey: ["/api/admin/stores"], exact: false }, []);
+      qc.invalidateQueries({ queryKey: ["/api/admin/products"], exact: false });
+      qc.invalidateQueries({ queryKey: ["/api/admin/stores"], exact: false });
+      qc.invalidateQueries({ queryKey: ["/api/admin/users"], exact: false });
+      qc.invalidateQueries({ queryKey: ["/api/products"], exact: false });
+      qc.invalidateQueries({ queryKey: ["infinite-products"], exact: false });
+      toast({ title: "Products and sellers cleared", description: "Ekhon fresh product add korte parben." });
+    } catch (error) {
+      toast({ title: "Clear failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
+  };
+
+  const persistUploadedCategoryImage = async (nextForm: any) => {
+    if (mode !== "categories" || !editing?.id) return;
+    const saved = await customFetch<any>(`${endpoint}/${editing.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(buildPayload("categories", nextForm)),
+      responseType: "json",
+    });
+    const mergeCategory = (oldData: any) => upsertCatalogItemInCache(oldData, saved);
+    qc.setQueriesData({ queryKey: ["/api/admin/categories"], exact: false }, mergeCategory);
+    qc.setQueriesData({ queryKey: ["/api/categories"], exact: false }, mergeCategory);
+    invalidate();
   };
 
   return (
@@ -219,6 +263,11 @@ export default function AdminCatalog() {
         <Button onClick={() => openCreate()} data-testid="btn-create-catalog">
           <Plus className="mr-2 h-4 w-4" />Add {singularTitle}
         </Button>
+        {mode === "products" && (
+          <Button type="button" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50" onClick={clearProductsAndSellers}>
+            <Trash2 className="mr-2 h-4 w-4" />Clear products & sellers
+          </Button>
+        )}
       </div>
 
       <section className="grid gap-3 md:grid-cols-3">
@@ -288,7 +337,7 @@ export default function AdminCatalog() {
           <form onSubmit={submit} className="space-y-4">
             {mode === "products" && <ProductForm form={form} setForm={setForm} categories={categories} stores={stores} />}
             {mode === "banners" && <BannerForm form={form} setForm={setForm} />}
-            {mode === "categories" && <CategoryForm form={form} setForm={setForm} />}
+            {mode === "categories" && <CategoryForm form={form} setForm={setForm} editing={editing} onUploadedForm={persistUploadedCategoryImage} />}
             {mode === "media-library" && <MediaLibraryForm form={form} setForm={setForm} categories={categories} />}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
@@ -299,6 +348,18 @@ export default function AdminCatalog() {
       </Dialog>
     </div>
   );
+}
+
+function removeCatalogItemFromCache(oldData: any, id: number) {
+  if (Array.isArray(oldData)) return oldData.filter((item) => Number(item.id) !== Number(id));
+  if (oldData?.items && Array.isArray(oldData.items)) {
+    return {
+      ...oldData,
+      items: oldData.items.filter((item: any) => Number(item.id) !== Number(id)),
+      total: Math.max(0, Number(oldData.total ?? oldData.items.length) - 1),
+    };
+  }
+  return oldData;
 }
 
 function CatalogCard({ mode, item, onEdit, onDelete, onAddToLibrary }: { mode: Mode; item: any; onEdit: () => void; onDelete: () => void; onAddToLibrary?: () => void }) {
@@ -355,7 +416,7 @@ function ProductForm({ form, setForm, categories, stores }: any) {
         <Field label="Weight" value={form.weight} onChange={(value) => setForm({ ...form, weight: value })} />
         <Field label="Unit" value={form.unit} onChange={(value) => setForm({ ...form, unit: value })} />
       </div>
-      <Field label="Image URL" value={form.imageUrl} onChange={(value) => setForm({ ...form, imageUrl: value })} />
+      <ImageUrlUploadField form={form} setForm={setForm} folder="admin-products" />
       <SwitchRow label="Available" checked={!!form.isAvailable} onChange={(value) => setForm({ ...form, isAvailable: value })} />
       <SwitchRow label="Offer / Featured product" checked={!!form.isFeatured} onChange={(value) => setForm({ ...form, isFeatured: value })} />
     </>
@@ -367,7 +428,7 @@ function BannerForm({ form, setForm }: any) {
     <>
       <Field label="Title" value={form.title} onChange={(value) => setForm({ ...form, title: value })} required />
       <Field label="Subtitle" value={form.subtitle} onChange={(value) => setForm({ ...form, subtitle: value })} />
-      <Field label="Image URL" value={form.imageUrl} onChange={(value) => setForm({ ...form, imageUrl: value })} required />
+      <ImageUrlUploadField form={form} setForm={setForm} folder="admin-banners" required />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Link" value={form.href} onChange={(value) => setForm({ ...form, href: value })} />
         <Field label="Sort order" value={form.sortOrder} onChange={(value) => setForm({ ...form, sortOrder: value })} type="number" />
@@ -377,7 +438,7 @@ function BannerForm({ form, setForm }: any) {
   );
 }
 
-function CategoryForm({ form, setForm }: any) {
+function CategoryForm({ form, setForm, editing, onUploadedForm }: any) {
   return (
     <>
       <Field label="Name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required />
@@ -385,33 +446,13 @@ function CategoryForm({ form, setForm }: any) {
         <Field label="Icon text" value={form.iconEmoji} onChange={(value) => setForm({ ...form, iconEmoji: value })} />
         <Field label="Sort order" value={form.sortOrder} onChange={(value) => setForm({ ...form, sortOrder: value })} type="number" />
       </div>
-      <Field label="Image URL" value={form.imageUrl} onChange={(value) => setForm({ ...form, imageUrl: value })} />
+      <ImageUrlUploadField form={form} setForm={setForm} folder="admin-categories" onUploadedForm={editing ? onUploadedForm : undefined} />
       <SwitchRow label="Active category" checked={!!form.isActive} onChange={(value) => setForm({ ...form, isActive: value })} />
     </>
   );
 }
 
 function MediaLibraryForm({ form, setForm, categories }: any) {
-  const [uploading, setUploading] = useState(false);
-  const upload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const uploaded = await uploadImageFile(file, "media-library");
-      setForm({
-        ...form,
-        imageUrl: uploaded.imageUrl,
-        storagePath: uploaded.storagePath,
-        storageProvider: uploaded.provider,
-        mimeType: uploaded.mime,
-        sizeBytes: String(uploaded.sizeBytes),
-        title: form.title || file.name.replace(/\.[^.]+$/, ""),
-      });
-    } finally {
-      setUploading(false);
-    }
-  };
   return (
     <>
       <Field label="Image title" value={form.title} onChange={(value) => setForm({ ...form, title: value })} required />
@@ -422,26 +463,67 @@ function MediaLibraryForm({ form, setForm, categories }: any) {
         onChange={(value) => setForm({ ...form, categoryId: value === "all" ? "" : Number(value) })}
         items={[{ value: "all", label: "All categories" }, ...categories.map((item: any) => ({ value: String(item.id), label: item.name }))]}
       />
-      <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
-        <Label>Upload image or paste URL</Label>
-        {form.imageUrl ? (
-          <div className="overflow-hidden rounded-lg border bg-white">
-            <img src={form.imageUrl} alt="" loading="lazy" decoding="async" className="max-h-48 w-full object-contain p-2" />
-          </div>
-        ) : null}
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md border bg-white px-3 text-sm font-medium hover:bg-muted">
-            <Upload className="mr-2 h-4 w-4" />
-            {uploading ? "Uploading..." : "Upload"}
-            <input type="file" accept="image/*" className="hidden" onChange={upload} />
-          </label>
-          <Input value={form.imageUrl ?? ""} onChange={(event) => setForm({ ...form, imageUrl: event.target.value })} placeholder="https://... or uploaded image" />
-        </div>
-        <p className="text-xs text-muted-foreground">Images are uploaded to the configured storage bucket; only the URL is saved in database.</p>
-      </div>
+      <ImageUrlUploadField form={form} setForm={setForm} folder="media-library" required captureFileName />
       <Field label="Tags" value={form.tags} onChange={(value) => setForm({ ...form, tags: value })} />
       <SwitchRow label="Approved for seller use" checked={!!form.isApproved} onChange={(value) => setForm({ ...form, isApproved: value })} />
     </>
+  );
+}
+
+function ImageUrlUploadField({ form, setForm, folder, required, captureFileName, onUploadedForm }: { form: any; setForm: (form: any) => void; folder: string; required?: boolean; captureFileName?: boolean; onUploadedForm?: (form: any) => Promise<void> | void }) {
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState(false);
+
+  const upload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadImageFile(file, folder);
+      const nextForm = {
+        ...form,
+        imageUrl: uploaded.imageUrl,
+        storagePath: uploaded.storagePath ?? form.storagePath,
+        storageProvider: uploaded.provider ?? form.storageProvider,
+        mimeType: uploaded.mime ?? form.mimeType,
+        sizeBytes: uploaded.sizeBytes ? String(uploaded.sizeBytes) : form.sizeBytes,
+        title: captureFileName && !form.title ? file.name.replace(/\.[^.]+$/, "") : form.title,
+      };
+      setForm(nextForm);
+      await onUploadedForm?.(nextForm);
+      toast({ title: "Image uploaded", description: onUploadedForm ? "Category image save hoyeche." : "URL field-e image bosheche. Save press korun." });
+    } catch (error) {
+      toast({ title: "Image upload failed", description: getFriendlyErrorMessage(error, "Please upload JPG, PNG, WEBP or GIF under 5 MB."), variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+      <Label>Image URL{required ? " *" : ""}</Label>
+      {form.imageUrl ? (
+        <div className="overflow-hidden rounded-lg border bg-white">
+          <img src={form.imageUrl} alt="" loading="lazy" decoding="async" className="max-h-48 w-full object-contain p-2" />
+        </div>
+      ) : null}
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <label className={`inline-flex h-10 shrink-0 cursor-pointer items-center justify-center rounded-md border bg-white px-3 text-sm font-medium hover:bg-muted ${uploading ? "pointer-events-none opacity-70" : ""}`}>
+          <Upload className="mr-2 h-4 w-4" />
+          {uploading ? "Uploading..." : "Upload image"}
+          <input type="file" accept="image/*" className="hidden" onChange={upload} disabled={uploading} />
+        </label>
+        <Input
+          value={form.imageUrl ?? ""}
+          onChange={(event) => setForm({ ...form, imageUrl: event.target.value })}
+          onBlur={(event) => setForm({ ...form, imageUrl: normalizeImageUrl(event.target.value) })}
+          placeholder="https://... or uploaded image"
+          required={required}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">File upload korle URL auto boshe jabe. Chaile direct image URL paste korte parben.</p>
+    </div>
   );
 }
 
@@ -476,6 +558,7 @@ function SwitchRow({ label, checked, onChange }: { label: string; checked: boole
 }
 
 function buildPayload(mode: Mode, form: any) {
+  const imageUrl = normalizeImageUrl(form.imageUrl);
   if (mode === "products") {
     return {
       name: form.name,
@@ -487,7 +570,7 @@ function buildPayload(mode: Mode, form: any) {
       stock: Number(form.stock ?? 0),
       weight: form.weight,
       unit: form.unit,
-      images: form.imageUrl ? [form.imageUrl] : [],
+      images: imageUrl ? [imageUrl] : [],
       isAvailable: !!form.isAvailable,
       isFeatured: !!form.isFeatured,
     };
@@ -499,7 +582,7 @@ function buildPayload(mode: Mode, form: any) {
     return {
       title: form.title,
       description: form.description,
-      imageUrl: form.imageUrl,
+      imageUrl,
       storagePath: form.storagePath || null,
       storageProvider: form.storageProvider || null,
       mimeType: form.mimeType || null,
@@ -510,7 +593,28 @@ function buildPayload(mode: Mode, form: any) {
       isApproved: !!form.isApproved,
     };
   }
-  return { ...form, sortOrder: Number(form.sortOrder ?? 0), isActive: !!form.isActive };
+  return { ...form, imageUrl, sortOrder: Number(form.sortOrder ?? 0), isActive: !!form.isActive };
+}
+
+function normalizeImageUrl(value: unknown) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  if (/^(https?:|data:|blob:|\/)/i.test(trimmed)) return trimmed;
+  if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+  return trimmed;
+}
+
+function upsertCatalogItemInCache(oldData: any, item: any) {
+  if (!item?.id) return oldData;
+  if (Array.isArray(oldData)) {
+    const exists = oldData.some((entry: any) => Number(entry.id) === Number(item.id));
+    return exists ? oldData.map((entry: any) => Number(entry.id) === Number(item.id) ? item : entry) : [item, ...oldData];
+  }
+  if (Array.isArray(oldData?.items)) {
+    const exists = oldData.items.some((entry: any) => Number(entry.id) === Number(item.id));
+    return { ...oldData, items: exists ? oldData.items.map((entry: any) => Number(entry.id) === Number(item.id) ? item : entry) : [item, ...oldData.items] };
+  }
+  return oldData;
 }
 
 function validateCatalogForm(mode: Mode, form: any) {

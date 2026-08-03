@@ -84,8 +84,18 @@ router.post("/image", async (req: AuthRequest, res) => {
     const storagePath = `${folder}/${userId}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.${ext}`;
 
     let imageUrl: string;
+    let usedProvider = provider;
     if (provider === "supabase") {
-      imageUrl = await uploadSupabase(storagePath, mime, buffer);
+      try {
+        imageUrl = await uploadSupabase(storagePath, mime, buffer);
+      } catch (error) {
+        if (String(readEnv("STORAGE_FALLBACK_TO_LOCAL") ?? "true").toLowerCase() === "false") {
+          throw error;
+        }
+        req.log.warn({ err: error }, "Supabase upload failed; using local storage fallback");
+        imageUrl = await uploadLocal(req, storagePath, buffer);
+        usedProvider = "local";
+      }
     } else if (provider === "local") {
       imageUrl = await uploadLocal(req, storagePath, buffer);
     } else {
@@ -95,7 +105,7 @@ router.post("/image", async (req: AuthRequest, res) => {
     res.status(201).json({
       imageUrl,
       storagePath,
-      provider,
+      provider: usedProvider,
       mime,
       sizeBytes: buffer.length,
     });

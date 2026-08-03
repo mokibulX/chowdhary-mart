@@ -190,6 +190,13 @@ function demoAccountsEnabled() {
   return false;
 }
 
+function mockApiEnabled() {
+  const env = (import.meta as unknown as { env?: Record<string, string | boolean | undefined> }).env ?? {};
+  const flag = env.VITE_ENABLE_MOCK_API ?? env.ENABLE_MOCK_API;
+  if (flag !== undefined) return String(flag).toLowerCase() === "true";
+  return demoAccountsEnabled();
+}
+
 function demoPasswords() {
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
   return {
@@ -389,6 +396,11 @@ function chappalProduct(id = 49) {
 }
 
 function ensureChappalDemoData(state: MockRecord) {
+  const deletedStores = state.deletedSeedStores ?? [];
+  const deletedProducts = state.deletedSeedProducts ?? [];
+  const chappalStoreDeleted = deletedStores.some((item: unknown) => Number(item) === 6 || String(item).toLowerCase() === "chowdhary footwear hub");
+  const chappalProductDeleted = deletedProducts.some((item: unknown) => Number(item) === 49 || String(item).toLowerCase() === "daily comfort chappal");
+  if (chappalStoreDeleted && chappalProductDeleted) return;
   if (!state.users.some((item: MockRecord) => item.email === "chappal.seller@local.test")) {
     state.users.push(chappalSellerUser());
   } else {
@@ -396,18 +408,18 @@ function ensureChappalDemoData(state: MockRecord) {
     Object.assign(seller, { role: "vendor", vendorStatus: "approved", isActive: true });
   }
 
-  if (!state.stores.some((item: MockRecord) => item.id === 6 || item.ownerId === 5)) {
+  if (!chappalStoreDeleted && !state.stores.some((item: MockRecord) => item.id === 6 || item.ownerId === 5)) {
     state.stores.push(chappalStore());
-  } else {
+  } else if (!chappalStoreDeleted) {
     const store = state.stores.find((item: MockRecord) => item.id === 6 || item.ownerId === 5);
     Object.assign(store, { ...chappalStore(), ...store, id: store.id ?? 6, ownerId: 5, isOpen: store.isOpen !== false, approvalStatus: "approved", isVerified: true });
   }
 
-  if (!state.products.some((item: MockRecord) => String(item.name).toLowerCase() === "daily comfort chappal")) {
+  if (!chappalProductDeleted && !state.products.some((item: MockRecord) => String(item.name).toLowerCase() === "daily comfort chappal")) {
     const id = Math.max(49, Number(state.nextIds?.product ?? 49));
     state.products.push(chappalProduct(id));
     state.nextIds.product = Math.max(id + 1, Number(state.nextIds.product ?? 0));
-  } else {
+  } else if (!chappalProductDeleted) {
     const product = state.products.find((item: MockRecord) => String(item.name).toLowerCase() === "daily comfort chappal");
     Object.assign(product, { ...chappalProduct(product.id), id: product.id });
   }
@@ -612,6 +624,9 @@ function alomProduct(id: number, item: string[]) {
 }
 
 function ensureAlomDemoData(state: MockRecord) {
+  const deletedStores = state.deletedSeedStores ?? [];
+  const deletedProducts = state.deletedSeedProducts ?? [];
+  const alomStoreDeleted = deletedStores.some((item: unknown) => Number(item) === 7 || String(item).toLowerCase() === "alom grocery");
   if (!state.users.some((item: MockRecord) => item.id === 6 || item.email === "alom.grocery@local.test")) {
     state.users.push(alomSellerUser());
   } else {
@@ -619,14 +634,15 @@ function ensureAlomDemoData(state: MockRecord) {
     Object.assign(seller, { ...alomSellerUser(), ...seller, id: seller.id ?? 6, role: "vendor", vendorStatus: "approved", isActive: true });
   }
 
-  if (!state.stores.some((item: MockRecord) => item.id === 7 || item.ownerId === 6)) {
+  if (!alomStoreDeleted && !state.stores.some((item: MockRecord) => item.id === 7 || item.ownerId === 6)) {
     state.stores.push(alomStore());
-  } else {
+  } else if (!alomStoreDeleted) {
     const store = state.stores.find((item: MockRecord) => item.id === 7 || item.ownerId === 6);
     Object.assign(store, { ...alomStore(), ...store, id: store.id ?? 7, ownerId: 6, isOpen: store.isOpen !== false, approvalStatus: "approved", isVerified: true });
   }
 
   alomVegetables.forEach((veg, index) => {
+    if (deletedProducts.some((item: unknown) => String(item).toLowerCase() === String(veg[0]).toLowerCase())) return;
     const exists = state.products.find((item: MockRecord) => String(item.name).toLowerCase() === String(veg[0]).toLowerCase());
     if (!exists) {
       const id = Math.max(60 + index, Number(state.nextIds?.product ?? 60) + index);
@@ -1137,6 +1153,10 @@ function initialMockState() {
     sessions: {} as Record<string, MockRecord>,
     nextIds: { user: 8, address: 2, order: 1, cartItem: 1, product: products.length + 5, coupon: 3, review: 2, return: 1, store: 8, storeApplication: 1, withdrawal: 1 },
   };
+  if (!demoAccountsEnabled()) {
+    purgeMockToAdminOnly(state);
+    return state;
+  }
   ensureAlomDemoData(state);
   ensureChappalDemoOrder(state);
   ensureAlomDemoOrder(state);
@@ -1147,6 +1167,9 @@ function initialMockState() {
 function migrateMockState(state: MockRecord) {
   const seeded = initialMockState();
   const adminCredentials = getAdminCredentials();
+  state.deletedSeedProducts = state.deletedSeedProducts ?? [];
+  state.deletedSeedCategories = state.deletedSeedCategories ?? [];
+  state.deletedSeedStores = state.deletedSeedStores ?? [];
   state.categories = state.categories ?? [];
   state.products = state.products ?? [];
   state.users = state.users ?? [];
@@ -1161,6 +1184,10 @@ function migrateMockState(state: MockRecord) {
   state.notifications = state.notifications ?? {};
   state.carts = state.carts ?? {};
   payoutSettings(state);
+  if (!demoAccountsEnabled()) {
+    purgeMockToAdminOnly(state);
+    return state;
+  }
   state.nextIds = state.nextIds ?? {};
   state.nextIds.user = Number(state.nextIds.user ?? Math.max(0, ...state.users.map((item: MockRecord) => Number(item.id) || 0)) + 1);
   state.nextIds.address = Number(state.nextIds.address ?? 1);
@@ -1194,14 +1221,16 @@ function migrateMockState(state: MockRecord) {
   }
 
   for (const category of seeded.categories) {
-    if (!state.categories.some((item: MockRecord) => item.id === category.id || item.name === category.name)) {
+    const categoryDeleted = (state.deletedSeedCategories ?? []).some((item: unknown) => String(item).toLowerCase() === String(category.name).toLowerCase() || Number(item) === Number(category.id));
+    if (!categoryDeleted && !state.categories.some((item: MockRecord) => item.id === category.id || item.name === category.name)) {
       state.categories.push(category);
     }
   }
 
   let nextProductId = Math.max(0, ...state.products.map((item: MockRecord) => Number(item.id) || 0), ...seeded.products.map((item: MockRecord) => Number(item.id) || 0)) + 1;
   for (const product of seeded.products) {
-    if (!state.products.some((item: MockRecord) => String(item.name).toLowerCase() === String(product.name).toLowerCase())) {
+    const productDeleted = (state.deletedSeedProducts ?? []).some((item: unknown) => String(item).toLowerCase() === String(product.name).toLowerCase() || Number(item) === Number(product.id));
+    if (!productDeleted && !state.products.some((item: MockRecord) => String(item.name).toLowerCase() === String(product.name).toLowerCase())) {
       state.products.push({ ...product, id: nextProductId++, isFeatured: product.isFeatured || Number(product.discountPercent ?? 0) >= 20 });
     }
   }
@@ -1547,6 +1576,7 @@ function ensureHomepageState(state: MockRecord) {
     updatedAt: mockNow(),
   }));
   state.homepageSectionProducts = state.homepageSectionProducts ?? [];
+  state.homepageRemovedProducts = state.homepageRemovedProducts ?? {};
   state.homepageAuditLog = state.homepageAuditLog ?? [];
 }
 
@@ -1572,6 +1602,7 @@ function sectionAllowsProduct(state: MockRecord, section: MockRecord, product: M
 }
 
 function buildHomepageSectionProducts(state: MockRecord, section: MockRecord, zoneId = 0) {
+  const removed = new Set((state.homepageRemovedProducts?.[String(section.id)] ?? []).map((id: unknown) => Number(id)));
   const manual = state.homepageSectionProducts
     .filter((item: MockRecord) => Number(item.sectionId) === Number(section.id))
     .filter((item: MockRecord) => !zoneId || !item.zoneId || Number(item.zoneId) === zoneId)
@@ -1588,6 +1619,7 @@ function buildHomepageSectionProducts(state: MockRecord, section: MockRecord, zo
 
   const seen = new Set<number>();
   return [...manual, ...auto]
+    .filter((product: MockRecord) => !removed.has(Number(product.id)))
     .filter((product: MockRecord) => homepageProductEligible(state, product) && sectionAllowsProduct(state, section, product))
     .filter((product: MockRecord) => {
       if (seen.has(Number(product.id))) return false;
@@ -1698,6 +1730,12 @@ function buildCart(state: MockRecord, userId: number) {
 }
 
 function removeProductEverywhere(state: MockRecord, productId: number) {
+  const product = (state.products ?? []).find((item: MockRecord) => Number(item.id) === Number(productId));
+  state.deletedSeedProducts = Array.from(new Set([
+    ...(state.deletedSeedProducts ?? []),
+    productId,
+    ...(product?.name ? [String(product.name)] : []),
+  ]));
   state.products = (state.products ?? []).filter((item: MockRecord) => item.id !== productId);
   Object.keys(state.carts ?? {}).forEach((key) => {
     state.carts[key] = (state.carts[key] ?? []).filter((item: MockRecord) => item.productId !== productId);
@@ -1865,6 +1903,12 @@ function buildInvoiceSnapshot(order: MockRecord, store: MockRecord, printType: s
 }
 
 function removeStoreEverywhere(state: MockRecord, storeId: number) {
+  const store = (state.stores ?? []).find((item: MockRecord) => Number(item.id) === Number(storeId));
+  state.deletedSeedStores = Array.from(new Set([
+    ...(state.deletedSeedStores ?? []),
+    storeId,
+    ...(store?.name ? [String(store.name)] : []),
+  ]));
   const productIds = (state.products ?? []).filter((item: MockRecord) => item.storeId === storeId).map((item: MockRecord) => Number(item.id));
   productIds.forEach((productId: number) => removeProductEverywhere(state, productId));
   const orderIds = (state.orders ?? []).filter((item: MockRecord) => item.storeId === storeId).map((item: MockRecord) => Number(item.id));
@@ -1894,6 +1938,55 @@ function removeUserEverywhere(state: MockRecord, userId: number) {
   Object.keys(state.sessions ?? {}).forEach((token) => {
     if (Number(state.sessions[token]?.userId) === userId) delete state.sessions[token];
   });
+}
+
+function purgeMockToAdminOnly(state: MockRecord) {
+  const adminCredentials = getAdminCredentials();
+  let admin = (state.users ?? []).find((item: MockRecord) => String(item.email ?? "").toLowerCase() === adminCredentials.email.toLowerCase() && item.role === "admin")
+    ?? (state.users ?? []).find((item: MockRecord) => item.role === "admin");
+  admin = {
+    ...makeUser({ id: Number(admin?.id ?? 1), email: adminCredentials.email, name: admin?.name || "Admin User", role: "admin", password: adminCredentials.password, walletBalance: admin?.walletBalance ?? "7000.00" }),
+    ...admin,
+    email: adminCredentials.email,
+    password: adminCredentials.password,
+    role: "admin",
+    isActive: true,
+    deletedAt: null,
+  };
+  state.users = [admin];
+  state.categories = [];
+  state.products = [];
+  state.stores = [];
+  state.orders = [];
+  state.returns = [];
+  state.reviews = [];
+  state.carts = {};
+  state.wishlist = {};
+  state.addresses = {};
+  state.notifications = { [String(admin.id)]: state.notifications?.[String(admin.id)] ?? [] };
+  state.walletTransactions = { [String(admin.id)]: state.walletTransactions?.[String(admin.id)] ?? [] };
+  state.storeApplications = [];
+  state.walletWithdrawalRequests = [];
+  state.deliveryOtp = {};
+  state.verificationAuditLog = [];
+  state.homepageSectionProducts = [];
+  state.deletedSeedProducts = ["*"];
+  state.deletedSeedCategories = ["*"];
+  state.deletedSeedStores = ["*"];
+  Object.keys(state.sessions ?? {}).forEach((token) => {
+    if (Number(state.sessions[token]?.userId) !== Number(admin.id)) delete state.sessions[token];
+  });
+  state.nextIds = {
+    ...(state.nextIds ?? {}),
+    user: Math.max(Number(admin.id) + 1, 2),
+    product: 1,
+    store: 1,
+    order: 1,
+    cartItem: 1,
+    address: 1,
+    storeApplication: 1,
+    withdrawal: 1,
+  };
 }
 
 function couponDiscount(coupon: MockRecord, amount: number) {
@@ -2148,6 +2241,7 @@ function mockAdvancePartner(order: MockRecord) {
 }
 
 async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOptions, method: string): Promise<T | undefined> {
+  if (!mockApiEnabled()) return undefined;
   const state = getMockState() as MockRecord | null;
   if (!state) return undefined;
   const urlText = resolveUrl(input);
@@ -2167,6 +2261,23 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
   const ok = (data: unknown) => data as T;
 
   if (path === "/api/healthz") return ok({ ok: true, status: "ok" });
+  if (path === "/api/uploads/image" && method === "POST") {
+    const user = requireUser();
+    const dataUrl = String(body.dataUrl ?? "");
+    const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,/i);
+    if (!match) makeMockError(400, "Only JPG, PNG, WEBP or GIF images are allowed.", method, path);
+    const sizeBytes = Math.ceil((dataUrl.length - dataUrl.indexOf(",") - 1) * 0.75);
+    if (sizeBytes > 5 * 1024 * 1024) makeMockError(400, "Image is too large. Please upload up to 5 MB.", method, path);
+    const folder = String(body.folder ?? "general").toLowerCase().replace(/[^a-z0-9/_-]+/g, "-").replace(/^\/|\/$/g, "") || "general";
+    const ext = match[1].toLowerCase() === "image/jpeg" ? "jpg" : match[1].split("/")[1];
+    return ok({
+      imageUrl: dataUrl,
+      storagePath: `${folder}/${user.id}/${Date.now()}.${ext}`,
+      provider: "mock",
+      mime: match[1].toLowerCase(),
+      sizeBytes,
+    });
+  }
   if (path === "/api/auth/otp/send" && method === "POST") {
     const phone = String(body.phone ?? "").replace(/\D/g, "");
     const email = String(body.email ?? "").trim().toLowerCase();
@@ -2436,7 +2547,11 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     });
   }
 
-  if (path === "/api/categories") return ok(state.categories);
+  if (path === "/api/categories") {
+    return ok([...state.categories]
+      .filter((category: MockRecord) => category.isActive !== false)
+      .sort((a: MockRecord, b: MockRecord) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0) || String(a.name ?? "").localeCompare(String(b.name ?? ""))));
+  }
   if (path === "/api/stores") {
     const limit = Number(url.searchParams.get("limit") ?? state.stores.length);
     const lat = Number(url.searchParams.get("lat") ?? "");
@@ -2722,6 +2837,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     if (method === "DELETE") {
       state.homepageSections = state.homepageSections.filter((item: MockRecord) => item.id !== section.id);
       state.homepageSectionProducts = state.homepageSectionProducts.filter((item: MockRecord) => item.sectionId !== section.id);
+      if (state.homepageRemovedProducts) delete state.homepageRemovedProducts[String(section.id)];
       homepageAudit(state, currentUser!, "Section deleted", { sectionId: section.id });
       saveMockState(state);
       return ok({ message: "Section deleted" });
@@ -2774,6 +2890,8 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
       createdAt: mockNow(),
       updatedAt: mockNow(),
     };
+    state.homepageRemovedProducts = state.homepageRemovedProducts ?? {};
+    state.homepageRemovedProducts[String(section.id)] = (state.homepageRemovedProducts[String(section.id)] ?? []).filter((id: unknown) => Number(id) !== Number(product.id));
     state.homepageSectionProducts.push(item);
     homepageAudit(state, currentUser!, "Product added", { sectionId: section.id, productId: product.id, newValue: item });
     saveMockState(state);
@@ -2784,8 +2902,15 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     ensureHomepageState(state);
     const sectionId = Number(adminHomepageRemoveProductMatch[1]);
     const productId = Number(adminHomepageRemoveProductMatch[2]);
-    state.homepageSectionProducts = state.homepageSectionProducts.filter((item: MockRecord) => !(Number(item.sectionId) === sectionId && Number(item.productId) === productId));
-    homepageAudit(state, currentUser!, "Product removed", { sectionId, productId });
+    const row = state.homepageSectionProducts.find((item: MockRecord) => Number(item.sectionId) === sectionId && Number(item.id) === productId);
+    const resolvedProductId = Number(row?.productId ?? productId);
+    state.homepageSectionProducts = state.homepageSectionProducts.filter((item: MockRecord) => !(Number(item.sectionId) === sectionId && (Number(item.productId) === resolvedProductId || Number(item.id) === productId)));
+    state.homepageRemovedProducts = state.homepageRemovedProducts ?? {};
+    state.homepageRemovedProducts[String(sectionId)] = Array.from(new Set([
+      ...(state.homepageRemovedProducts[String(sectionId)] ?? []).map((id: unknown) => Number(id)),
+      resolvedProductId,
+    ].filter((id: number) => Number.isFinite(id) && id > 0)));
+    homepageAudit(state, currentUser!, "Product removed", { sectionId, productId: resolvedProductId });
     saveMockState(state);
     return ok({ message: "Product removed" });
   }
@@ -3695,7 +3820,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     return ok(zone);
   }
   if (path === "/api/admin/users") {
-    let users = state.users.map(publicUser);
+    let users = state.users.filter((item: MockRecord) => !item.deletedAt && !item.deleted_at).map(publicUser);
     const role = url.searchParams.get("role");
     const q = String(url.searchParams.get("q") ?? "").toLowerCase();
     if (role) users = users.filter((item: MockRecord) => item.role === role);
@@ -3708,7 +3833,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     const target = state.users.find((item: MockRecord) => item.id === Number(adminUserMatch[1]));
     if (!target) makeMockError(404, "User not found", method, path);
     if (method === "DELETE") {
-      if (target.role === "admin") makeMockError(400, "Admin account cannot be deleted", method, path);
+      if (Number(target.id) === Number(currentUser?.id)) makeMockError(400, "You cannot delete your own admin account.", method, path);
       removeUserEverywhere(state, target.id);
       saveMockState(state);
       return ok({ message: "User deleted" });
@@ -3937,6 +4062,34 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     }
     return ok(state.products.map((item: MockRecord) => productWithStore(state, item)));
   }
+  if (path === "/api/admin/catalog/clear-products-sellers" && method === "POST") {
+    requireUser();
+    state.deletedSeedProducts = Array.from(new Set([
+      ...(state.deletedSeedProducts ?? []),
+      ...(state.products ?? []).flatMap((item: MockRecord) => [Number(item.id), String(item.name ?? "")].filter(Boolean)),
+      ...seedProducts.map((item: any[]) => String(item[0])),
+      "Daily Comfort Chappal",
+      ...alomVegetables.map((item) => String(item[0])),
+    ]));
+    state.deletedSeedStores = Array.from(new Set([
+      ...(state.deletedSeedStores ?? []),
+      ...(state.stores ?? []).flatMap((item: MockRecord) => [Number(item.id), String(item.name ?? "")].filter(Boolean)),
+      "Chowdhary Footwear Hub",
+      "Alom Grocery",
+    ]));
+    state.products = [];
+    state.stores = [];
+    state.users = (state.users ?? []).map((item: MockRecord) => item.role === "vendor"
+      ? { ...item, name: `Deleted Seller #${item.id}`, email: null, phone: null, isActive: false, vendorStatus: "deleted", deletedAt: mockNow() }
+      : item);
+    state.orders = [];
+    state.carts = {};
+    state.wishlist = {};
+    state.storeApplications = [];
+    state.homepageSectionProducts = [];
+    saveMockState(state);
+    return ok({ message: "Products, stores and sellers cleared", products: 0, stores: 0 });
+  }
   const adminProductMatch = path.match(/^\/api\/admin\/products\/(\d+)$/);
   if (adminProductMatch) {
     requireUser();
@@ -3985,6 +4138,11 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     const category = state.categories.find((item: MockRecord) => item.id === categoryId);
     if (!category) makeMockError(404, "Category not found", method, path);
     if (method === "DELETE") {
+      state.deletedSeedCategories = Array.from(new Set([
+        ...(state.deletedSeedCategories ?? []),
+        categoryId,
+        ...(category?.name ? [String(category.name)] : []),
+      ]));
       state.products.filter((item: MockRecord) => item.categoryId === categoryId).map((item: MockRecord) => Number(item.id)).forEach((productId: number) => removeProductEverywhere(state, productId));
       state.categories = state.categories.filter((item: MockRecord) => item.id !== categoryId);
       saveMockState(state);

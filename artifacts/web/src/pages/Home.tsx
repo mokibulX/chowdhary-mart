@@ -86,7 +86,7 @@ export default function Home() {
     queryKey: ["/api/homepage", zoneId],
     queryFn: () => customFetch<any>(`/api/homepage${zoneId ? `?zoneId=${zoneId}` : ""}`),
   });
-  const selectedCategoryParams = { categoryId: selectedCategoryId, sort: "newest" as any, ...zoneParams };
+  const selectedCategoryParams = { categoryId: selectedCategoryId, sort: "newest" as any };
   const {
     products: selectedCategoryProducts,
     total: selectedCategoryTotal,
@@ -108,6 +108,21 @@ export default function Home() {
     }
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const productLists = [featured, dailyEssentials, bestSellers, newest].filter(Boolean);
+    if (productLists.length < 4) return;
+    const availableIds = new Set<number>();
+    productLists.forEach((list: any) => {
+      (list?.items ?? []).forEach((product: any) => availableIds.add(Number(product.id)));
+    });
+    const next = recentlyViewed.filter((product) => availableIds.has(Number(product.id)));
+    if (next.length !== recentlyViewed.length) {
+      if (next.length) localStorage.setItem("ekart_recent_products", JSON.stringify(next));
+      else localStorage.removeItem("ekart_recent_products");
+      setRecentlyViewed(next);
+    }
+  }, [bestSellers, dailyEssentials, featured, newest, recentlyViewed]);
 
   const slides = banners?.length ? banners : FALLBACK_BANNERS;
   const selectedCategory = categories?.find((cat) => cat.id === selectedCategoryId);
@@ -174,10 +189,12 @@ export default function Home() {
           <div className="lch-clean-scroll flex max-w-full gap-3 overflow-x-auto pb-1">
             {categories?.map((cat, index) => (
               <button key={cat.id} type="button" onClick={() => setSelectedCategoryId(cat.id)} className="group min-w-[72px] text-center">
-                <div className={`mx-auto h-16 w-16 overflow-hidden rounded-full border-2 border-white bg-gray-50 shadow-sm ring-1 transition-all group-hover:-translate-y-1 ${selectedCategoryId === cat.id ? "ring-2 ring-[#0757ee]" : "ring-gray-200 group-hover:ring-primary/50"}`}>
-                  <img src={cat.imageUrl || CATEGORY_FALLBACK_IMAGES[index % CATEGORY_FALLBACK_IMAGES.length]} alt={cat.name} className="h-full w-full object-cover" />
+                <div className={`lch-category-orbit lch-category-tone-${index % 8} ${index % 2 ? "lch-category-reverse" : ""} mx-auto h-16 w-16 ${selectedCategoryId === cat.id ? "is-selected" : ""}`}>
+                  <div className="lch-category-orbit-media">
+                    <img src={cat.imageUrl || CATEGORY_FALLBACK_IMAGES[index % CATEGORY_FALLBACK_IMAGES.length]} alt={cat.name} className="h-full w-full object-cover" />
+                  </div>
                 </div>
-                <p className="mt-1.5 line-clamp-2 text-[10px] font-semibold leading-3 text-gray-700">{cat.name}</p>
+                <p className="lch-category-luxury-text mt-2 line-clamp-2 text-[11px] font-extrabold leading-3">{cat.name}</p>
               </button>
             ))}
           </div>
@@ -296,10 +313,12 @@ export default function Home() {
           <div className="grid grid-cols-4 gap-3 md:grid-cols-10">
             {categories?.map((cat, index) => (
               <Link key={cat.id} href={`/search?categoryId=${cat.id}`} className="group text-center">
-                <div className="mx-auto h-16 w-16 overflow-hidden rounded-full border-2 border-white bg-white shadow-sm ring-1 ring-gray-200 transition-all group-hover:-translate-y-1 group-hover:shadow-md">
-                  <img src={cat.imageUrl || CATEGORY_FALLBACK_IMAGES[index % CATEGORY_FALLBACK_IMAGES.length]} alt={cat.name} className="h-full w-full object-cover" />
+                <div className={`lch-category-orbit lch-category-tone-${index % 8} ${index % 2 ? "lch-category-reverse" : ""} mx-auto h-16 w-16`}>
+                  <div className="lch-category-orbit-media">
+                    <img src={cat.imageUrl || CATEGORY_FALLBACK_IMAGES[index % CATEGORY_FALLBACK_IMAGES.length]} alt={cat.name} className="h-full w-full object-cover" />
+                  </div>
                 </div>
-                <p className="mt-2 line-clamp-2 text-[11px] font-medium text-gray-700">{cat.name}</p>
+                <p className="lch-category-luxury-text mt-2 line-clamp-2 text-[11px] font-extrabold leading-3">{cat.name}</p>
               </Link>
             ))}
           </div>

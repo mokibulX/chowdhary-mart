@@ -5,7 +5,7 @@ import {
   deliveryPartnersTable, productsTable, categoriesTable,
   homepageSectionsTable, homepageSectionProductsTable, walletTransactionsTable,
   serviceZonesTable, sellerZoneAssignmentsTable, riderZoneAssignmentsTable, zoneChangeRequestsTable,
-  mediaLibraryTable,
+  mediaLibraryTable, withdrawalRequestsTable,
 } from "@workspace/db";
 import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { generateReferralCode, hashPassword } from "../lib/auth";
@@ -20,6 +20,11 @@ router.use(requireAuth, requireRole("admin"));
 const homepageAuditLog: Array<Record<string, unknown>> = [];
 let mediaLibraryReady: Promise<void> | null = null;
 let adminUsersReady: Promise<void> | null = null;
+const payoutSettings = {
+  adminCommissionPercent: 8,
+  sellerPayoutCycle: "weekly",
+  deliveryPayoutCycle: "weekly",
+};
 
 function ensureAdminUsersColumns() {
   adminUsersReady ??= (async () => {
@@ -81,6 +86,56 @@ function mediaPayload(body: Record<string, unknown>, adminId?: number) {
     tags: Array.isArray(body.tags) ? body.tags.map((item) => String(item).trim()).filter(Boolean) : String(body.tags ?? "").split(",").map((item) => item.trim()).filter(Boolean),
     isApproved: body.isApproved !== undefined ? Boolean(body.isApproved) : true,
     createdByAdminId: adminId ?? null,
+    updatedAt: new Date(),
+  };
+}
+
+function categoryPayload(body: Record<string, unknown>, existing?: typeof categoriesTable.$inferSelect) {
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  if (name.length < 2) throw new Error("Category name is required");
+  return {
+    name,
+    slug: String(body.slug ?? existing?.slug ?? slugify(name)).trim() || slugify(name),
+    imageUrl: String(body.imageUrl ?? existing?.imageUrl ?? "").trim() || null,
+    iconEmoji: String(body.iconEmoji ?? existing?.iconEmoji ?? name.charAt(0).toUpperCase()).trim().slice(0, 10) || null,
+    colorClass: String(body.colorClass ?? existing?.colorClass ?? "bg-blue-50").trim() || null,
+    parentId: body.parentId !== undefined && body.parentId !== "" ? Number(body.parentId) : existing?.parentId ?? null,
+    sortOrder: Number(body.sortOrder ?? existing?.sortOrder ?? 0),
+    isActive: body.isActive !== undefined ? Boolean(body.isActive) : existing?.isActive ?? true,
+  };
+}
+
+function productPayload(body: Record<string, unknown>, existing?: typeof productsTable.$inferSelect) {
+  const name = String(body.name ?? existing?.name ?? "").trim();
+  const storeId = Number(body.storeId ?? existing?.storeId);
+  const categoryId = Number(body.categoryId ?? existing?.categoryId);
+  const price = Number(body.price ?? existing?.price ?? 0);
+  const mrp = Number(body.mrp ?? existing?.mrp ?? price);
+  if (name.length < 2) throw new Error("Product name is required");
+  if (!Number.isInteger(storeId) || storeId <= 0) throw new Error("Store is required");
+  if (!Number.isInteger(categoryId) || categoryId <= 0) throw new Error("Category is required");
+  if (!Number.isFinite(price) || price <= 0) throw new Error("Valid product price is required");
+  if (!Number.isFinite(mrp) || mrp <= 0) throw new Error("Valid product MRP is required");
+  const images = Array.isArray(body.images)
+    ? body.images.map((item) => String(item).trim()).filter(Boolean)
+    : String(body.imageUrl ?? "").trim()
+      ? [String(body.imageUrl).trim()]
+      : existing?.images ?? [];
+  const discountPercent = Math.max(0, Math.round(((mrp - price) / Math.max(mrp, 1)) * 100));
+  return {
+    name,
+    storeId,
+    categoryId,
+    description: String(body.description ?? existing?.description ?? "").trim() || null,
+    price: price.toFixed(2),
+    mrp: mrp.toFixed(2),
+    discountPercent: String(discountPercent),
+    images,
+    weight: String(body.weight ?? existing?.weight ?? "").trim() || null,
+    unit: String(body.unit ?? existing?.unit ?? "pc").trim() || "pc",
+    stock: Math.max(0, Number(body.stock ?? existing?.stock ?? 0)),
+    isAvailable: body.isAvailable !== undefined ? Boolean(body.isAvailable) : existing?.isAvailable ?? true,
+    isFeatured: body.isFeatured !== undefined ? Boolean(body.isFeatured) : existing?.isFeatured ?? false,
     updatedAt: new Date(),
   };
 }
@@ -423,7 +478,14 @@ router.patch("/homepage/sections/:id", async (req: AuthRequest, res) => {
 router.delete("/homepage/sections/:id", async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.id);
-    await db.delete(homepageSectionsTable).where(eq(homepageSectionsTable.id, id));
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid section id" });
+      return;
+    }
+    await db.transaction(async (tx) => {
+      await tx.delete(homepageSectionProductsTable).where(eq(homepageSectionProductsTable.sectionId, id));
+      await tx.delete(homepageSectionsTable).where(eq(homepageSectionsTable.id, id));
+    });
     auditHomepage(req, "Section deleted", { sectionId: id });
     res.json({ message: "Section deleted" });
   } catch (err) {
@@ -502,9 +564,22 @@ router.delete("/homepage/sections/:id/products/:productId", async (req: AuthRequ
   try {
     const sectionId = Number(req.params.id);
     const productId = Number(req.params.productId);
-    await db.delete(homepageSectionProductsTable).where(and(eq(homepageSectionProductsTable.sectionId, sectionId), eq(homepageSectionProductsTable.productId, productId)));
+    if (!Number.isInteger(sectionId) || sectionId <= 0 || !Number.isInteger(productId) || productId <= 0) {
+      res.status(400).json({ error: "Invalid section or product id" });
+      return;
+    }
+    const removed = await db.delete(homepageSectionProductsTable)
+      .where(and(
+        eq(homepageSectionProductsTable.sectionId, sectionId),
+        sql`(${homepageSectionProductsTable.productId} = ${productId} or ${homepageSectionProductsTable.id} = ${productId})`,
+      ))
+      .returning({ id: homepageSectionProductsTable.id });
+    if (!removed.length) {
+      res.status(404).json({ error: "Product is not in this homepage section" });
+      return;
+    }
     auditHomepage(req, "Product removed", { sectionId, productId });
-    res.json({ message: "Product removed" });
+    res.json({ message: "Product removed", removed: removed.length });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -571,6 +646,151 @@ router.get("/homepage/preview", async (req: AuthRequest, res) => {
 
 router.get("/homepage/audit", (_req, res) => {
   res.json(homepageAuditLog);
+});
+
+// GET /api/admin/wallets
+router.get("/wallets", async (req: AuthRequest, res) => {
+  try {
+    await ensureAdminUsersColumns();
+    const users = await db.select({
+      id: usersTable.id,
+      email: usersTable.email,
+      phone: usersTable.phone,
+      name: usersTable.name,
+      role: usersTable.role,
+      walletBalance: usersTable.walletBalance,
+      isActive: usersTable.isActive,
+      createdAt: usersTable.createdAt,
+    }).from(usersTable)
+      .where(sql`deleted_at is null`)
+      .orderBy(desc(usersTable.createdAt));
+
+    const ids = users.map((user) => user.id);
+    const txns = ids.length
+      ? await db.select().from(walletTransactionsTable).where(inArray(walletTransactionsTable.userId, ids)).orderBy(desc(walletTransactionsTable.createdAt)).limit(300)
+      : [];
+    res.json(users.map((user) => {
+      const transactions = txns.filter((txn) => txn.userId === user.id);
+      return { ...user, transactions: transactions.slice(0, 5), transactionCount: transactions.length };
+    }));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load wallets" });
+  }
+});
+
+// POST /api/admin/wallet-adjustments
+router.post("/wallet-adjustments", async (req: AuthRequest, res) => {
+  try {
+    const userId = Number(req.body.userId);
+    const amount = Number(req.body.amount);
+    const direction = String(req.body.direction ?? "credit") === "debit" ? "debit" : "credit";
+    const reason = String(req.body.reason ?? "").trim();
+    if (!Number.isInteger(userId) || userId <= 0) { res.status(400).json({ error: "Valid user is required" }); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { res.status(400).json({ error: "Valid amount is required" }); return; }
+    if (reason.length < 3) { res.status(400).json({ error: "Adjustment reason is required" }); return; }
+
+    const [target] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!target) { res.status(404).json({ error: "Wallet user not found" }); return; }
+    const current = Number(target.walletBalance ?? 0);
+    const next = direction === "credit" ? current + amount : current - amount;
+    if (next < 0) { res.status(400).json({ error: "Wallet balance cannot go below zero" }); return; }
+
+    const [txn] = await db.transaction(async (tx) => {
+      await tx.update(usersTable).set({ walletBalance: next.toFixed(2), updatedAt: new Date() }).where(eq(usersTable.id, userId));
+      return tx.insert(walletTransactionsTable).values({
+        userId,
+        type: direction,
+        amount: amount.toFixed(2),
+        balance: next.toFixed(2),
+        description: `Admin ${direction === "credit" ? "added" : "deducted"} Rs.${amount.toFixed(0)}: ${reason}`,
+        referenceId: `ADMIN-ADJ-${Date.now()}`,
+        referenceType: "admin_adjustment",
+      }).returning();
+    });
+
+    res.status(201).json({ balance: next.toFixed(2), transaction: txn });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not adjust wallet" });
+  }
+});
+
+// GET/PATCH /api/admin/payout-settings
+router.get("/payout-settings", (_req, res) => {
+  res.json(payoutSettings);
+});
+
+router.patch("/payout-settings", (req, res) => {
+  payoutSettings.adminCommissionPercent = Math.max(0, Math.min(40, Number(req.body.adminCommissionPercent ?? payoutSettings.adminCommissionPercent)));
+  payoutSettings.sellerPayoutCycle = String(req.body.sellerPayoutCycle ?? payoutSettings.sellerPayoutCycle);
+  payoutSettings.deliveryPayoutCycle = String(req.body.deliveryPayoutCycle ?? payoutSettings.deliveryPayoutCycle);
+  res.json(payoutSettings);
+});
+
+// GET /api/admin/wallet-withdrawals
+router.get("/wallet-withdrawals", async (req: AuthRequest, res) => {
+  try {
+    const requests = await db.select().from(withdrawalRequestsTable).orderBy(desc(withdrawalRequestsTable.createdAt)).limit(100);
+    const userIds = [...new Set(requests.map((item) => item.userId))];
+    const users = userIds.length ? await db.select().from(usersTable).where(inArray(usersTable.id, userIds)) : [];
+    const userMap = new Map(users.map((user) => [user.id, user]));
+    res.json(requests.map((item) => ({
+      ...item,
+      status: String(item.status).toLowerCase(),
+      requestedAt: item.createdAt,
+      user: userMap.get(item.userId) ?? null,
+    })));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load transfer requests" });
+  }
+});
+
+// POST /api/admin/wallet-withdrawals/:id/:action
+router.post("/wallet-withdrawals/:id/:action", async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const action = req.params.action === "reject" ? "reject" : "approve";
+    const [request] = await db.select().from(withdrawalRequestsTable).where(eq(withdrawalRequestsTable.id, id)).limit(1);
+    if (!request) { res.status(404).json({ error: "Transfer request not found" }); return; }
+    if (String(request.status).toLowerCase() !== "pending") { res.status(400).json({ error: "Transfer request already reviewed" }); return; }
+
+    if (action === "reject") {
+      const [updated] = await db.update(withdrawalRequestsTable)
+        .set({ status: "rejected", adminNote: String(req.body.reason ?? "Rejected by admin"), updatedAt: new Date() })
+        .where(eq(withdrawalRequestsTable.id, id))
+        .returning();
+      res.json({ ...updated, status: String(updated.status).toLowerCase(), requestedAt: updated.createdAt });
+      return;
+    }
+
+    const [updated] = await db.transaction(async (tx) => {
+      const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, request.userId)).limit(1);
+      const balance = Number(user?.walletBalance ?? 0);
+      const amount = Number(request.amount);
+      if (amount > balance) throw new Error("Insufficient wallet balance");
+      const closing = balance - amount;
+      await tx.update(usersTable).set({ walletBalance: closing.toFixed(2), updatedAt: new Date() }).where(eq(usersTable.id, request.userId));
+      await tx.insert(walletTransactionsTable).values({
+        userId: request.userId,
+        type: "debit",
+        amount: amount.toFixed(2),
+        balance: closing.toFixed(2),
+        description: `Admin approved transfer to ${request.method === "bank" ? "bank account" : "UPI"}`,
+        referenceId: `WDR-${request.id}`,
+        referenceType: "wallet_withdrawal",
+      });
+      return tx.update(withdrawalRequestsTable)
+        .set({ status: "transferred", adminNote: `Approved by admin ${req.user?.userId}`, updatedAt: new Date() })
+        .where(eq(withdrawalRequestsTable.id, id))
+        .returning();
+    });
+    res.json({ ...updated, status: String(updated.status).toLowerCase(), requestedAt: updated.createdAt });
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not review transfer request" });
+  }
 });
 
 // GET /api/admin/users
@@ -687,21 +907,46 @@ router.delete("/users/:userId", async (req: AuthRequest, res) => {
       return;
     }
 
-    await db.execute(sql`
-      update users
-      set email = null,
-          phone = null,
-          password_hash = null,
-          name = ${`Deleted User #${userId}`},
-          avatar_url = null,
-          referral_code = null,
-          is_active = false,
-          deleted_at = now(),
-          updated_at = now()
-      where id = ${userId}
-    `);
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`delete from delivery_earnings where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from rider_earning_transactions where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from seller_settlements where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from delivery_route where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from delivery_tracking_history where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from active_delivery_locations where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from order_tracking where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from reviews where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from "returns" where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from coupon_uses where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from refunds where parent_order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from payments where parent_order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from payment_attempts where payment_order_id in (select id from payment_orders where parent_order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId})))`);
+      await tx.execute(sql`delete from payment_orders where parent_order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from order_items where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from orders where store_id in (select id from stores where owner_id = ${userId})`);
+      await tx.execute(sql`delete from cart_items where store_id in (select id from stores where owner_id = ${userId}) or product_id in (select id from products where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from wishlist where product_id in (select id from products where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from homepage_section_products where product_id in (select id from products where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from inventory_ledger where product_id in (select id from products where store_id in (select id from stores where owner_id = ${userId}))`);
+      await tx.execute(sql`delete from seller_zone_assignments where seller_id = ${userId} or shop_id in (select id from stores where owner_id = ${userId})`);
+      await tx.execute(sql`delete from products where store_id in (select id from stores where owner_id = ${userId})`);
+      await tx.execute(sql`delete from stores where owner_id = ${userId}`);
+      await tx.execute(sql`
+        update users
+        set email = null,
+            phone = null,
+            password_hash = null,
+            name = ${`Deleted User #${userId}`},
+            avatar_url = null,
+            referral_code = null,
+            is_active = false,
+            deleted_at = now(),
+            updated_at = now()
+        where id = ${userId}
+      `);
+    });
 
-    res.json({ message: "User deleted", id: userId });
+    res.json({ message: existing.role === "vendor" ? "Seller, store and products deleted" : "User deleted", id: userId });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Could not delete user" });
@@ -751,14 +996,298 @@ router.get("/orders", async (req: AuthRequest, res) => {
   }
 });
 
+// PATCH /api/admin/orders/:orderId
+router.patch("/orders/:orderId", async (req: AuthRequest, res) => {
+  try {
+    const orderId = Number(req.params.orderId);
+    const status = String(req.body.status ?? "");
+    const validStatuses = new Set(["pending", "confirmed", "preparing", "packed", "picked_up", "on_the_way", "arriving", "delivered", "cancelled", "returned"]);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      res.status(400).json({ error: "Invalid order id" });
+      return;
+    }
+    if (!validStatuses.has(status)) {
+      res.status(400).json({ error: "Invalid order status" });
+      return;
+    }
+
+    const [order] = await db.update(ordersTable)
+      .set({
+        status: status as typeof ordersTable.$inferInsert["status"],
+        deliveredAt: status === "delivered" ? new Date() : null,
+        cancelledAt: status === "cancelled" ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(ordersTable.id, orderId))
+      .returning();
+    if (!order) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+    res.json(order);
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not update order" });
+  }
+});
+
+// DELETE /api/admin/orders/:orderId
+router.delete("/orders/:orderId", async (req: AuthRequest, res) => {
+  try {
+    const orderId = Number(req.params.orderId);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      res.status(400).json({ error: "Invalid order id" });
+      return;
+    }
+
+    const [existing] = await db.select({ id: ordersTable.id }).from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`delete from delivery_earnings where order_id = ${orderId}`);
+      await tx.execute(sql`delete from rider_earning_transactions where order_id = ${orderId}`);
+      await tx.execute(sql`delete from seller_settlements where order_id = ${orderId}`);
+      await tx.execute(sql`delete from delivery_route where order_id = ${orderId}`);
+      await tx.execute(sql`delete from delivery_tracking_history where order_id = ${orderId}`);
+      await tx.execute(sql`delete from active_delivery_locations where order_id = ${orderId}`);
+      await tx.execute(sql`delete from order_tracking where order_id = ${orderId}`);
+      await tx.execute(sql`delete from reviews where order_id = ${orderId}`);
+      await tx.execute(sql`delete from "returns" where order_id = ${orderId}`);
+      await tx.execute(sql`delete from coupon_uses where order_id = ${orderId}`);
+      await tx.execute(sql`delete from refunds where parent_order_id = ${orderId}`);
+      await tx.execute(sql`delete from payments where parent_order_id = ${orderId}`);
+      await tx.execute(sql`delete from payment_attempts where payment_order_id in (select id from payment_orders where parent_order_id = ${orderId})`);
+      await tx.execute(sql`delete from payment_orders where parent_order_id = ${orderId}`);
+      await tx.execute(sql`delete from order_items where order_id = ${orderId}`);
+      await tx.delete(ordersTable).where(eq(ordersTable.id, orderId));
+    });
+
+    res.json({ message: "Order permanently deleted", id: orderId });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not delete order" });
+  }
+});
+
+// GET /api/admin/products
+router.get("/products", async (req: AuthRequest, res) => {
+  try {
+    const products = await db.select().from(productsTable).orderBy(desc(productsTable.createdAt));
+    const [stores, categories] = await Promise.all([
+      db.select().from(storesTable),
+      db.select().from(categoriesTable),
+    ]);
+    const storeMap = new Map(stores.map((store) => [store.id, store]));
+    const categoryMap = new Map(categories.map((category) => [category.id, category]));
+    res.json(products.map((product) => ({
+      ...product,
+      store: storeMap.get(product.storeId) ?? null,
+      category: product.categoryId ? categoryMap.get(product.categoryId) ?? null : null,
+    })));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load products" });
+  }
+});
+
+// POST /api/admin/products
+router.post("/products", async (req: AuthRequest, res) => {
+  try {
+    const payload = productPayload(req.body);
+    const [product] = await db.insert(productsTable).values(payload).returning();
+    res.status(201).json(product);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not create product" });
+  }
+});
+
+// PATCH /api/admin/products/:productId
+router.patch("/products/:productId", async (req: AuthRequest, res) => {
+  try {
+    const productId = Number(req.params.productId);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      res.status(400).json({ error: "Invalid product id" });
+      return;
+    }
+    const [existing] = await db.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Product not found" });
+      return;
+    }
+    const payload = productPayload(req.body, existing);
+    const [product] = await db.update(productsTable).set(payload).where(eq(productsTable.id, productId)).returning();
+    res.json(product);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not update product" });
+  }
+});
+
+// DELETE /api/admin/products/:productId
+router.delete("/products/:productId", async (req: AuthRequest, res) => {
+  try {
+    const productId = Number(req.params.productId);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      res.status(400).json({ error: "Invalid product id" });
+      return;
+    }
+    const [existing] = await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.id, productId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Product not found" });
+      return;
+    }
+    await db.transaction(async (tx) => {
+      await tx.delete(homepageSectionProductsTable).where(eq(homepageSectionProductsTable.productId, productId));
+      await tx.execute(sql`delete from reviews where product_id = ${productId}`);
+      await tx.execute(sql`delete from wishlist where product_id = ${productId}`);
+      await tx.execute(sql`delete from cart_items where product_id = ${productId}`);
+      await tx.execute(sql`update order_items set product_id = null where product_id = ${productId}`);
+      await tx.execute(sql`delete from inventory_ledger where product_id = ${productId}`);
+      await tx.delete(productsTable).where(eq(productsTable.id, productId));
+    });
+    res.json({ message: "Product permanently deleted", id: productId });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not delete product" });
+  }
+});
+
+// POST /api/admin/catalog/clear-products-sellers
+router.post("/catalog/clear-products-sellers", async (req: AuthRequest, res) => {
+  try {
+    await ensureAdminUsersColumns();
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`delete from delivery_earnings where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from rider_earning_transactions where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from seller_settlements where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from delivery_route where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from delivery_tracking_history where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from active_delivery_locations where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from order_tracking where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from reviews where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from "returns" where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from coupon_uses where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from refunds where parent_order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from payments where parent_order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from payment_attempts where payment_order_id in (select id from payment_orders where parent_order_id in (select id from orders where store_id in (select id from stores)))`);
+      await tx.execute(sql`delete from payment_orders where parent_order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from order_items where order_id in (select id from orders where store_id in (select id from stores))`);
+      await tx.execute(sql`delete from orders where store_id in (select id from stores)`);
+      await tx.execute(sql`delete from cart_items where product_id in (select id from products)`);
+      await tx.execute(sql`update carts set store_id = null where store_id in (select id from stores)`);
+      await tx.execute(sql`delete from wishlist where product_id in (select id from products)`);
+      await tx.execute(sql`delete from homepage_section_products where product_id in (select id from products)`);
+      await tx.execute(sql`delete from inventory_ledger where product_id in (select id from products)`);
+      await tx.delete(productsTable);
+      await tx.execute(sql`delete from seller_zone_assignments where shop_id in (select id from stores) or seller_id in (select id from users where role = 'vendor')`);
+      await tx.execute(sql`delete from store_hours where store_id in (select id from stores)`);
+      await tx.delete(storesTable);
+      await tx.execute(sql`
+        update users
+        set email = null,
+            phone = null,
+            password_hash = null,
+            name = 'Deleted Seller #' || id,
+            avatar_url = null,
+            referral_code = null,
+            is_active = false,
+            deleted_at = now(),
+            updated_at = now()
+        where role = 'vendor'
+      `);
+    });
+    res.json({ message: "Products, stores and sellers cleared", products: 0, stores: 0 });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not clear products and sellers" });
+  }
+});
+
 // GET /api/admin/stores
 router.get("/stores", async (req: AuthRequest, res) => {
   try {
-    const stores = await db.select().from(storesTable).orderBy(desc(storesTable.createdAt));
+    const stores = await db.select().from(storesTable).where(eq(storesTable.isActive, true)).orderBy(desc(storesTable.createdAt));
     res.json(stores);
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/admin/stores/:storeId
+router.patch("/stores/:storeId", async (req: AuthRequest, res) => {
+  try {
+    const storeId = Number(req.params.storeId);
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+      res.status(400).json({ error: "Invalid store id" });
+      return;
+    }
+    const [existing] = await db.select().from(storesTable).where(eq(storesTable.id, storeId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Store not found" });
+      return;
+    }
+    const patch: Partial<typeof storesTable.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    if (req.body.deliveryFee !== undefined) patch.deliveryFee = String(Number(req.body.deliveryFee || 0).toFixed(2));
+    if (req.body.freeDeliveryAbove !== undefined) patch.freeDeliveryAbove = String(Number(req.body.freeDeliveryAbove || 0).toFixed(2));
+    if (req.body.minOrderValue !== undefined) patch.minOrderValue = String(Number(req.body.minOrderValue || 0).toFixed(2));
+    if (req.body.isOpen !== undefined) patch.isOpen = Boolean(req.body.isOpen);
+    if (req.body.isActive !== undefined) patch.isActive = Boolean(req.body.isActive);
+    const [store] = await db.update(storesTable).set(patch).where(eq(storesTable.id, storeId)).returning();
+    res.json(store);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: "Could not update store" });
+  }
+});
+
+// DELETE /api/admin/stores/:storeId
+router.delete("/stores/:storeId", async (req: AuthRequest, res) => {
+  try {
+    const storeId = Number(req.params.storeId);
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+      res.status(400).json({ error: "Invalid store id" });
+      return;
+    }
+    const [existing] = await db.select({ id: storesTable.id }).from(storesTable).where(eq(storesTable.id, storeId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Store not found" });
+      return;
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`delete from delivery_earnings where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from rider_earning_transactions where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from seller_settlements where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from delivery_route where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from delivery_tracking_history where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from active_delivery_locations where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from order_tracking where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from reviews where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from "returns" where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from coupon_uses where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from refunds where parent_order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from payments where parent_order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from payment_attempts where payment_order_id in (select id from payment_orders where parent_order_id in (select id from orders where store_id = ${storeId}))`);
+      await tx.execute(sql`delete from payment_orders where parent_order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.execute(sql`delete from order_items where order_id in (select id from orders where store_id = ${storeId})`);
+      await tx.delete(ordersTable).where(eq(ordersTable.storeId, storeId));
+      await tx.execute(sql`delete from cart_items where store_id = ${storeId} or product_id in (select id from products where store_id = ${storeId})`);
+      await tx.delete(homepageSectionProductsTable).where(sql`product_id in (select id from products where store_id = ${storeId})`);
+      await tx.delete(productsTable).where(eq(productsTable.storeId, storeId));
+      await tx.delete(storesTable).where(eq(storesTable.id, storeId));
+    });
+
+    res.json({ message: "Store permanently deleted", id: storeId });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not delete store" });
   }
 });
 
@@ -940,6 +1469,80 @@ router.get("/banners", async (req: AuthRequest, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /api/admin/categories
+router.get("/categories", async (req: AuthRequest, res) => {
+  try {
+    const categories = await db.select().from(categoriesTable).orderBy(categoriesTable.sortOrder, categoriesTable.name);
+    res.json(categories);
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load categories" });
+  }
+});
+
+// POST /api/admin/categories
+router.post("/categories", async (req: AuthRequest, res) => {
+  try {
+    const payload = categoryPayload(req.body);
+    const [category] = await db.insert(categoriesTable).values(payload).returning();
+    res.status(201).json(category);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not create category" });
+  }
+});
+
+// PATCH /api/admin/categories/:categoryId
+router.patch("/categories/:categoryId", async (req: AuthRequest, res) => {
+  try {
+    const categoryId = Number(req.params.categoryId);
+    if (!Number.isInteger(categoryId) || categoryId <= 0) {
+      res.status(400).json({ error: "Invalid category id" });
+      return;
+    }
+    const [existing] = await db.select().from(categoriesTable).where(eq(categoriesTable.id, categoryId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Category not found" });
+      return;
+    }
+    const payload = categoryPayload(req.body, existing);
+    const [category] = await db.update(categoriesTable).set(payload).where(eq(categoriesTable.id, categoryId)).returning();
+    res.json(category);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not update category" });
+  }
+});
+
+// DELETE /api/admin/categories/:categoryId
+router.delete("/categories/:categoryId", async (req: AuthRequest, res) => {
+  try {
+    const categoryId = Number(req.params.categoryId);
+    if (!Number.isInteger(categoryId) || categoryId <= 0) {
+      res.status(400).json({ error: "Invalid category id" });
+      return;
+    }
+    const [existing] = await db.select({ id: categoriesTable.id }).from(categoriesTable).where(eq(categoriesTable.id, categoryId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Category not found" });
+      return;
+    }
+
+    await ensureMediaLibraryTable();
+    await db.transaction(async (tx) => {
+      await tx.update(productsTable).set({ categoryId: null, updatedAt: new Date() }).where(eq(productsTable.categoryId, categoryId));
+      await tx.update(mediaLibraryTable).set({ categoryId: null, updatedAt: new Date() }).where(eq(mediaLibraryTable.categoryId, categoryId));
+      await tx.update(categoriesTable).set({ parentId: null }).where(eq(categoriesTable.parentId, categoryId));
+      await tx.delete(categoriesTable).where(eq(categoriesTable.id, categoryId));
+    });
+
+    res.json({ message: "Category permanently deleted", id: categoryId });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not delete category" });
   }
 });
 

@@ -9,6 +9,9 @@
     "start": "node dist/index.mjs",
     "worker:outbox": "node dist/outbox-worker.mjs",
     "seed:tavarekere": "tsx scripts/seed-tavarekere-demo.ts",
+    "clear:products-sellers": "tsx scripts/clear-products-sellers.ts",
+    "clear:admin-data": "tsx scripts/clear-admin-data.ts",
+    "clear:demo-admin": "tsx scripts/clear-demo-admin.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

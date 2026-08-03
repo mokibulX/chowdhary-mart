@@ -35,6 +35,9 @@ export default function Wallet() {
   const [accountNumber, setAccountNumber] = useState("");
   const [ifsc, setIfsc] = useState("");
   const [isTransferring, setIsTransferring] = useState(false);
+  type AdjustmentForm = { amount: string; direction: "credit" | "debit"; reason: string };
+  const defaultAdjustment: AdjustmentForm = { amount: "100", direction: "credit", reason: "Manual correction" };
+  const [adjustments, setAdjustments] = useState<Record<number, AdjustmentForm>>({});
 
   const { data: wallet, isLoading: loadingWallet } = useGetWallet({
     query: { enabled: !!user, queryKey: getGetWalletQueryKey() },
@@ -72,7 +75,7 @@ export default function Wallet() {
 
   if (!user) return <div className="text-center py-16"><p>Please <Link href="/login" className="text-primary underline">sign in</Link></p></div>;
   const roleLabel = user.role === "admin" ? "Admin" : user.role === "vendor" ? "Seller" : user.role === "delivery_partner" ? "Delivery Partner" : "Customer";
-  const canTopUp = user.role !== "delivery_partner";
+  const canTopUp = user.role === "customer" || user.role === "admin";
 
   const addMoney = async () => {
     setIsAdding(true);
@@ -146,6 +149,26 @@ export default function Wallet() {
     toast({ title: action === "approve" ? "Transfer approved" : "Transfer rejected" });
   };
 
+  const adjustWallet = async (walletUser: any) => {
+    const form = adjustments[walletUser.id] ?? defaultAdjustment;
+    try {
+      await customFetch("/api/admin/wallet-adjustments", {
+        method: "POST",
+        body: JSON.stringify({
+          userId: walletUser.id,
+          amount: Number(form.amount),
+          direction: form.direction,
+          reason: form.reason,
+        }),
+      });
+      setAdjustments((current) => ({ ...current, [walletUser.id]: defaultAdjustment }));
+      refreshWallet();
+      toast({ title: "Wallet adjusted", description: `${walletUser.name}-er balance update hoyeche.` });
+    } catch (err) {
+      toast({ title: "Adjustment failed", description: getFriendlyErrorMessage(err, "Please check amount and reason."), variant: "destructive" });
+    }
+  };
+
   return (
     <div className="mx-auto max-w-lg space-y-5">
       <h1 className="text-xl font-bold">{roleLabel} Wallet</h1>
@@ -204,12 +227,12 @@ export default function Wallet() {
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
         {user.role === "delivery_partner"
-          ? "Delivery earnings are credited after successful OTP-verified delivery."
+          ? "Delivery earning wallet admin-controlled. Transfer request admin approve korle payout hobe."
           : user.role === "vendor"
-            ? "Online order payments and seller settlements are credited here."
+            ? "Seller settlement wallet admin-controlled. Order settlement/admin adjustment diye balance update hobe."
             : user.role === "admin"
-              ? "Admin wallet tracks marketplace funds, manual topups and settlement history."
-              : "Checkout currently supports Cash on Delivery and direct UPI payment. Wallet balance is kept for loyalty and future refunds."}
+              ? "Admin wallet controls marketplace money, manual corrections, seller payouts and delivery partner payouts."
+              : "Customer wallet real-money style demo: add money, spend in checkout, refund/transaction history tracked."}
       </div>
 
       <section className="rounded-xl border bg-white p-4 shadow-sm">
@@ -313,6 +336,40 @@ export default function Wallet() {
                 </div>
                 {walletUser.transactions?.[0] && (
                   <p className="mt-2 line-clamp-1 text-xs text-muted-foreground">Last: {walletUser.transactions[0].description}</p>
+                )}
+                {["vendor", "delivery_partner", "customer"].includes(walletUser.role) && (
+                  <div className="mt-3 grid gap-2 rounded-lg border bg-gray-50 p-2 sm:grid-cols-[90px_1fr_1fr_auto]">
+                    <select
+                      className="h-9 rounded-md border bg-white px-2 text-xs font-semibold"
+                      value={(adjustments[walletUser.id]?.direction ?? "credit")}
+                      onChange={(event) => setAdjustments((current) => ({
+                        ...current,
+                        [walletUser.id]: { ...defaultAdjustment, ...current[walletUser.id], direction: event.target.value as "credit" | "debit" },
+                      }))}
+                    >
+                      <option value="credit">Add</option>
+                      <option value="debit">Cut</option>
+                    </select>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={adjustments[walletUser.id]?.amount ?? "100"}
+                      onChange={(event) => setAdjustments((current) => ({
+                        ...current,
+                        [walletUser.id]: { ...defaultAdjustment, ...current[walletUser.id], amount: event.target.value },
+                      }))}
+                      placeholder="Amount"
+                    />
+                    <Input
+                      value={adjustments[walletUser.id]?.reason ?? "Manual correction"}
+                      onChange={(event) => setAdjustments((current) => ({
+                        ...current,
+                        [walletUser.id]: { ...defaultAdjustment, ...current[walletUser.id], reason: event.target.value },
+                      }))}
+                      placeholder="Reason"
+                    />
+                    <Button type="button" size="sm" onClick={() => adjustWallet(walletUser)}>Apply</Button>
+                  </div>
                 )}
               </div>
             ))}
