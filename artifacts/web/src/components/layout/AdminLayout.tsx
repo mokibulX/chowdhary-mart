@@ -48,7 +48,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="app-shell admin-shell bg-gray-50 md:flex md:flex-row">
+    <div className="app-shell admin-shell bg-gray-50 md:flex md:flex-row md:overflow-hidden">
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900 px-3 py-3 text-white shadow-sm md:hidden">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -121,7 +121,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           </Button>
         </div>
       </aside>
-      <main className="app-content admin-content mobile-bottom-safe min-w-0 flex-1 px-3 py-4 sm:px-4 md:p-6">
+      <main className="app-content admin-content mobile-bottom-safe min-w-0 flex-1 px-3 py-4 sm:px-4 md:p-6 md:max-w-[calc(100vw-18rem)]">
         {children}
       </main>
     </div>

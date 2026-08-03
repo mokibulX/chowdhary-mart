@@ -450,14 +450,18 @@ html.is-offline body::before {
 
   @media (min-width: 768px) {
     .admin-shell {
+      position: fixed;
+      inset: 0;
       height: 100dvh;
       min-height: 100dvh;
+      width: 100%;
       flex-direction: row;
       overflow: hidden;
     }
 
     .admin-content {
       height: 100dvh;
+      min-width: 0;
       overflow-y: auto;
       overscroll-behavior-y: contain;
     }
