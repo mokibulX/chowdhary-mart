@@ -602,3 +602,51 @@
       "statusCode": 304
     }
     [35mresponseTime[39m: 384
+[15:19:51.214] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 51,
+      "requestId": "e6642975-e405-4928-b528-02daeeee7393",
+      "correlationId": "e6642975-e405-4928-b528-02daeeee7393",
+      "method": "OPTIONS",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 6
+[15:19:51.356] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 53,
+      "requestId": "a52223af-4d46-4527-ad09-a8e7d3694781",
+      "correlationId": "a52223af-4d46-4527-ad09-a8e7d3694781",
+      "method": "OPTIONS",
+      "url": "/api/admin/users"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[15:19:52.685] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 52,
+      "requestId": "57bfffa4-d0be-4f21-aa5b-02de95010bf9",
+      "correlationId": "57bfffa4-d0be-4f21-aa5b-02de95010bf9",
+      "method": "GET",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 1441
+[15:19:52.697] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 54,
+      "requestId": "90c204de-27ef-4516-adef-930c8f3d7e4e",
+      "correlationId": "90c204de-27ef-4516-adef-930c8f3d7e4e",
+      "method": "GET",
+      "url": "/api/admin/users"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 1332
