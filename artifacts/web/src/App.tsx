@@ -83,24 +83,45 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: s
   }
 
   if (roles && !roles.includes(user.role)) {
-    setLocation("/");
+    if (user.role === "delivery_partner") setLocation("/delivery");
+    else if (user.role === "vendor") setLocation("/vendor");
+    else if (user.role === "admin") setLocation("/admin/dashboard");
+    else setLocation("/");
     return null;
   }
 
   return <>{children}</>;
 }
 
+function DeliveryPartnerCustomerBlock({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+  if (isLoading) {
+    return (
+      <div className="app-shell items-center justify-center">
+        <div className="text-center space-y-2">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  if (user?.role === "delivery_partner") return <Redirect to="/delivery" />;
+  return <>{children}</>;
+}
+
 function CustomerRoute({ component: Component }: { component: () => ReactElement }) {
   return (
-    <CustomerLayout>
-      <Component />
-    </CustomerLayout>
+    <DeliveryPartnerCustomerBlock>
+      <CustomerLayout>
+        <Component />
+      </CustomerLayout>
+    </DeliveryPartnerCustomerBlock>
   );
 }
 
 function ProtectedCustomerRoute({ component: Component }: { component: () => ReactElement }) {
   return (
-    <RequireAuth>
+    <RequireAuth roles={["customer", "vendor", "admin"]}>
       <CustomerLayout>
         <Component />
       </CustomerLayout>

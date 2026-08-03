@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { getSavedDeliveryLocation, lookupPincode, nearestDeliveryLocation, PINCODE_LOCATIONS, saveDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
 import { getBrowserLocation } from "@/lib/live-location";
@@ -99,6 +100,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
     { href: "/search?category=fashion", label: "Fashion", icon: Heart },
     ...(user ? [{ href: "/orders", label: "Orders", icon: Package }] : []),
     { href: "/help", label: "Help", icon: Headphones },
+    ...(user?.role === "vendor" ? [{ href: "/vendor", label: "Seller Dashboard", icon: Store }] : []),
     ...(user?.role === "admin" ? [{ href: "/admin/dashboard", label: "Admin Panel", icon: Settings }] : []),
   ];
 
@@ -206,6 +208,19 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
         setSearch(result.exactProduct.name);
         saveRecentSearch(result.exactProduct.name);
         setLocation(`/product/${result.exactProduct.id}`);
+        setSuggestOpen(false);
+        return;
+      }
+      const items = Array.isArray(result.items) ? result.items : [];
+      if (items.length) {
+        sessionStorage.setItem("cm_image_search_results", JSON.stringify({
+          items,
+          total: items.length,
+          message: result.message,
+          savedAt: Date.now(),
+        }));
+        setSearch("");
+        setLocation("/search?image=1&visual=1");
         setSuggestOpen(false);
         return;
       }
@@ -407,28 +422,27 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
         >
           <Mic className="h-4 w-4" />
         </button>
-        <button
-          type="button"
-          className="mr-1 rounded-full p-1.5 text-gray-500 hover:bg-gray-100"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => cameraSearchRef.current?.click()}
-          aria-label="Camera product search"
-          title="Camera product search"
-        >
-          <Camera className="h-4 w-4" />
-        </button>
-        {!mobile && (
-          <button
-            type="button"
-            className="mr-1 rounded-full p-1.5 text-gray-500 hover:bg-gray-100"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => gallerySearchRef.current?.click()}
-            aria-label="Upload product photo"
-            title="Upload product photo"
-          >
-            <ImagePlus className="h-4 w-4" />
-          </button>
-        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="mr-1 rounded-full p-1.5 text-gray-500 hover:bg-gray-100"
+              onMouseDown={(event) => event.preventDefault()}
+              aria-label="Image product search"
+              title="Image product search"
+            >
+              <ImagePlus className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onSelect={() => cameraSearchRef.current?.click()}>
+              <Camera className="h-4 w-4" /> Camera search
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => gallerySearchRef.current?.click()}>
+              <ImagePlus className="h-4 w-4" /> Upload photo
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button type="submit" size="sm" className="mr-1.5 hidden h-8 rounded-xl bg-orange-500 px-4 text-xs font-bold hover:bg-orange-600 lg:inline-flex">
           Search
         </Button>
@@ -761,6 +775,7 @@ function MobileMenu({
           <Link href="/search" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Grid2X2 className="h-4 w-4" /> Categories</Link>
           {user && <Link href="/orders" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Package className="h-4 w-4" /> Orders</Link>}
           {user && <Link href="/wishlist" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Heart className="h-4 w-4" /> Wishlist</Link>}
+          {user?.role === "vendor" && <Link href="/vendor" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Store className="h-4 w-4" /> Seller Dashboard</Link>}
           {user?.role === "admin" && <Link href="/admin/dashboard" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Settings className="h-4 w-4" /> Admin Dashboard</Link>}
         </div>
         {user && <Button variant="outline" className="mt-6 w-full" onClick={logout}>Sign out</Button>}

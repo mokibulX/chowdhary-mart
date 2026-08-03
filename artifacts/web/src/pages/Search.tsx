@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Camera, ChevronDown, ImagePlus, Mic, Search as SearchIcon, SlidersHorizontal, X } from "lucide-react";
 import { getSavedDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
 import { resolveRuntimeApiUrl } from "@/lib/mobile-runtime";
@@ -183,6 +184,23 @@ export default function Search() {
   }, []);
 
   useEffect(() => {
+    const nextParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    if (nextParams.get("visual") === "1") {
+      const raw = sessionStorage.getItem("cm_image_search_results");
+      if (raw) {
+        try {
+          const saved = JSON.parse(raw);
+          const ageMs = Date.now() - Number(saved.savedAt ?? 0);
+          if (Array.isArray(saved.items) && ageMs < 10 * 60 * 1000) {
+            setProductResult({ items: saved.items, total: Number(saved.total ?? saved.items.length) });
+            setProductsLoading(false);
+            return;
+          }
+        } catch {
+          sessionStorage.removeItem("cm_image_search_results");
+        }
+      }
+    }
     const controller = new AbortController();
     setProductsLoading(true);
     fetch(resolveRuntimeApiUrl(productSearchUrl), {
@@ -208,7 +226,7 @@ export default function Search() {
         if (!controller.signal.aborted) setProductsLoading(false);
       });
     return () => controller.abort();
-  }, [productSearchUrl]);
+  }, [productSearchUrl, location]);
 
   const products = productResult.items;
   const total = productResult.total;
@@ -278,6 +296,7 @@ export default function Search() {
     recognition.lang = navigator.language || "en-IN";
     recognition.continuous = false;
     recognition.interimResults = true;
+    let finalTranscript = "";
     setVoiceListening(true);
     recognition.onresult = (event: any) => {
       const transcript = Array.from(event.results)
@@ -285,9 +304,23 @@ export default function Search() {
         .join(" ")
         .trim();
       if (transcript) setInputVal(transcript);
+      const finalParts = Array.from(event.results)
+        .filter((result: any) => result.isFinal)
+        .map((result: any) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+      if (finalParts) finalTranscript = finalParts;
     };
     recognition.onerror = () => setVoiceListening(false);
-    recognition.onend = () => setVoiceListening(false);
+    recognition.onend = () => {
+      setVoiceListening(false);
+      const spoken = finalTranscript.trim();
+      if (!spoken) return;
+      setInputVal(spoken);
+      setQ(spoken);
+      setLastSubmittedQ(spoken);
+      setLocation(buildSearchUrl({ q: spoken, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
+    };
     recognition.start();
   };
 
@@ -310,6 +343,22 @@ export default function Search() {
       if (result.matchType === "same" && result.exactProduct?.id) {
         setImageSearchStatus(result.message || "Same product found.");
         setLocation(`/product/${result.exactProduct.id}`);
+        return;
+      }
+      const items = Array.isArray(result.items) ? result.items : [];
+      if (items.length) {
+        sessionStorage.setItem("cm_image_search_results", JSON.stringify({
+          items,
+          total: items.length,
+          message: result.message,
+          savedAt: Date.now(),
+        }));
+        setImageSearchStatus(result.message || "Showing visual matches from this photo.");
+        setInputVal("");
+        setQ("");
+        setLastSubmittedQ("");
+        setProductResult({ items, total: items.length });
+        setLocation("/search?image=1&visual=1");
         return;
       }
       const keyword = result.query || inputVal.trim() || "fresh";
@@ -367,13 +416,23 @@ export default function Search() {
           </div>
           <Button className="h-11" type="submit" data-testid="btn-search">Search</Button>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
-          <Button type="button" variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={() => cameraInputRef.current?.click()}>
-            <Camera className="mr-2 h-4 w-4" /> Camera search
-          </Button>
-          <Button type="button" variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={() => galleryInputRef.current?.click()}>
-            <ImagePlus className="mr-2 h-4 w-4" /> Upload photo
-          </Button>
+        <div className="mt-3 grid grid-cols-[auto_1fr] gap-2 sm:flex">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" className="h-10 rounded-xl text-xs font-bold">
+                <ImagePlus className="mr-2 h-4 w-4" /> Image search
+                <ChevronDown className="ml-2 h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-44">
+              <DropdownMenuItem onSelect={() => cameraInputRef.current?.click()}>
+                <Camera className="h-4 w-4" /> Camera search
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => galleryInputRef.current?.click()}>
+                <ImagePlus className="h-4 w-4" /> Upload photo
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {imageSearchPreview && (
             <div className="col-span-2 flex min-w-0 items-center gap-2 rounded-xl bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-800 sm:col-span-1">
               <img src={imageSearchPreview} alt="Search preview" className="h-8 w-8 rounded-lg object-cover" />

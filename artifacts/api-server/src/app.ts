@@ -38,6 +38,10 @@ app.use(cors(getCorsOptions()));
 app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), {
   immutable: true,
   maxAge: "30d",
+  setHeaders(res) {
+    res.setHeader("cross-origin-resource-policy", "cross-origin");
+    res.setHeader("access-control-allow-origin", "*");
+  },
 }));
 app.use(express.json({
   limit: process.env.REQUEST_JSON_LIMIT ?? "8mb",

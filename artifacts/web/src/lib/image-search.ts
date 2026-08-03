@@ -7,6 +7,7 @@ export type VisualSearchPayload = {
   keywordHint?: string;
   colorHint?: string;
   averageColor?: string;
+  fileHash?: string;
   dataUrl?: string;
 };
 
@@ -77,8 +78,14 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+async function sha256File(file: File) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
 export async function buildVisualSearchPayload(file: File): Promise<VisualSearchPayload> {
   const originalDataUrl = await readFileAsDataUrl(file);
+  const fileHash = await sha256File(file).catch(() => "");
   const image = await loadImage(originalDataUrl);
   const canvas = document.createElement("canvas");
   const maxSize = 96;
@@ -92,6 +99,7 @@ export async function buildVisualSearchPayload(file: File): Promise<VisualSearch
       mimeType: file.type,
       sizeBytes: file.size,
       keywordHint: inferImageSearchKeyword(file),
+      fileHash,
     };
   }
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -119,6 +127,7 @@ export async function buildVisualSearchPayload(file: File): Promise<VisualSearch
     keywordHint: inferImageSearchKeyword(file),
     colorHint: resolveColorHint(avgRed, avgGreen, avgBlue),
     averageColor: rgbToHex(avgRed, avgGreen, avgBlue),
+    fileHash,
     dataUrl: compressedDataUrl,
   };
 }

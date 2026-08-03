@@ -20,6 +20,7 @@ router.use(requireAuth, requireRole("admin"));
 const homepageAuditLog: Array<Record<string, unknown>> = [];
 let mediaLibraryReady: Promise<void> | null = null;
 let adminUsersReady: Promise<void> | null = null;
+let deliveryReviewColumnsReady: Promise<void> | null = null;
 const payoutSettings = {
   adminCommissionPercent: 8,
   sellerPayoutCycle: "weekly",
@@ -64,6 +65,32 @@ function ensureMediaLibraryTable() {
     await db.execute(sql`create index if not exists media_library_title_idx on media_library using gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(description, '')))`);
   })();
   return mediaLibraryReady;
+}
+
+function ensureDeliveryReviewColumns() {
+  deliveryReviewColumnsReady ??= (async () => {
+    await db.execute(sql`alter table delivery_partners add column if not exists delivery_status varchar(30) not null default 'pending'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists account_holder_name text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists bank_name text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists bank_account_number text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists ifsc varchar(11)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists branch_name text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists upi_id text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists bank_verification_status varchar(40) not null default 'pending_review'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists identity_status varchar(40) not null default 'pending_review'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists document_status varchar(40) not null default 'pending_review'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists selfie_verification_status varchar(40) not null default 'manual_review_required'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists face_match_status varchar(40) not null default 'manual_review_required'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists profile_selfie text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists live_selfie text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists aadhaar_last4 varchar(4)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists pan_number varchar(10)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists emergency_phone varchar(20)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists full_address text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists city varchar(120)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists pincode varchar(12)`);
+  })();
+  return deliveryReviewColumnsReady;
 }
 
 function mediaPayload(body: Record<string, unknown>, adminId?: number) {
@@ -790,6 +817,104 @@ router.post("/wallet-withdrawals/:id/:action", async (req: AuthRequest, res) => 
   } catch (err) {
     req.log.error(err);
     res.status(400).json({ error: err instanceof Error ? err.message : "Could not review transfer request" });
+  }
+});
+
+router.get("/delivery-applications", async (req: AuthRequest, res) => {
+  try {
+    await ensureDeliveryReviewColumns();
+    await ensureAdminUsersColumns();
+    const rows = await db.execute(sql`
+      select
+        dp.id,
+        dp.user_id as "userId",
+        u.name,
+        u.email,
+        u.phone,
+        dp.vehicle_type as "vehicleType",
+        dp.vehicle_number as "vehicleNumber",
+        dp.license_number as "licenseNumber",
+        dp.current_lat as "currentLat",
+        dp.current_lng as "currentLng",
+        coalesce(dp.delivery_status, case when dp.is_verified then 'approved' else 'pending' end) as "deliveryStatus",
+        dp.account_holder_name as "accountHolderName",
+        dp.bank_name as "bankName",
+        dp.bank_account_number as "bankAccountNumber",
+        dp.ifsc,
+        dp.branch_name as "branchName",
+        dp.upi_id as "upiId",
+        dp.bank_verification_status as "bankVerificationStatus",
+        dp.identity_status as "identityStatus",
+        dp.document_status as "documentStatus",
+        dp.selfie_verification_status as "selfieVerificationStatus",
+        dp.face_match_status as "faceMatchStatus",
+        dp.profile_selfie as "profileSelfie",
+        dp.live_selfie as "liveSelfie",
+        dp.aadhaar_last4 as "aadhaarLast4",
+        dp.pan_number as "panNumber",
+        dp.emergency_phone as "emergencyPhone",
+        dp.full_address as "fullAddress",
+        dp.city,
+        dp.pincode,
+        dp.created_at as "createdAt"
+      from delivery_partners dp
+      join users u on u.id = dp.user_id
+      where u.deleted_at is null
+      order by
+        case coalesce(dp.delivery_status, case when dp.is_verified then 'approved' else 'pending' end)
+          when 'pending' then 0
+          when 'rejected' then 2
+          else 1
+        end,
+        dp.created_at desc
+    `);
+    res.json((rows as any).rows ?? rows);
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load delivery applications" });
+  }
+});
+
+router.post("/delivery-partners/:id/:action", async (req: AuthRequest, res) => {
+  try {
+    await ensureDeliveryReviewColumns();
+    await ensureAdminUsersColumns();
+    const id = Number(req.params.id);
+    const action = String(req.params.action);
+    if (!Number.isInteger(id) || id <= 0 || !["approve", "reject"].includes(action)) {
+      res.status(400).json({ error: "Invalid delivery partner action" });
+      return;
+    }
+    const nextStatus = action === "approve" ? "approved" : "rejected";
+    await db.execute(sql`
+      update delivery_partners
+      set
+        delivery_status = ${nextStatus},
+        is_verified = ${action === "approve"},
+        is_online = false,
+        bank_verification_status = case when ${action === "approve"} then 'approved' else bank_verification_status end,
+        identity_status = case when ${action === "approve"} then 'approved' else identity_status end,
+        document_status = case when ${action === "approve"} then 'approved' else document_status end,
+        selfie_verification_status = case when ${action === "approve"} then 'approved' else selfie_verification_status end,
+        face_match_status = case when ${action === "approve"} then 'approved' else face_match_status end
+      where id = ${id}
+    `);
+    const rows = await db.execute(sql`
+      select dp.id, dp.user_id as "userId", u.name, coalesce(dp.delivery_status, 'pending') as "deliveryStatus"
+      from delivery_partners dp
+      join users u on u.id = dp.user_id
+      where dp.id = ${id}
+      limit 1
+    `);
+    const updated = ((rows as any).rows ?? rows)?.[0];
+    if (!updated) {
+      res.status(404).json({ error: "Delivery partner not found" });
+      return;
+    }
+    res.json(updated);
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not update delivery partner approval" });
   }
 });
 

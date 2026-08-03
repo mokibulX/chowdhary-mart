@@ -29,6 +29,7 @@ import {
   RotateCcw,
   ShieldCheck,
   Sparkles,
+  Store,
   User,
   WalletCards,
 } from "lucide-react";
@@ -74,6 +75,16 @@ export default function Profile() {
   const showSoon = (title: string) => toast({ title, description: "Settings are saved locally for this marketplace build." });
 
   const sections: { title: string; rows: RowAction[] }[] = [
+    ...(user.role === "vendor" ? [{
+      title: "Seller Panel",
+      rows: [
+        { label: "Seller Dashboard", desc: "Manage orders, products and shop performance", icon: Store, color: "text-orange-600", href: "/vendor" },
+        { label: "Seller Products", desc: "Add and edit your product catalog", icon: Package, color: "text-[#0757ee]", href: "/vendor/products" },
+        { label: "Seller Orders", desc: "Accept and manage customer orders", icon: Package, color: "text-green-600", href: "/vendor/orders" },
+        { label: "Store Settings", desc: "Update shop details and pickup GPS", icon: Store, color: "text-purple-600", href: "/vendor/store" },
+        { label: "Seller Wallet", desc: "View seller balance and payout history", icon: WalletCards, color: "text-yellow-600", href: "/vendor/wallet" },
+      ],
+    }] : []),
     {
       title: "My Orders & Activity",
       rows: [

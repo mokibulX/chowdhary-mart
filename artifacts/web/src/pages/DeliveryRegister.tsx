@@ -108,6 +108,46 @@ const draftKey = "cm_delivery_partner_registration_draft";
 const challenges = ["Blink your eyes", "Turn your head left", "Smile clearly", "Look up once", "Move closer to the camera"];
 const stepTitles = ["Mobile", "OTP", "Personal", "Address", "Vehicle", "Licence", "Identity", "Bank", "Profile photo", "Live selfie", "Agreement", "Review", "Status"];
 const VEHICLE_TYPES = ["Bicycle", "Non-motorised delivery cycle", "Electric bicycle", "Motorbike", "Scooter"];
+const BANK_PREFIXES: Record<string, string> = {
+  SBIN: "State Bank of India",
+  HDFC: "HDFC Bank",
+  ICIC: "ICICI Bank",
+  UTIB: "Axis Bank",
+  PUNB: "Punjab National Bank",
+  BARB: "Bank of Baroda",
+  CNRB: "Canara Bank",
+  UBIN: "Union Bank of India",
+  IDIB: "Indian Bank",
+  BKID: "Bank of India",
+  CBIN: "Central Bank of India",
+  IOBA: "Indian Overseas Bank",
+  YESB: "Yes Bank",
+  KKBK: "Kotak Mahindra Bank",
+  INDB: "IndusInd Bank",
+  IDFB: "IDFC First Bank",
+  FDRL: "Federal Bank",
+  MAHB: "Bank of Maharashtra",
+  UCBA: "UCO Bank",
+};
+
+function validateBankDetails(form: DeliveryForm) {
+  const account = form.bankAccountNumber.trim();
+  const ifsc = form.ifsc.trim().toUpperCase();
+  const upi = form.upiId.trim();
+  if (upi && !/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-_]{2,64}$/.test(upi)) return "Valid UPI ID din, example: name@ybl";
+  if (!upi && !account) return "UPI ID or bank account required.";
+  if (!account) return "";
+  if (!/^\d{9,18}$/.test(account)) return "Bank account number 9 to 18 digit hote hobe.";
+  if (account !== form.confirmBankAccountNumber.trim()) return "Bank account number does not match.";
+  if (/^(\d)\1+$/.test(account) || "01234567890123456789".includes(account) || "98765432109876543210".includes(account)) return "Real bank account number din, repeated/sequence number noy.";
+  if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) return "Valid IFSC din, example: SBIN0001234.";
+  const bank = BANK_PREFIXES[ifsc.slice(0, 4)];
+  if (!bank) return "IFSC-er bank code recognised noy. Cheque/passbook theke IFSC check korun.";
+  const typedBank = form.bankName.trim().toLowerCase();
+  if (typedBank.length < 3 || (!bank.toLowerCase().includes(typedBank) && !typedBank.includes(bank.toLowerCase().split(" ")[0]))) return `Bank name IFSC-er sathe match korte hobe: ${bank}.`;
+  if (form.branchName.trim().length < 3 || /^(test|demo|na|n\/a|none|null)$/i.test(form.branchName.trim())) return "Real branch name din.";
+  return "";
+}
 
 const initialForm: DeliveryForm = {
   countryCode: "+91",
@@ -326,8 +366,8 @@ export default function DeliveryRegister() {
     }
     if (targetStep === 6) return required(["aadhaarNumber", "panNumber", "identityFrontImage"], "Aadhaar, PAN and identity document photo required.");
     if (targetStep === 7) {
-      if (!form.upiId && (!form.bankAccountNumber || !form.ifsc)) return "UPI ID or bank account with IFSC required.";
-      if (form.bankAccountNumber && form.bankAccountNumber !== form.confirmBankAccountNumber) return "Bank account number does not match.";
+      const bankError = validateBankDetails(form);
+      if (bankError) return bankError;
     }
     if (targetStep === 8 && !form.profileSelfie) return "Profile selfie required.";
     if (targetStep === 9 && (!form.liveSelfie || !form.livenessConfirmed)) return "Live selfie and liveness confirmation required.";

@@ -1,4 +1,7 @@
 import { Router } from "express";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { categoriesTable, db, productsTable, storesTable } from "@workspace/db";
 
@@ -54,8 +57,64 @@ function visualTerms(payload: Record<string, unknown>) {
   for (const [pattern, aliases] of visualAliases) {
     if (pattern.test(haystack)) aliases.forEach((term) => terms.add(term));
   }
-  for (const token of tokenise(payload.fileName)) terms.add(token);
   return [...terms].slice(0, 10);
+}
+
+function hashBuffer(buffer: Buffer) {
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+function uploadedFileHash(payload: Record<string, unknown>) {
+  const direct = normalize(payload.fileHash);
+  if (/^[a-f0-9]{64}$/.test(direct)) return direct;
+  const dataUrl = String(payload.dataUrl ?? "");
+  const match = dataUrl.match(/^data:image\/[a-z0-9.+-]+;base64,([a-z0-9+/=\s]+)$/i);
+  if (!match) return "";
+  return hashBuffer(Buffer.from(match[1].replace(/\s/g, ""), "base64"));
+}
+
+const imageHashCache = new Map<string, string | null>();
+
+async function readLocalUploadImage(urlText: string) {
+  const parsed = urlText.startsWith("http://") || urlText.startsWith("https://")
+    ? new URL(urlText)
+    : new URL(urlText, "http://local-commerce.test");
+  if (!parsed.pathname.startsWith("/uploads/")) return null;
+  const uploadRoot = path.resolve(process.cwd(), "uploads");
+  const relative = decodeURIComponent(parsed.pathname.replace(/^\/uploads\/+/, ""));
+  const target = path.resolve(uploadRoot, relative);
+  if (!target.startsWith(uploadRoot)) return null;
+  return readFile(target).catch(() => null);
+}
+
+async function fetchImageBuffer(urlText: string) {
+  if (!/^https?:\/\//i.test(urlText)) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(urlText, { signal: controller.signal, headers: { accept: "image/*" } });
+    if (!response.ok) return null;
+    const type = response.headers.get("content-type") ?? "";
+    if (!type.startsWith("image/")) return null;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (!bytes.length || bytes.length > 6 * 1024 * 1024) return null;
+    return bytes;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function imageHash(urlText: unknown) {
+  const url = String(urlText ?? "").trim();
+  if (!url) return null;
+  if (imageHashCache.has(url)) return imageHashCache.get(url) ?? null;
+  const local = await readLocalUploadImage(url);
+  const bytes = local ?? await fetchImageBuffer(url);
+  const hash = bytes ? hashBuffer(bytes) : null;
+  imageHashCache.set(url, hash);
+  return hash;
 }
 
 function validLocation(lat: number, lng: number) {
@@ -95,7 +154,6 @@ router.get("/suggestions", async (req, res) => {
         eq(productsTable.isAvailable, true),
         sql`${productsTable.stock} > 0`,
         eq(storesTable.isActive, true),
-        eq(storesTable.isOpen, true),
         zoneId ? sql`(${storesTable.id} = ${storesTable.id})` : undefined,
         or(
           ilike(productsTable.name, `${q}%`),
@@ -155,7 +213,7 @@ router.post("/image", async (req, res) => {
     const lng = Number(body.lng);
     const radiusKm = Math.max(0.5, Math.min(25, Number(body.radiusKm ?? 5) || 5));
     const hasLocation = validLocation(lat, lng);
-    const uploadedStem = filenameStem(body.fileName);
+    const uploadedHash = uploadedFileHash(body);
 
     const rows = await db
       .select({ product: productsTable, store: storesTable, category: categoriesTable })
@@ -166,16 +224,17 @@ router.post("/image", async (req, res) => {
         eq(productsTable.isAvailable, true),
         sql`${productsTable.stock} > 0`,
         eq(storesTable.isActive, true),
-        eq(storesTable.isOpen, true),
         hasLocation ? nearbyStoreCondition(lat, lng, radiusKm) : undefined,
       ))
       .orderBy(desc(productsTable.rating), desc(productsTable.createdAt))
       .limit(250);
 
-    const scored = rows
-      .map(({ product, store, category }) => {
+    const scored = (await Promise.all(rows
+      .map(async ({ product, store, category }) => {
         const images = Array.isArray(product.images) ? product.images : [];
         const imageStems = images.map(filenameStem);
+        const productHashes = uploadedHash ? await Promise.all(images.slice(0, 3).map((image) => imageHash(image))) : [];
+        const exactHash = Boolean(uploadedHash && productHashes.some((hash) => hash === uploadedHash));
         const productText = normalize([
           product.name,
           product.description,
@@ -185,7 +244,7 @@ router.post("/image", async (req, res) => {
           ...(Array.isArray(product.tags) ? product.tags : []),
           ...Object.values(product.specifications ?? {}),
         ].join(" "));
-        const exactImage = Boolean(uploadedStem && imageStems.some((stem) => stem && (stem === uploadedStem || stem.includes(uploadedStem) || uploadedStem.includes(stem))));
+        const exactImage = exactHash;
         const score = terms.reduce((total, term) => {
           if (!term) return total;
           const termRe = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
@@ -194,7 +253,7 @@ router.post("/image", async (req, res) => {
             (termRe.test(normalize(category?.name)) ? 35 : 0) +
             (termRe.test(productText) ? 18 : 0) +
             (imageStems.some((stem) => stem.includes(term)) ? 55 : 0);
-        }, exactImage ? 220 : 0) + Number(product.rating ?? 0) * 2;
+        }, exactImage ? 260 : 0) + Number(product.rating ?? 0) * 2;
         return {
           ...product,
           category,
@@ -210,11 +269,11 @@ router.post("/image", async (req, res) => {
           exactImage,
           _score: score,
         };
-      })
+      })))
       .filter((item) => item._score > 0)
       .sort((a, b) => b._score - a._score || Number(b.rating ?? 0) - Number(a.rating ?? 0));
 
-    const exact = scored.find((item) => item.exactImage || item._score >= 180);
+    const exact = scored.find((item) => item.exactImage);
     const items = (scored.length ? scored : rows.map(({ product, store, category }) => ({
       ...product,
       category,

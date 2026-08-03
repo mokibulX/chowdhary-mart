@@ -16,6 +16,56 @@ const blockedPublicRoles = new Set(["admin", "super_admin", "platform_admin", "c
 const genericAuthMessage = "Invalid credentials or account unavailable.";
 const genericForgotMessage = "If an eligible account exists, recovery instructions have been sent.";
 const maxAccountsPerPhone = Number(process.env.MAX_ACCOUNTS_PER_PHONE ?? 3);
+let deliveryReviewColumnsReady: Promise<void> | null = null;
+
+const BANK_PREFIXES: Record<string, string> = {
+  SBIN: "State Bank of India",
+  HDFC: "HDFC Bank",
+  ICIC: "ICICI Bank",
+  UTIB: "Axis Bank",
+  PUNB: "Punjab National Bank",
+  BARB: "Bank of Baroda",
+  CNRB: "Canara Bank",
+  UBIN: "Union Bank of India",
+  IDIB: "Indian Bank",
+  BKID: "Bank of India",
+  CBIN: "Central Bank of India",
+  IOBA: "Indian Overseas Bank",
+  YESB: "Yes Bank",
+  KKBK: "Kotak Mahindra Bank",
+  INDB: "IndusInd Bank",
+  IDFB: "IDFC First Bank",
+  FDRL: "Federal Bank",
+  MAHB: "Bank of Maharashtra",
+  SYNB: "Canara Bank",
+  UCBA: "UCO Bank",
+};
+
+function ensureDeliveryReviewColumns() {
+  deliveryReviewColumnsReady ??= (async () => {
+    await db.execute(sql`alter table delivery_partners add column if not exists delivery_status varchar(30) not null default 'pending'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists account_holder_name text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists bank_name text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists bank_account_number text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists ifsc varchar(11)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists branch_name text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists upi_id text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists bank_verification_status varchar(40) not null default 'pending_review'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists identity_status varchar(40) not null default 'pending_review'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists document_status varchar(40) not null default 'pending_review'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists selfie_verification_status varchar(40) not null default 'manual_review_required'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists face_match_status varchar(40) not null default 'manual_review_required'`);
+    await db.execute(sql`alter table delivery_partners add column if not exists profile_selfie text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists live_selfie text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists aadhaar_last4 varchar(4)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists pan_number varchar(10)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists emergency_phone varchar(20)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists full_address text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists city varchar(120)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists pincode varchar(12)`);
+  })();
+  return deliveryReviewColumnsReady;
+}
 
 function publicAuthUser(user: typeof usersTable.$inferSelect) {
   return {
@@ -41,6 +91,62 @@ function cleanText(value: unknown) {
 function cleanPhone(value: unknown) {
   const text = String(value ?? "").replace(/\D/g, "");
   return text ? text : undefined;
+}
+
+async function lookupIfsc(ifsc: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3500);
+  try {
+    const response = await fetch(`https://ifsc.razorpay.com/${encodeURIComponent(ifsc)}`, { signal: controller.signal });
+    if (!response.ok) return null;
+    return await response.json() as { BANK?: string; BRANCH?: string; IFSC?: string };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function validateBankDetails(body: Record<string, unknown>) {
+  const account = cleanPhone(body.bankAccountNumber);
+  const confirm = cleanPhone(body.confirmBankAccountNumber);
+  const ifsc = String(body.ifsc ?? "").trim().toUpperCase();
+  const branch = cleanText(body.branchName);
+  const bankName = String(body.bankName ?? "").trim();
+  const upiId = String(body.upiId ?? "").trim();
+
+  if (upiId && !/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-_]{2,64}$/.test(upiId)) {
+    throw new Error("Enter a valid UPI ID.");
+  }
+  if (!upiId && !account) throw new Error("UPI ID or bank account is required.");
+  if (!account) return;
+  if (!/^\d{9,18}$/.test(account)) throw new Error("Bank account number must be 9 to 18 digits.");
+  if (account !== confirm) throw new Error("Bank account number does not match.");
+  if (/^(\d)\1+$/.test(account) || "01234567890123456789".includes(account) || "98765432109876543210".includes(account)) {
+    throw new Error("Enter a real bank account number, not repeated or sequence digits.");
+  }
+  if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) throw new Error("Enter a valid 11 character IFSC code, example SBIN0001234.");
+  const bank = BANK_PREFIXES[ifsc.slice(0, 4)];
+  if (!bank) throw new Error("This IFSC bank code is not recognised. Check IFSC from cheque/passbook.");
+  const normalizedBankName = bankName.toLowerCase();
+  if (bankName.length < 3 || (!bank.toLowerCase().includes(normalizedBankName) && !normalizedBankName.includes(bank.toLowerCase().split(" ")[0]))) {
+    throw new Error(`Bank name must match IFSC bank: ${bank}.`);
+  }
+  if (!branch || branch.length < 3 || /^(test|demo|na|n\/a|none|null)$/i.test(branch)) {
+    throw new Error("Enter the real branch name from cheque/passbook.");
+  }
+  const liveIfsc = await lookupIfsc(ifsc);
+  if (liveIfsc) {
+    const liveBank = String(liveIfsc.BANK ?? "").toLowerCase();
+    const liveBranch = String(liveIfsc.BRANCH ?? "").toLowerCase();
+    if (liveBank && !liveBank.includes(normalizedBankName) && !normalizedBankName.includes(liveBank.split(" ")[0])) {
+      throw new Error(`Bank name does not match IFSC record: ${liveIfsc.BANK}.`);
+    }
+    const typedBranch = branch.toLowerCase();
+    if (liveBranch && !liveBranch.includes(typedBranch) && !typedBranch.includes(liveBranch.split(" ")[0])) {
+      throw new Error(`Branch does not match IFSC record: ${liveIfsc.BRANCH}.`);
+    }
+  }
 }
 
 function normalizeRole(value: unknown) {
@@ -167,6 +273,10 @@ router.post("/register", async (req, res) => {
       res.status(400).json({ error: zoneValidation.error });
       return;
     }
+    if (userRole === "delivery_partner") {
+      await ensureDeliveryReviewColumns();
+      await validateBankDetails(req.body ?? {});
+    }
 
     const [user] = await db.transaction(async (tx) => {
       const [created] = await tx.insert(usersTable).values({
@@ -219,7 +329,7 @@ router.post("/register", async (req, res) => {
       }
 
       if (userRole === "delivery_partner") {
-        await tx.insert(deliveryPartnersTable).values({
+        const [partner] = await tx.insert(deliveryPartnersTable).values({
           userId: created.id,
           currentZoneId: zoneValidation?.ok ? zoneValidation.zone.id : null,
           vehicleType: normalizeVehicleType(req.body.vehicleType),
@@ -229,7 +339,32 @@ router.post("/register", async (req, res) => {
           isOnline: false,
           isVerified: testMode.enabled && testMode.allowDemoApproval,
           rating: "0.00",
-        });
+        }).returning();
+        const account = cleanPhone(req.body.bankAccountNumber);
+        await tx.execute(sql`
+          update delivery_partners set
+            delivery_status = ${testMode.enabled && testMode.allowDemoApproval ? "approved" : "pending"},
+            account_holder_name = ${cleanText(req.body.accountHolderName) ?? created.name},
+            bank_name = ${cleanText(req.body.bankName) ?? null},
+            bank_account_number = ${account ?? null},
+            ifsc = ${cleanText(req.body.ifsc)?.toUpperCase() ?? null},
+            branch_name = ${cleanText(req.body.branchName) ?? null},
+            upi_id = ${cleanText(req.body.upiId) ?? null},
+            bank_verification_status = ${account ? "pending_review" : "upi_only"},
+            identity_status = 'pending_review',
+            document_status = 'pending_review',
+            selfie_verification_status = 'manual_review_required',
+            face_match_status = 'manual_review_required',
+            profile_selfie = ${cleanText(req.body.profileSelfie ?? req.body.selfieUrl) ?? null},
+            live_selfie = ${cleanText(req.body.liveSelfie) ?? null},
+            aadhaar_last4 = ${cleanPhone(req.body.aadhaarNumber)?.slice(-4) ?? null},
+            pan_number = ${cleanText(req.body.panNumber)?.toUpperCase() ?? null},
+            emergency_phone = ${cleanPhone(req.body.emergencyPhone) ?? null},
+            full_address = ${cleanText(req.body.fullAddress) ?? null},
+            city = ${cleanText(req.body.city) ?? null},
+            pincode = ${cleanText(req.body.pincode) ?? null}
+          where id = ${partner.id}
+        `);
         if (zoneValidation?.ok) {
           await tx.insert(riderZoneAssignmentsTable).values({
             riderId: created.id,
@@ -456,6 +591,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
       isOnline: deliveryPartner?.isOnline ?? false,
       deliveryPartnerId: deliveryPartner?.id ?? null,
       deliveryPartnerVerified: deliveryPartner?.isVerified ?? false,
+      deliveryStatus: deliveryPartner ? ((deliveryPartner as any).deliveryStatus ?? ((deliveryPartner as any).delivery_status) ?? (deliveryPartner.isVerified ? "approved" : "pending")) : null,
       currentZoneId: deliveryPartner?.currentZoneId ?? store?.zoneId ?? null,
       storeId: store?.id ?? null,
       storeIsOpen: store?.isOpen ?? null,

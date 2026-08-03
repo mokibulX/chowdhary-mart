@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MapPin, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { LocateFixed, MapPin, Navigation, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { IndiaStateSelect } from "@/components/IndiaLocationSelects";
+import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
+import { getBrowserLocation } from "@/lib/live-location";
 
 const QUERY_KEY = ["/api/admin/service-zones"];
 
@@ -83,6 +85,19 @@ export default function AdminZones() {
             <Plus className="mr-2 h-4 w-4" /> Add Zone
           </Button>
         </div>
+        <ZoneLocationTools
+          lat={form.centreLatitude}
+          lng={form.centreLongitude}
+          city={form.city}
+          state={form.state}
+          onChange={(location) => setForm({
+            ...form,
+            centreLatitude: location.lat,
+            centreLongitude: location.lng,
+            city: location.city ?? form.city,
+            state: location.state ?? form.state,
+          })}
+        />
       </section>
 
       {isLoading ? (
@@ -157,6 +172,19 @@ function ZoneCard({ zone, save, remove, busy }: { zone: any; save: (data: any) =
         <Field label="Delivery minutes" value={draft.defaultDeliveryTime} onChange={(value) => setDraft({ ...draft, defaultDeliveryTime: value })} />
         <Field label="Minimum order" value={draft.minimumOrderAmount} onChange={(value) => setDraft({ ...draft, minimumOrderAmount: value })} />
       </div>
+      <ZoneLocationTools
+        lat={draft.centreLatitude}
+        lng={draft.centreLongitude}
+        city={draft.city}
+        state={draft.state}
+        onChange={(location) => setDraft({
+          ...draft,
+          centreLatitude: location.lat,
+          centreLongitude: location.lng,
+          city: location.city ?? draft.city,
+          state: location.state ?? draft.state,
+        })}
+      />
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <Toggle label="Active" checked={draft.status === "active"} onClick={() => setDraft({ ...draft, status: draft.status === "active" ? "paused" : "active" })} />
         <Toggle label="Accept orders" checked={draft.acceptingOrders} onClick={() => setDraft({ ...draft, acceptingOrders: !draft.acceptingOrders })} />
@@ -173,6 +201,106 @@ function ZoneCard({ zone, save, remove, busy }: { zone: any; save: (data: any) =
           <Trash2 className="mr-2 h-4 w-4" /> Delete
         </Button>
       </div>
+    </div>
+  );
+}
+
+function ZoneLocationTools({ lat, lng, city, state, onChange }: {
+  lat: string;
+  lng: string;
+  city?: string;
+  state?: string;
+  onChange: (location: { lat: string; lng: string; city?: string; state?: string }) => void;
+}) {
+  const { toast } = useToast();
+  const [mapOpen, setMapOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const numericLat = Number(lat);
+  const numericLng = Number(lng);
+  const hasCoords = Number.isFinite(numericLat) && Number.isFinite(numericLng);
+  const initial: PickupLocation | null = hasCoords
+    ? {
+        lat: numericLat,
+        lng: numericLng,
+        address: `${numericLat.toFixed(6)}, ${numericLng.toFixed(6)}`,
+        distanceKm: null,
+        available: true,
+        city,
+        state,
+      }
+    : null;
+
+  const useGps = async () => {
+    setLocating(true);
+    try {
+      const gps = await getBrowserLocation();
+      onChange({
+        lat: gps.lat.toFixed(6),
+        lng: gps.lng.toFixed(6),
+        city,
+        state,
+      });
+      toast({ title: "GPS selected", description: "Latitude and longitude auto filled." });
+    } catch (error) {
+      toast({
+        title: "GPS failed",
+        description: error instanceof Error ? error.message : "Please allow browser location permission.",
+        variant: "destructive",
+      });
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const applyMapLocation = (location: PickupLocation) => {
+    onChange({
+      lat: location.lat.toFixed(6),
+      lng: location.lng.toFixed(6),
+      city: location.city || city,
+      state: location.state || state,
+    });
+    setMapOpen(false);
+    toast({ title: "Map location selected", description: "Zone centre GPS updated." });
+  };
+
+  return (
+    <div className="mt-3 rounded-xl border bg-gray-50/70 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm">
+          <p className="font-semibold">Zone centre GPS</p>
+          <p className="text-xs text-muted-foreground">GPS diye auto fill korun, ba map-e pin select korun.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={useGps} disabled={locating}>
+            <LocateFixed className="mr-2 h-4 w-4" /> {locating ? "Detecting..." : "Use GPS"}
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setMapOpen((value) => !value)}>
+            <MapPin className="mr-2 h-4 w-4" /> {mapOpen ? "Hide map" : "Select from map"}
+          </Button>
+          {hasCoords && (
+            <a href={`https://www.google.com/maps/search/?api=1&query=${numericLat},${numericLng}`} target="_blank" rel="noreferrer">
+              <Button type="button" variant="outline" size="sm">
+                <Navigation className="mr-2 h-4 w-4" /> Open map
+              </Button>
+            </a>
+          )}
+        </div>
+      </div>
+      {mapOpen && (
+        <div className="mt-3 overflow-hidden rounded-xl border bg-white">
+          <PickupLocationPicker
+            mode="inline"
+            initial={initial}
+            title="Select zone centre"
+            subtitle="Map-e tap/drag kore centre point set korun, ba GPS use korun."
+            confirmLabel="Use this zone centre"
+            locateFirst={!initial}
+            compact
+            onClose={() => setMapOpen(false)}
+            onConfirm={applyMapLocation}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -84,7 +84,6 @@ router.get("/", async (req, res) => {
       eq(productsTable.isAvailable, true),
       sql`${productsTable.stock} > 0`,
       eq(storesTable.isActive, true),
-      eq(storesTable.isOpen, true),
     ];
     if (categoryId) conditions.push(eq(productsTable.categoryId, Number(categoryId)));
     if (storeId) conditions.push(eq(productsTable.storeId, Number(storeId)));
@@ -161,8 +160,6 @@ router.get("/:productId/related", async (req, res) => {
       .where(and(
         eq(productsTable.isAvailable, true),
         eq(storesTable.isActive, true),
-        eq(storesTable.isOpen, true),
-        eq(storesTable.isVerified, true),
         sql`${productsTable.id} <> ${productId}`,
         sql`${productsTable.stock} > 0`,
       ))
