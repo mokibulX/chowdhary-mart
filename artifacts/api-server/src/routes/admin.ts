@@ -19,6 +19,15 @@ router.use(requireAuth, requireRole("admin"));
 
 const homepageAuditLog: Array<Record<string, unknown>> = [];
 let mediaLibraryReady: Promise<void> | null = null;
+let adminUsersReady: Promise<void> | null = null;
+
+function ensureAdminUsersColumns() {
+  adminUsersReady ??= (async () => {
+    await db.execute(sql`alter table users add column if not exists deleted_at timestamp`);
+    await db.execute(sql`alter table users add column if not exists warning text`);
+  })();
+  return adminUsersReady;
+}
 
 function ensureMediaLibraryTable() {
   mediaLibraryReady ??= (async () => {
@@ -567,13 +576,17 @@ router.get("/homepage/audit", (_req, res) => {
 // GET /api/admin/users
 router.get("/users", async (req: AuthRequest, res) => {
   try {
+    await ensureAdminUsersColumns();
     const { role, q } = req.query;
     const limit = Math.min(Number(req.query.limit) || 50, 100);
     const offset = Number(req.query.offset) || 0;
 
-    const conditions = [];
+    const conditions = [sql`deleted_at is null`];
     if (role) conditions.push(eq(usersTable.role, role as "customer" | "vendor" | "delivery_partner" | "admin"));
-    if (q) conditions.push(ilike(usersTable.name, `%${q}%`));
+    if (q) {
+      const term = `%${String(q).trim()}%`;
+      conditions.push(sql`(${usersTable.name} ilike ${term} or coalesce(${usersTable.email}, '') ilike ${term} or coalesce(${usersTable.phone}, '') ilike ${term})`);
+    }
 
     const users = await db.select({
       id: usersTable.id,
@@ -587,9 +600,10 @@ router.get("/users", async (req: AuthRequest, res) => {
       referralCode: usersTable.referralCode,
       isVerified: usersTable.isVerified,
       isActive: usersTable.isActive,
+      warning: sql<string | null>`warning`,
       createdAt: usersTable.createdAt,
     }).from(usersTable)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(and(...conditions))
       .orderBy(desc(usersTable.createdAt))
       .limit(limit).offset(offset);
 
@@ -597,6 +611,100 @@ router.get("/users", async (req: AuthRequest, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/admin/users/:userId
+router.patch("/users/:userId", async (req: AuthRequest, res) => {
+  try {
+    await ensureAdminUsersColumns();
+    const userId = Number(req.params.userId);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(400).json({ error: "Invalid user id" });
+      return;
+    }
+    if (userId === req.user?.userId && req.body.isActive === false) {
+      res.status(400).json({ error: "You cannot block your own admin account." });
+      return;
+    }
+
+    const [existing] = await db.select().from(usersTable).where(and(eq(usersTable.id, userId), sql`deleted_at is null`)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const nextIsActive = req.body.isActive !== undefined ? Boolean(req.body.isActive) : undefined;
+    const nextWarning = req.body.warning !== undefined ? String(req.body.warning ?? "").trim() || null : undefined;
+
+    if (nextIsActive === undefined && nextWarning === undefined) {
+      res.status(400).json({ error: "No user changes provided" });
+      return;
+    }
+
+    if (nextIsActive !== undefined && nextWarning !== undefined) {
+      await db.execute(sql`update users set is_active = ${nextIsActive}, warning = ${nextWarning}, updated_at = now() where id = ${userId}`);
+    } else if (nextIsActive !== undefined) {
+      await db.execute(sql`update users set is_active = ${nextIsActive}, updated_at = now() where id = ${userId}`);
+    } else {
+      await db.execute(sql`update users set warning = ${nextWarning}, updated_at = now() where id = ${userId}`);
+    }
+
+    const [updated] = await db.select({
+      id: usersTable.id,
+      email: usersTable.email,
+      phone: usersTable.phone,
+      name: usersTable.name,
+      role: usersTable.role,
+      isActive: usersTable.isActive,
+      warning: sql<string | null>`warning`,
+      updatedAt: usersTable.updatedAt,
+    }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    res.json(updated);
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not update user" });
+  }
+});
+
+// DELETE /api/admin/users/:userId
+router.delete("/users/:userId", async (req: AuthRequest, res) => {
+  try {
+    await ensureAdminUsersColumns();
+    const userId = Number(req.params.userId);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(400).json({ error: "Invalid user id" });
+      return;
+    }
+    if (userId === req.user?.userId) {
+      res.status(400).json({ error: "You cannot delete your own admin account." });
+      return;
+    }
+
+    const [existing] = await db.select().from(usersTable).where(and(eq(usersTable.id, userId), sql`deleted_at is null`)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    await db.execute(sql`
+      update users
+      set email = null,
+          phone = null,
+          password_hash = null,
+          name = ${`Deleted User #${userId}`},
+          avatar_url = null,
+          referral_code = null,
+          is_active = false,
+          deleted_at = now(),
+          updated_at = now()
+      where id = ${userId}
+    `);
+
+    res.json({ message: "User deleted", id: userId });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not delete user" });
   }
 });
 

@@ -274,7 +274,7 @@ export default function AdminCatalog() {
         ) : !activeData.length ? (
           <div className="p-10 text-center text-sm text-muted-foreground">No {title.toLowerCase()} yet.</div>
         ) : (
-          <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-3 p-4">
             {activeData.map((item: any) => (
               <CatalogCard key={item.id} mode={mode} item={item} onEdit={() => openEdit(item)} onDelete={() => remove(item)} onAddToLibrary={mode === "products" ? () => addProductToLibrary(item) : undefined} />
             ))}
@@ -325,12 +325,12 @@ function CatalogCard({ mode, item, onEdit, onDelete, onAddToLibrary }: { mode: M
             {item.isFeatured && <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100"><BadgePercent className="mr-1 h-3 w-3" />Offer</Badge>}
           </div>
         )}
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" size="sm" className="flex-1" onClick={onEdit}><Pencil className="mr-2 h-3.5 w-3.5" />Edit</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" className="min-w-28 flex-1" onClick={onEdit}><Pencil className="mr-2 h-3.5 w-3.5" />Edit</Button>
           {onAddToLibrary && (
-            <Button type="button" variant="outline" size="sm" className="flex-1" onClick={onAddToLibrary}><Images className="mr-2 h-3.5 w-3.5" />Library</Button>
+            <Button type="button" variant="outline" size="sm" className="min-w-28 flex-1" onClick={onAddToLibrary}><Images className="mr-2 h-3.5 w-3.5" />Library</Button>
           )}
-          <Button type="button" variant="ghost" size="sm" className="text-red-600 hover:bg-red-50" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
+          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-red-600 hover:bg-red-50" onClick={onDelete} title="Delete"><Trash2 className="h-4 w-4" /></Button>
         </div>
       </div>
     </div>

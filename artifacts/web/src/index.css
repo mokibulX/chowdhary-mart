@@ -449,6 +449,19 @@ html.is-offline body::before {
   }
 
   @media (min-width: 768px) {
+    .admin-shell {
+      height: 100dvh;
+      min-height: 100dvh;
+      flex-direction: row;
+      overflow: hidden;
+    }
+
+    .admin-content {
+      height: 100dvh;
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+    }
+
     .mobile-bottom-safe {
       padding-bottom: 1.5rem;
     }

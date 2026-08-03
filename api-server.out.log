@@ -1,64 +1,112 @@
-[10:48:59.050] [32mINFO[39m (20596): [36mConfigured admin account synced[39m
+[11:13:50.878] [32mINFO[39m (7388): [36mConfigured admin account synced[39m
     [35madminEmail[39m: "chowdhary909090@gmail.com"
-[10:48:59.065] [32mINFO[39m (20596): [36mServer listening[39m
+[11:13:50.890] [32mINFO[39m (7388): [36mServer listening[39m
     [35mport[39m: 5000
-[10:49:02.424] [32mINFO[39m (20596): [36mrequest aborted[39m
+[11:13:52.559] [32mINFO[39m (7388): [36mrequest aborted[39m
     [35mreq[39m: {
       "id": 1,
-      "requestId": "780296cc-cfa5-4df3-9473-285736f674bc",
-      "correlationId": "780296cc-cfa5-4df3-9473-285736f674bc",
+      "requestId": "a1d68169-c0d7-4a99-b54e-b46879661b3d",
+      "correlationId": "a1d68169-c0d7-4a99-b54e-b46879661b3d",
       "method": "GET",
       "url": "/api/health/ready"
     }
     [35mres[39m: {
       "statusCode": null
     }
-    [35mresponseTime[39m: 1950
-[10:49:03.700] [32mINFO[39m (20596): [36mrequest completed[39m
+    [35mresponseTime[39m: 1478
+[11:13:55.568] [32mINFO[39m (7388): [36mrequest aborted[39m
     [35mreq[39m: {
       "id": 2,
-      "requestId": "4e0838e9-699b-4f23-b0dd-5e14a47382f4",
-      "correlationId": "4e0838e9-699b-4f23-b0dd-5e14a47382f4",
+      "requestId": "d95bb990-7886-4556-8a09-58522c8fbd20",
+      "correlationId": "d95bb990-7886-4556-8a09-58522c8fbd20",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": null
+    }
+    [35mresponseTime[39m: 2006
+[11:13:56.871] [32mINFO[39m (7388): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 3,
+      "requestId": "aa40f87a-44b7-4f38-8864-fdbe4413f6ff",
+      "correlationId": "aa40f87a-44b7-4f38-8864-fdbe4413f6ff",
       "method": "GET",
       "url": "/api/health/ready"
     }
     [35mres[39m: {
       "statusCode": 200
     }
-    [35mresponseTime[39m: 258
-[11:01:33.732] [32mINFO[39m (20596): [36mrequest completed[39m
+    [35mresponseTime[39m: 293
+[11:18:07.861] [32mINFO[39m (7388): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 3,
-      "requestId": "118ac87d-0b25-4875-9bbd-576c8e724edf",
-      "correlationId": "118ac87d-0b25-4875-9bbd-576c8e724edf",
+      "id": 4,
+      "requestId": "38686f23-8fba-47bb-80ee-b9768c8ead36",
+      "correlationId": "38686f23-8fba-47bb-80ee-b9768c8ead36",
       "method": "OPTIONS",
       "url": "/api/admin/test-controls"
     }
     [35mres[39m: {
       "statusCode": 204
     }
-    [35mresponseTime[39m: 14
-[11:01:33.768] [32mINFO[39m (20596): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 4,
-      "requestId": "28f1cadc-b71a-4c94-950c-8276f89f2728",
-      "correlationId": "28f1cadc-b71a-4c94-950c-8276f89f2728",
-      "method": "GET",
-      "url": "/api/admin/test-controls"
-    }
-    [35mres[39m: {
-      "statusCode": 401
-    }
-    [35mresponseTime[39m: 18
-[11:01:34.826] [32mINFO[39m (20596): [36mrequest completed[39m
+    [35mresponseTime[39m: 11
+[11:18:07.885] [32mINFO[39m (7388): [36mrequest completed[39m
     [35mreq[39m: {
       "id": 5,
-      "requestId": "f1e07f1a-124e-4776-9278-06ffb9041af8",
-      "correlationId": "f1e07f1a-124e-4776-9278-06ffb9041af8",
+      "requestId": "13343d1e-dd7c-4792-9529-27bc693ad79f",
+      "correlationId": "13343d1e-dd7c-4792-9529-27bc693ad79f",
       "method": "GET",
       "url": "/api/admin/test-controls"
     }
     [35mres[39m: {
       "statusCode": 401
     }
-    [35mresponseTime[39m: 4
+    [35mresponseTime[39m: 14
+[11:18:08.916] [32mINFO[39m (7388): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 6,
+      "requestId": "ef025fe8-038f-4832-ad75-6fdd4763f86d",
+      "correlationId": "ef025fe8-038f-4832-ad75-6fdd4763f86d",
+      "method": "GET",
+      "url": "/api/admin/test-controls"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 5
+[11:18:38.992] [32mINFO[39m (7388): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 7,
+      "requestId": "4ff983c4-1c86-42aa-9fe4-fdb00b81e050",
+      "correlationId": "4ff983c4-1c86-42aa-9fe4-fdb00b81e050",
+      "method": "OPTIONS",
+      "url": "/api/admin/media-library"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[11:18:39.006] [32mINFO[39m (7388): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 8,
+      "requestId": "44456154-a9f7-45e4-97ae-26e0b94222c2",
+      "correlationId": "44456154-a9f7-45e4-97ae-26e0b94222c2",
+      "method": "GET",
+      "url": "/api/admin/media-library"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 2
+[11:18:40.107] [32mINFO[39m (7388): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 9,
+      "requestId": "85fa5030-4d96-4a90-970a-1081cb402e4d",
+      "correlationId": "85fa5030-4d96-4a90-970a-1081cb402e4d",
+      "method": "GET",
+      "url": "/api/admin/media-library"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 3

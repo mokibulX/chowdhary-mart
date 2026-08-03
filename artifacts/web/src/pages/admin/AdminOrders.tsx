@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MapPin, Navigation, ShoppingBag, Trash2 } from "lucide-react";
 import { LiveDeliveryMap } from "@/components/LiveDeliveryMap";
 
@@ -18,6 +19,7 @@ const STATUS_LABEL: Record<string, string> = {
   pending: "Pending", confirmed: "Confirmed", preparing: "Preparing", packed: "Packed",
   picked_up: "Picked Up", on_the_way: "On the Way", arriving: "Arriving", delivered: "Delivered", cancelled: "Cancelled",
 };
+const ORDER_STATUSES = ["pending", "confirmed", "preparing", "packed", "picked_up", "on_the_way", "arriving", "delivered", "cancelled"];
 
 export default function AdminOrders() {
   const { user } = useAuth();
@@ -56,7 +58,7 @@ export default function AdminOrders() {
           <Skeleton className="h-64 rounded-xl" />
         ) : liveOrders.length ? (
           <div className="grid gap-4 lg:grid-cols-2">
-            {liveOrders.slice(0, 4).map((order) => (
+            {liveOrders.map((order) => (
               <div key={order.id} className="rounded-xl border bg-gray-50 p-3">
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
@@ -72,6 +74,7 @@ export default function AdminOrders() {
                   <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> ETA {order.liveTracking?.estimatedMins ?? order.estimatedDeliveryMins ?? 40} min</span>
                   <span>{order.liveTracking?.distanceKm ?? "3.2"} km away</span>
                 </div>
+                <OrderAdminControls order={order} onStatusChange={updateOrder} onDelete={deleteOrder} compact />
               </div>
             ))}
           </div>
@@ -146,12 +149,7 @@ export default function AdminOrders() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
-                      <Button size="sm" variant="outline" onClick={() => updateOrder(order.id, order.status === "cancelled" ? "pending" : "cancelled")}>
-                        {order.status === "cancelled" ? "Reopen" : "Cancel"}
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600" onClick={() => deleteOrder(order.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <OrderAdminControls order={order} onStatusChange={updateOrder} onDelete={deleteOrder} />
                     </div>
                   </td>
                 </tr>
@@ -160,6 +158,42 @@ export default function AdminOrders() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function OrderAdminControls({
+  order,
+  onStatusChange,
+  onDelete,
+  compact = false,
+}: {
+  order: any;
+  onStatusChange: (id: number, status: string) => void;
+  onDelete: (id: number) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? "mt-3 flex flex-wrap items-center gap-2" : "flex flex-wrap justify-end gap-2"}>
+      <Select value={order.status} onValueChange={(status) => onStatusChange(order.id, status)}>
+        <SelectTrigger className={compact ? "h-9 min-w-36 flex-1 bg-white" : "h-8 w-36"}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {ORDER_STATUSES.map((status) => (
+            <SelectItem key={status} value={status}>{STATUS_LABEL[status] ?? status}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        size="icon"
+        variant="ghost"
+        className={`${compact ? "h-9 w-9" : "h-8 w-8"} shrink-0 text-red-600 hover:bg-red-50`}
+        onClick={() => onDelete(order.id)}
+        title="Delete order"
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
     </div>
   );
 }

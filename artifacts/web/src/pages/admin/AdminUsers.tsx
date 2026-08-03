@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Search, ShieldOff, Trash2, Users } from "lucide-react";
+import { getFriendlyErrorMessage } from "@/lib/error-message";
 
 const ROLE_COLORS: Record<string, string> = {
   admin: "bg-red-100 text-red-700",
@@ -34,22 +35,34 @@ export default function AdminUsers() {
   const warnUser = async (target: any) => {
     const warning = prompt(`Warning message for ${target.name}`, "Please follow marketplace policy. Repeated issues may restrict your account.");
     if (!warning) return;
-    await customFetch(`/api/admin/users/${target.id}`, { method: "PATCH", body: JSON.stringify({ warning }) });
-    toast({ title: "Warning sent" });
-    refresh();
+    try {
+      await customFetch(`/api/admin/users/${target.id}`, { method: "PATCH", body: JSON.stringify({ warning }) });
+      toast({ title: "Warning sent" });
+      refresh();
+    } catch (error) {
+      toast({ title: "Warning failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
   };
 
   const toggleUser = async (target: any) => {
-    await customFetch(`/api/admin/users/${target.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !target.isActive }) });
-    toast({ title: target.isActive ? "User blocked" : "User activated" });
-    refresh();
+    try {
+      await customFetch(`/api/admin/users/${target.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !target.isActive }) });
+      toast({ title: target.isActive ? "User blocked" : "User activated" });
+      refresh();
+    } catch (error) {
+      toast({ title: "User update failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
   };
 
   const deleteUser = async (target: any) => {
     if (!confirm(`Delete ${target.name}?`)) return;
-    await customFetch(`/api/admin/users/${target.id}`, { method: "DELETE" });
-    toast({ title: "User deleted" });
-    refresh();
+    try {
+      await customFetch(`/api/admin/users/${target.id}`, { method: "DELETE" });
+      toast({ title: "User deleted" });
+      refresh();
+    } catch (error) {
+      toast({ title: "User delete failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
+    }
   };
 
   return (
@@ -136,7 +149,7 @@ export default function AdminUsers() {
                       <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => toggleUser(item)}>
                         <ShieldOff className="h-4 w-4" />
                       </Button>
-                      {item.role !== "admin" && (
+                      {item.id !== user?.id && (
                         <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600" onClick={() => deleteUser(item)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>

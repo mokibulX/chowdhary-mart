@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   activeDeliveryLocationsTable,
   cartItemsTable,
@@ -32,20 +32,19 @@ const TAVAREKERE = {
 };
 
 const password = {
-  seller1: "TavarekereSeller@123",
-  seller2: "TavarekereSeller@123",
+  seller: "TavarekereSeller@123",
   rider: "TavarekereRider@123",
 };
 
 const sellerAccounts = [
   {
-    name: "Tavarekere Fresh Basket Owner",
-    email: "fresh.tavarekere@chowdharymart.test",
+    name: "Tavarekere Grocery Owner",
+    email: "grocery.tavarekere@chowdharymart.test",
     phone: "9876501101",
-    password: password.seller1,
+    password: password.seller,
     store: {
-      name: "Tavarekere Fresh Basket",
-      description: "Fresh vegetables, fruits, milk and daily grocery inside Tavarekere 5 KM local zone.",
+      name: "Tavarekere Grocery Mart",
+      description: "Daily grocery, rice, milk and household essentials inside Tavarekere 5 KM local zone.",
       logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=300&q=80",
       bannerUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=80",
       lat: 12.92672,
@@ -56,20 +55,71 @@ const sellerAccounts = [
     },
   },
   {
-    name: "Tavarekere Style Hub Owner",
-    email: "style.tavarekere@chowdharymart.test",
+    name: "Tavarekere Vegetables Owner",
+    email: "vegetables.tavarekere@chowdharymart.test",
     phone: "9876501102",
-    password: password.seller2,
+    password: password.seller,
     store: {
-      name: "Tavarekere Style Hub",
-      description: "Local fashion, chappal, clothing and quick essentials for Tavarekere customers.",
+      name: "Tavarekere Fresh Vegetables",
+      description: "Fresh vegetables and fruits from local Tavarekere market.",
+      logoUrl: "https://images.unsplash.com/photo-1597362925123-77861d3fbac7?auto=format&fit=crop&w=300&q=80",
+      bannerUrl: "https://images.unsplash.com/photo-1597362925123-77861d3fbac7?auto=format&fit=crop&w=1200&q=80",
+      lat: 12.9249,
+      lng: 77.6072,
+      address: "Tavarekere Market Road, Bengaluru, Karnataka 560029",
+      phone: "9876501102",
+      commissionPercent: "8.00",
+    },
+  },
+  {
+    name: "Tavarekere Fashion Owner",
+    email: "fashion.tavarekere@chowdharymart.test",
+    phone: "9876501103",
+    password: password.seller,
+    store: {
+      name: "Tavarekere Fashion Hub",
+      description: "Clothing, t-shirts, denim and local fashion for Tavarekere customers.",
       logoUrl: "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&w=300&q=80",
       bannerUrl: "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&w=1200&q=80",
       lat: 12.92264,
       lng: 77.61148,
       address: "Tavarekere 1st Main, Bengaluru, Karnataka 560029",
-      phone: "9876501102",
+      phone: "9876501103",
       commissionPercent: "10.00",
+    },
+  },
+  {
+    name: "Tavarekere Footwear Owner",
+    email: "footwear.tavarekere@chowdharymart.test",
+    phone: "9876501104",
+    password: password.seller,
+    store: {
+      name: "Tavarekere Footwear Point",
+      description: "Daily chappal, sandal and shoes inside Tavarekere local delivery zone.",
+      logoUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=300&q=80",
+      bannerUrl: "https://images.unsplash.com/photo-1560769629-975ec94e6a86?auto=format&fit=crop&w=1200&q=80",
+      lat: 12.9284,
+      lng: 77.6028,
+      address: "Tavarekere Main Road Footwear Lane, Bengaluru, Karnataka 560029",
+      phone: "9876501104",
+      commissionPercent: "10.00",
+    },
+  },
+  {
+    name: "Tavarekere Electronics Owner",
+    email: "electronics.tavarekere@chowdharymart.test",
+    phone: "9876501105",
+    password: password.seller,
+    store: {
+      name: "Tavarekere Electronics Store",
+      description: "Mobile accessories, earbuds and quick electronics around Tavarekere.",
+      logoUrl: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=300&q=80",
+      bannerUrl: "https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&w=1200&q=80",
+      lat: 12.9296,
+      lng: 77.6063,
+      address: "Near Tavarekere Bus Stop, Bengaluru, Karnataka 560029",
+      phone: "9876501105",
+      commissionPercent: "12.00",
     },
   },
 ];
@@ -102,6 +152,18 @@ const riderAccounts = [
     lat: 12.9301,
     lng: 77.6019,
   },
+];
+
+const oldSeedEmails = [
+  "customer.demo@chowdharymart.test",
+  "seller.demo@chowdharymart.test",
+  "rider.demo@chowdharymart.test",
+  "admin.demo@chowdharymart.test",
+  "fresh.tavarekere@chowdharymart.test",
+  "style.tavarekere@chowdharymart.test",
+  "rider.tavarekere1@chowdharymart.test",
+  "rider.tavarekere2@chowdharymart.test",
+  "rider.tavarekere3@chowdharymart.test",
 ];
 
 const categories = [
@@ -144,7 +206,7 @@ const categories = [
 
 const productCatalog = [
   {
-    sellerEmail: sellerAccounts[0].email,
+    sellerEmail: "vegetables.tavarekere@chowdharymart.test",
     categorySlug: "vegetables",
     name: "Tavarekere Fresh Tomato",
     description: "Handpicked fresh red tomatoes for daily cooking.",
@@ -161,7 +223,7 @@ const productCatalog = [
     specifications: { Quality: "Fresh local stock", Unit: "1 kg", Shelf: "Daily fresh" },
   },
   {
-    sellerEmail: sellerAccounts[0].email,
+    sellerEmail: "vegetables.tavarekere@chowdharymart.test",
     categorySlug: "vegetables",
     name: "Tavarekere Potato",
     description: "Clean medium-size potatoes for home cooking.",
@@ -175,7 +237,7 @@ const productCatalog = [
     specifications: { Quality: "Washed", Unit: "1 kg", Storage: "Cool dry place" },
   },
   {
-    sellerEmail: sellerAccounts[0].email,
+    sellerEmail: "vegetables.tavarekere@chowdharymart.test",
     categorySlug: "vegetables",
     name: "Tavarekere Onion",
     description: "Fresh onions for kitchen essentials.",
@@ -189,7 +251,7 @@ const productCatalog = [
     specifications: { Quality: "Fresh", Unit: "1 kg", Origin: "Local market" },
   },
   {
-    sellerEmail: sellerAccounts[0].email,
+    sellerEmail: "grocery.tavarekere@chowdharymart.test",
     categorySlug: "grocery",
     name: "Amul Taaza Milk",
     description: "Fresh toned milk pouch for daily use.",
@@ -203,7 +265,7 @@ const productCatalog = [
     specifications: { Brand: "Amul", Pack: "500 ml", Type: "Toned milk" },
   },
   {
-    sellerEmail: sellerAccounts[0].email,
+    sellerEmail: "grocery.tavarekere@chowdharymart.test",
     categorySlug: "grocery",
     name: "Sona Masoori Rice",
     description: "Everyday rice pack for family meals.",
@@ -217,7 +279,7 @@ const productCatalog = [
     specifications: { Variety: "Sona Masoori", Pack: "5 kg", Grain: "Medium" },
   },
   {
-    sellerEmail: sellerAccounts[0].email,
+    sellerEmail: "grocery.tavarekere@chowdharymart.test",
     categorySlug: "grocery",
     name: "Fresh Banana",
     description: "Ripe bananas for breakfast and snacks.",
@@ -231,7 +293,7 @@ const productCatalog = [
     specifications: { Pack: "6 pieces", Ripeness: "Ready to eat" },
   },
   {
-    sellerEmail: sellerAccounts[1].email,
+    sellerEmail: "footwear.tavarekere@chowdharymart.test",
     categorySlug: "footwear",
     name: "Men Comfort Chappal",
     description: "Soft daily-use chappal with anti-slip sole.",
@@ -248,7 +310,7 @@ const productCatalog = [
     specifications: { Sizes: "6, 7, 8, 9, 10", Colors: "Black, Brown", Material: "EVA sole" },
   },
   {
-    sellerEmail: sellerAccounts[1].email,
+    sellerEmail: "footwear.tavarekere@chowdharymart.test",
     categorySlug: "footwear",
     name: "Women Everyday Sandal",
     description: "Lightweight sandal for daily wear.",
@@ -262,7 +324,7 @@ const productCatalog = [
     specifications: { Sizes: "4, 5, 6, 7, 8", Colors: "Tan, Black", Material: "Synthetic" },
   },
   {
-    sellerEmail: sellerAccounts[1].email,
+    sellerEmail: "fashion.tavarekere@chowdharymart.test",
     categorySlug: "fashion",
     name: "Roadster Denim Jacket",
     description: "Classic denim jacket with regular fit.",
@@ -279,7 +341,7 @@ const productCatalog = [
     specifications: { Sizes: "S, M, L, XL", Colors: "Blue, Black", Fabric: "Denim" },
   },
   {
-    sellerEmail: sellerAccounts[1].email,
+    sellerEmail: "fashion.tavarekere@chowdharymart.test",
     categorySlug: "fashion",
     name: "Cotton Daily T-Shirt",
     description: "Comfort cotton t-shirt for everyday use.",
@@ -293,7 +355,7 @@ const productCatalog = [
     specifications: { Sizes: "S, M, L, XL", Colors: "White, Navy, Black", Fabric: "Cotton" },
   },
   {
-    sellerEmail: sellerAccounts[1].email,
+    sellerEmail: "electronics.tavarekere@chowdharymart.test",
     categorySlug: "electronics",
     name: "Bluetooth Earbuds",
     description: "Compact earbuds with quick charge case.",
@@ -426,8 +488,14 @@ async function ensureMediaLibraryTable() {
   await db.execute(sql`create index if not exists media_library_approved_created_idx on media_library (is_approved, created_at desc)`);
 }
 
+async function ensureUserCleanupColumns() {
+  await db.execute(sql`alter table users add column if not exists deleted_at timestamp`);
+  await db.execute(sql`alter table users add column if not exists warning text`);
+}
+
 async function main() {
   await ensureMediaLibraryTable();
+  await ensureUserCleanupColumns();
   const result = await db.transaction(async (tx) => {
     await tx.delete(activeDeliveryLocationsTable);
     await tx.delete(liveLocationsTable);
@@ -438,6 +506,33 @@ async function main() {
     await tx.delete(productsTable);
     await tx.update(storesTable).set({ isOpen: false, isActive: false, updatedAt: new Date() });
     await tx.update(deliveryPartnersTable).set({ isOnline: false });
+    await tx.update(serviceZonesTable)
+      .set({
+        isActive: false,
+        acceptingOrders: false,
+        deliveryEnabled: false,
+        registrationEnabled: false,
+        sellerRegistrationEnabled: false,
+        riderRegistrationEnabled: false,
+        archivedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(sql`${serviceZonesTable.code} <> ${TAVAREKERE.code}`);
+
+    await tx.delete(walletTransactionsTable).where(sql`reference_type in ('demo_seed', 'demo_withdrawal', 'tavarekere_seed')`);
+    await tx.update(usersTable)
+      .set({
+        email: null,
+        phone: null,
+        passwordHash: null,
+        name: sql`'Removed Seed User #' || id`,
+        avatarUrl: null,
+        referralCode: null,
+        isActive: false,
+        updatedAt: new Date(),
+      } as Partial<typeof usersTable.$inferInsert>)
+      .where(inArray(usersTable.email, oldSeedEmails));
+    await tx.execute(sql`update users set deleted_at = now() where name like 'Removed Seed User #%';`);
 
     const [zoneExisting] = await tx.select().from(serviceZonesTable).where(eq(serviceZonesTable.code, TAVAREKERE.code)).limit(1);
     const zone = zoneExisting

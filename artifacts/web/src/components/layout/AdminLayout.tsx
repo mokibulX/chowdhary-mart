@@ -48,7 +48,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="app-shell bg-gray-50 md:flex md:flex-row">
+    <div className="app-shell admin-shell bg-gray-50 md:flex md:flex-row">
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900 px-3 py-3 text-white shadow-sm md:hidden">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
@@ -93,7 +93,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <aside className="app-scroll-panel sticky top-0 z-10 hidden h-[100dvh] w-72 shrink-0 flex-col overflow-y-auto bg-slate-950 text-white md:flex">
+      <aside className="app-scroll-panel z-10 hidden h-[100dvh] w-72 shrink-0 flex-col overflow-y-auto bg-slate-950 text-white md:flex">
         <div className="border-b border-white/10 p-5">
           <Button variant="ghost" size="sm" className="mb-3 w-full justify-start rounded-xl text-slate-300 hover:bg-white/10 hover:text-white" onClick={() => window.history.back()}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
@@ -121,7 +121,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           </Button>
         </div>
       </aside>
-      <main className="app-content mobile-bottom-safe min-w-0 flex-1 px-3 py-4 sm:px-4 md:p-6">
+      <main className="app-content admin-content mobile-bottom-safe min-w-0 flex-1 px-3 py-4 sm:px-4 md:p-6">
         {children}
       </main>
     </div>
