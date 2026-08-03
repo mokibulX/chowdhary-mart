@@ -1,0 +1,32 @@
+file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41490
+            throw new DrizzleQueryError(queryString, params, e);
+                  ^
+
+_DrizzleQueryError: Failed query: select "id", "email", "phone", "password_hash", "name", "avatar_url", "role", "wallet_balance", "loyalty_points", "referral_code", "referred_by", "is_verified", "is_active", "created_at", "updated_at" from "users" where "users"."email" = $1 limit $2
+params: chowdhary909090@gmail.com,1
+    at NodePgPreparedQuery.queryWithCache (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41490:19)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41777:26
+    at async ensureConfiguredAdmin (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:92736:22)
+    at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:92765:1 {
+  query: 'select "id", "email", "phone", "password_hash", "name", "avatar_url", "role", "wallet_balance", "loyalty_points", "referral_code", "referred_by", "is_verified", "is_active", "created_at", "updated_at" from "users" where "users"."email" = $1 limit $2',
+  params: [ 'chowdhary909090@gmail.com', 1 ],
+  cause: Error: Connection terminated due to connection timeout
+      at file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:36578:15
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41784:22
+      at async NodePgPreparedQuery.queryWithCache (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41488:20)
+      at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:41777:26
+      at async ensureConfiguredAdmin (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:92736:22)
+      at async file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:92765:1 {
+    [cause]: Error: Connection terminated unexpectedly
+        at Connection2.<anonymous> (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:36070:79)
+        at Object.onceWrapper (node:events:622:28)
+        at Connection2.emit (node:events:508:28)
+        at Socket.<anonymous> (file:///E:/Apps/Local-Commerce-Hub%20(1)/Local-Commerce-Hub/artifacts/api-server/dist/index.mjs:35495:16)
+        at Socket.emit (node:events:520:35)
+        at TCP.<anonymous> (node:net:346:12)
+  }
+}
+
+Node.js v24.14.1

@@ -35,13 +35,5 @@
     "lightningcss-win32-x64-msvc": "1.32.0",
     "prettier": "^3.8.3",
     "typescript": "~5.9.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@swc/core",
-      "esbuild",
-      "msw",
-      "unrs-resolver"
-    ]
   }
 }
