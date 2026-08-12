@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import { existsSync } from "node:fs";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "node:path";
@@ -54,6 +55,20 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_FORM_LIMIT ?? "1mb" }));
 
 app.use("/api", router);
+
+const webDist = path.resolve(process.cwd(), "artifacts", "web", "dist", "public");
+const webIndex = path.join(webDist, "index.html");
+if (existsSync(webIndex)) {
+  app.use(express.static(webDist, { index: false, maxAge: "1h" }));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api/") || req.path === "/api") {
+      next();
+      return;
+    }
+    res.sendFile(webIndex);
+  });
+}
+
 app.use(errorHandler);
 
 export default app;

@@ -14,8 +14,8 @@
   "scripts": {
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "start": "node scripts/start-render.mjs",
-    "render:build": "pnpm --filter @workspace/api-server run build",
-    "render:web:build": "pnpm --filter @workspace/web run build",
+    "render:build": "pnpm --filter @workspace/web run build && pnpm --filter @workspace/api-server run build",
+    "render:web:build": "pnpm --filter @workspace/web run build && pnpm --filter @workspace/api-server run build",
     "dev": "pnpm run cmart",
     "cmart": "powershell -ExecutionPolicy Bypass -File ./run-app.ps1",
     "cmart:api": "powershell -ExecutionPolicy Bypass -File ./run-server.ps1",

@@ -18,6 +18,7 @@ export function getRuntimeApiBaseUrl() {
   const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
   const mobileApiUrl = import.meta.env.VITE_MOBILE_API_URL?.trim();
   const isRemoteWebHost = typeof window !== "undefined" && !isLocalhostUrl(window.location.origin);
+  if (!isNative && isRemoteWebHost && configuredApiUrl && !/^https?:\/\//i.test(configuredApiUrl)) return "";
   if (!isNative && isRemoteWebHost && isLocalhostUrl(configuredApiUrl)) return publicApiUrl || "";
   if (isNative && publicApiUrl) return publicApiUrl;
   if (isNative && isLocalhostUrl(configuredApiUrl)) return mobileApiUrl || publicApiUrl || "http://10.0.2.2:5000";
