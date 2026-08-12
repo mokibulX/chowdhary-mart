@@ -7,11 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Camera, ChevronDown, ImagePlus, Mic, Search as SearchIcon, SlidersHorizontal, X } from "lucide-react";
+import { ChevronDown, Mic, Search as SearchIcon, SlidersHorizontal, X } from "lucide-react";
 import { getSavedDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
 import { resolveRuntimeApiUrl } from "@/lib/mobile-runtime";
-import { searchProductByImage } from "@/lib/image-search";
 
 const SUGGESTIONS = ["mobile", "grocery", "shoes", "headphones", "rice", "shirt", "home decor", "smart watch"];
 const TYPO_CORRECTIONS: Record<string, string> = {
@@ -87,13 +85,9 @@ export default function Search() {
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
-  const [imageSearchPreview, setImageSearchPreview] = useState("");
-  const [imageSearchStatus, setImageSearchStatus] = useState("");
   const [productResult, setProductResult] = useState<{ items: any[]; total: number }>({ items: [], total: 0 });
   const [productsLoading, setProductsLoading] = useState(false);
   const [deliveryLocation, setDeliveryLocation] = useState<DeliveryLocation>(() => getSavedDeliveryLocation());
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
-  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const { data: categories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
 
@@ -324,65 +318,6 @@ export default function Search() {
     recognition.start();
   };
 
-  const handleImageSearchFile = async (file?: File | null) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setImageSearchStatus("Please select a product photo.");
-      return;
-    }
-    if (imageSearchPreview) URL.revokeObjectURL(imageSearchPreview);
-    const preview = URL.createObjectURL(file);
-    setImageSearchPreview(preview);
-    setImageSearchStatus("Checking product photo...");
-    try {
-      const result = await searchProductByImage(file, {
-        lat: deliveryLocation.lat,
-        lng: deliveryLocation.lng,
-        radiusKm,
-      });
-      if (result.matchType === "same" && result.exactProduct?.id) {
-        setImageSearchStatus(result.message || "Same product found.");
-        setLocation(`/product/${result.exactProduct.id}`);
-        return;
-      }
-      const items = Array.isArray(result.items) ? result.items : [];
-      if (items.length) {
-        sessionStorage.setItem("cm_image_search_results", JSON.stringify({
-          items,
-          total: items.length,
-          message: result.message,
-          savedAt: Date.now(),
-        }));
-        setImageSearchStatus(result.message || "Showing visual matches from this photo.");
-        setInputVal("");
-        setQ("");
-        setLastSubmittedQ("");
-        setProductResult({ items, total: items.length });
-        setLocation("/search?image=1&visual=1");
-        return;
-      }
-      const keyword = result.query || inputVal.trim() || "fresh";
-      setImageSearchStatus(result.message || `Showing similar products for ${keyword}.`);
-      setInputVal(keyword);
-      setQ(keyword);
-      setLastSubmittedQ(keyword);
-      setLocation(buildSearchUrl({ q: keyword, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
-    } catch (error) {
-      const fallback = inputVal.trim() || "fresh";
-      setImageSearchStatus(error instanceof Error ? error.message : `Photo added. Showing local matches for ${fallback}.`);
-      setInputVal(fallback);
-      setQ(fallback);
-      setLastSubmittedQ(fallback);
-      setLocation(buildSearchUrl({ q: fallback, categoryId, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm }));
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (imageSearchPreview) URL.revokeObjectURL(imageSearchPreview);
-    };
-  }, [imageSearchPreview]);
-
   const resetFilters = () => {
     setCategoryId(undefined);
     setSort("newest");
@@ -399,8 +334,6 @@ export default function Search() {
   return (
     <div className="w-full max-w-full space-y-4 overflow-x-hidden">
       <form onSubmit={handleSearch} className="rounded-lg border bg-white p-3 shadow-sm">
-        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => { void handleImageSearchFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
-        <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { void handleImageSearchFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
         <div className="flex gap-2">
           <div className="relative flex-1">
             <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -415,31 +348,6 @@ export default function Search() {
             </button>
           </div>
           <Button className="h-11" type="submit" data-testid="btn-search">Search</Button>
-        </div>
-        <div className="mt-3 grid grid-cols-[auto_1fr] gap-2 sm:flex">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" className="h-10 rounded-xl text-xs font-bold">
-                <ImagePlus className="mr-2 h-4 w-4" /> Image search
-                <ChevronDown className="ml-2 h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44">
-              <DropdownMenuItem onSelect={() => cameraInputRef.current?.click()}>
-                <Camera className="h-4 w-4" /> Camera search
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => galleryInputRef.current?.click()}>
-                <ImagePlus className="h-4 w-4" /> Upload photo
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {imageSearchPreview && (
-            <div className="col-span-2 flex min-w-0 items-center gap-2 rounded-xl bg-orange-50 px-2 py-1 text-xs font-semibold text-orange-800 sm:col-span-1">
-              <img src={imageSearchPreview} alt="Search preview" className="h-8 w-8 rounded-lg object-cover" />
-              <span className="truncate">{imageSearchStatus}</span>
-              <button type="button" onClick={() => { URL.revokeObjectURL(imageSearchPreview); setImageSearchPreview(""); setImageSearchStatus(""); }}><X className="h-4 w-4" /></button>
-            </div>
-          )}
         </div>
         <div className="mt-3 flex max-w-full gap-2 overflow-x-auto pb-1">
           {(liveSuggestions.length ? liveSuggestions : SUGGESTIONS).map((item) => (

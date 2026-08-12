@@ -17,6 +17,8 @@ export function getRuntimeApiBaseUrl() {
   const publicApiUrl = import.meta.env.VITE_PUBLIC_API_URL?.trim();
   const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
   const mobileApiUrl = import.meta.env.VITE_MOBILE_API_URL?.trim();
+  const isRemoteWebHost = typeof window !== "undefined" && !isLocalhostUrl(window.location.origin);
+  if (!isNative && isRemoteWebHost && isLocalhostUrl(configuredApiUrl)) return publicApiUrl || "";
   if (isNative && publicApiUrl) return publicApiUrl;
   if (isNative && isLocalhostUrl(configuredApiUrl)) return mobileApiUrl || publicApiUrl || "http://10.0.2.2:5000";
   return configuredApiUrl || publicApiUrl || "";
@@ -28,6 +30,12 @@ export function getRuntimeWebsocketUrl() {
   const configuredWsUrl = import.meta.env.VITE_WEBSOCKET_URL?.trim();
   const mobileWsUrl = import.meta.env.VITE_MOBILE_WEBSOCKET_URL?.trim();
   const apiUrl = getRuntimeApiBaseUrl();
+  const isRemoteWebHost = typeof window !== "undefined" && !isLocalhostUrl(window.location.origin);
+  if (!isNative && isRemoteWebHost && isLocalhostUrl(configuredWsUrl)) {
+    if (publicWsUrl) return publicWsUrl;
+    if (apiUrl) return toWebsocketUrl(apiUrl);
+    return window.location.origin.replace(/^https:\/\//i, "wss://").replace(/^http:\/\//i, "ws://");
+  }
   if (isNative && publicWsUrl) return publicWsUrl;
   if (isNative && isLocalhostUrl(configuredWsUrl)) {
     if (mobileWsUrl) return mobileWsUrl;

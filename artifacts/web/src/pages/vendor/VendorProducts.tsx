@@ -18,13 +18,15 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { BadgePercent, CheckCircle2, ImagePlus, Plus, Pencil, Trash2, Package, AlertTriangle, X } from "lucide-react";
+import { BadgePercent, CheckCircle2, ImagePlus, Loader2, Plus, Pencil, ScanBarcode, Trash2, Package, AlertTriangle, X } from "lucide-react";
 import { uploadImageFile } from "@/lib/image-upload";
 import { getFriendlyErrorMessage, getFirstFormError } from "@/lib/error-message";
 
 const schema = z.object({
   name: z.string().min(2, "Name required"),
   description: z.string().optional().or(z.literal("")),
+  barcode: z.string().regex(/^\d{8,14}$/, "Enter a valid 8 to 14 digit barcode").optional().or(z.literal("")),
+  productDate: z.string().min(1, "Product date required"),
   categoryId: z.coerce.number().min(1, "Category required"),
   price: z.coerce.number().min(0.01, "Price required"),
   mrp: z.coerce.number().min(0.01, "MRP required"),
@@ -115,6 +117,7 @@ export default function VendorProducts() {
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [productStep, setProductStep] = useState(0);
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
 
   const { data: products, isLoading } = useListVendorProducts({
     query: { enabled: !!user, queryKey: getListVendorProductsQueryKey() },
@@ -148,10 +151,11 @@ export default function VendorProducts() {
     setSelectedSizes([]);
     setSelectedColors([]);
     setProductStep(0);
+    setBarcodeLoading(false);
     reset({
       categoryId: Number((categories as any[] | undefined)?.[0]?.id ?? 2),
-      price: 99,
-      mrp: 120,
+      barcode: "",
+      productDate: "",
       isAvailable: true,
       isFeatured: asOffer,
       stock: 10,
@@ -174,6 +178,7 @@ export default function VendorProducts() {
     setSelectedColors(normalizeSizes(p.colors ?? p.specifications?.Colors ?? p.specifications?.Color));
     reset({
       name: p.name, description: p.description ?? "",
+      barcode: p.sku ?? "", productDate: p.specifications?.ProductDate ?? "",
       categoryId: p.categoryId, price: Number(p.price), mrp: Number(p.mrp),
       stock: p.stock, weight: p.weight ?? "", unit: p.unit ?? "",
       imageUrl: p.images?.[0] ?? "", sizes: normalizeSizes(p.sizes ?? p.specifications?.Sizes ?? p.specifications?.Size).join(", "),
@@ -195,6 +200,12 @@ export default function VendorProducts() {
       setProductStep(0);
       return;
     }
+    const duplicateBarcode = data.barcode && (products as any[] | undefined)?.some((product) => product.id !== editId && String(product.sku ?? product.specifications?.Barcode ?? "") === data.barcode);
+    if (duplicateBarcode) {
+      toast({ title: "Barcode already exists", description: "Ei barcode-er product inventory-te ache. Existing product edit korun.", variant: "destructive" });
+      setProductStep(0);
+      return;
+    }
     if (!cleanImages.length) cleanImages.push(PRODUCT_PLACEHOLDER_IMAGE);
     const sizes = normalizeSizes([...selectedSizes, ...normalizeSizes(data.sizes)]);
     const colors = normalizeSizes([...selectedColors, ...normalizeSizes(data.colors)]);
@@ -210,6 +221,8 @@ export default function VendorProducts() {
       Warranty: data.warranty || "Seller assured",
       Payment: data.paymentOptions || "Cash on Delivery, UPI",
       Delivery: data.deliveryNote || "40 minute local target",
+      ProductDate: data.productDate,
+      ...(data.barcode ? { Barcode: data.barcode } : {}),
     };
     const payload = {
       name: data.name,
@@ -220,6 +233,7 @@ export default function VendorProducts() {
       stock: data.stock,
       weight: data.weight,
       unit: data.unit,
+      sku: data.barcode || undefined,
       images: cleanImages,
       colorImages,
       sizes,
@@ -244,6 +258,43 @@ export default function VendorProducts() {
       update.mutate({ productId: editId, data: payload }, { onSuccess, onError });
     } else {
       create.mutate({ data: payload as any }, { onSuccess, onError });
+    }
+  };
+
+  const lookupBarcode = async () => {
+    const barcode = String(watch("barcode") ?? "").replace(/\D/g, "");
+    setValue("barcode", barcode, { shouldDirty: true, shouldValidate: true });
+    if (!/^\d{8,14}$/.test(barcode)) {
+      toast({ title: "Valid barcode required", description: "8 theke 14 digit barcode enter korun.", variant: "destructive" });
+      return;
+    }
+    setBarcodeLoading(true);
+    try {
+      const found = await customFetch<any>(`/api/vendor/barcode/${barcode}`, { responseType: "json" });
+      setValue("name", found.name || "", { shouldDirty: true, shouldValidate: true });
+      const description = [found.brand ? `Brand: ${found.brand}` : "", found.description || ""].filter(Boolean).join("\n");
+      setValue("description", description, { shouldDirty: true });
+
+      const categoryText = `${found.category || ""} ${(found.categoryTags || []).join(" ")}`.toLowerCase();
+      const matchedCategory = (categories as any[] | undefined)?.find((category) => {
+        const name = String(category.name ?? "").toLowerCase();
+        return name && (categoryText.includes(name) || name.split(/\s+|&/).some((word: string) => word.length > 3 && categoryText.includes(word)));
+      });
+      if (matchedCategory) setValue("categoryId", Number(matchedCategory.id), { shouldDirty: true, shouldValidate: true });
+
+      const quantity = String(found.quantity || "").trim();
+      const quantityMatch = quantity.match(/^([\d.]+)\s*([a-zA-Z]+|pcs?)?/);
+      if (quantityMatch) {
+        setValue("weight", quantityMatch[1], { shouldDirty: true });
+        setValue("unit", quantityMatch[2] || "pc", { shouldDirty: true });
+      }
+      const images = Array.isArray(found.images) ? found.images.filter((url: unknown) => typeof url === "string" && /^https:\/\//i.test(url)) : [];
+      if (images.length) setImageUrls(images);
+      toast({ title: "Product details found", description: "Details and image added. Ekhon price, MRP and product date set korun." });
+    } catch (err) {
+      toast({ title: "Barcode lookup failed", description: getFriendlyErrorMessage(err, "Product paoa jayni. Details manually add korte parben."), variant: "destructive" });
+    } finally {
+      setBarcodeLoading(false);
     }
   };
 
@@ -469,6 +520,30 @@ export default function VendorProducts() {
 
             {productStep === 0 && (
               <section className="space-y-3">
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                  <div className="mb-2 flex items-start gap-2">
+                    <ScanBarcode className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+                    <div>
+                      <Label htmlFor="product-barcode" className="font-bold text-blue-950">Add product by barcode</Label>
+                      <p className="text-xs text-blue-700">Barcode dile available details, weight and images auto-fill hobe. Price and date apnake set korte hobe.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      id="product-barcode"
+                      inputMode="numeric"
+                      maxLength={14}
+                      placeholder="Scan or enter 8-14 digit barcode"
+                      {...register("barcode", { onChange: (event) => { event.target.value = event.target.value.replace(/\D/g, "").slice(0, 14); } })}
+                      data-testid="input-barcode"
+                    />
+                    <Button type="button" variant="outline" className="shrink-0 bg-white" onClick={lookupBarcode} disabled={barcodeLoading} data-testid="btn-barcode-lookup">
+                      {barcodeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanBarcode className="mr-2 h-4 w-4" />}
+                      {barcodeLoading ? "Finding" : "Find"}
+                    </Button>
+                  </div>
+                  {errors.barcode && <p className="mt-1 text-xs text-red-500">{errors.barcode.message}</p>}
+                </div>
                 <div className="space-y-1">
                   <Label>Product Name *</Label>
                   <Input {...register("name")} data-testid="input-name" />
@@ -499,6 +574,12 @@ export default function VendorProducts() {
                     <Input type="number" step="0.01" {...register("mrp")} data-testid="input-mrp" />
                     {errors.mrp && <p className="text-xs text-red-500">{errors.mrp.message}</p>}
                   </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="product-date">Product / stock date *</Label>
+                  <Input id="product-date" type="date" {...register("productDate")} data-testid="input-product-date" />
+                  <p className="text-xs text-muted-foreground">Seller-ke product-er actual stock/manufacture date select korte hobe.</p>
+                  {errors.productDate && <p className="text-xs text-red-500">{errors.productDate.message}</p>}
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">

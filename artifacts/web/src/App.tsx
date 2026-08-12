@@ -143,7 +143,7 @@ function VendorRoute({ component: Component }: { component: () => ReactElement }
 
 function ApprovedVendorGate({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
-  if (user?.role === "admin" || (user as any)?.vendorStatus === "approved" || !(user as any)?.vendorStatus) {
+  if (user?.role === "admin" || (user?.role === "vendor" && (user as any)?.vendorStatus === "approved")) {
     return <>{children}</>;
   }
   return (

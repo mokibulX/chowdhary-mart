@@ -8,6 +8,15 @@ const defaultCorsAllowlist = [
   "ionic://localhost",
 ];
 
+function isAllowedRenderOrigin(origin: string) {
+  try {
+    const url = new URL(origin);
+    return url.protocol === "https:" && url.hostname.endsWith(".onrender.com");
+  } catch {
+    return false;
+  }
+}
+
 export function securityHeaders(_req: Request, res: Response, next: NextFunction) {
   res.setHeader("x-content-type-options", "nosniff");
   res.setHeader("x-frame-options", "DENY");
@@ -29,7 +38,12 @@ export function getCorsOptions() {
   return {
     credentials: true,
     origin(origin: string | undefined, callback: (error: Error | null, allowed?: boolean) => void) {
-      if (!origin || allowlist.includes(origin) || allowlist.includes("*")) {
+      if (
+        !origin ||
+        allowlist.includes(origin) ||
+        allowlist.includes("*") ||
+        (process.env.NODE_ENV === "production" && isAllowedRenderOrigin(origin))
+      ) {
         callback(null, true);
         return;
       }

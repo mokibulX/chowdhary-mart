@@ -2,10 +2,11 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $apiDir = Join-Path $root "artifacts\api-server"
-$apiLog = Join-Path $root "api-server.out.log"
-$apiErr = Join-Path $root "api-server.err.log"
-$webLog = Join-Path $root "web-start.out.log"
-$webErr = Join-Path $root "web-start.err.log"
+$logStamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$apiLog = Join-Path $root "api-server-$logStamp.out.log"
+$apiErr = Join-Path $root "api-server-$logStamp.err.log"
+$webLog = Join-Path $root "web-start-$logStamp.out.log"
+$webErr = Join-Path $root "web-start-$logStamp.err.log"
 
 Write-Host "Starting Chowdhary Mart full app..." -ForegroundColor Green
 
@@ -18,7 +19,6 @@ if ($apiBusy) {
   Start-Sleep -Seconds 1
 }
 
-Remove-Item -Force $apiLog, $apiErr, $webLog, $webErr -ErrorAction SilentlyContinue
 Set-Location $apiDir
 node .\build.mjs
 
@@ -27,12 +27,39 @@ if (-not (Test-Path (Join-Path $apiDir "dist\index.mjs"))) {
   exit 1
 }
 
-Start-Process -FilePath "node" `
-  -ArgumentList ".\dist\index.mjs" `
-  -WorkingDirectory $apiDir `
-  -RedirectStandardOutput $apiLog `
-  -RedirectStandardError $apiErr `
-  -WindowStyle Hidden
+$nodePath = (Get-Command node).Source
+$apiOutStream = [System.IO.StreamWriter]::new($apiLog, $false)
+$apiErrStream = [System.IO.StreamWriter]::new($apiErr, $false)
+$apiProcessInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$apiProcessInfo.FileName = $nodePath
+$apiProcessInfo.Arguments = "dist\index.mjs"
+$apiProcessInfo.WorkingDirectory = $apiDir
+$apiProcessInfo.UseShellExecute = $false
+$apiProcessInfo.RedirectStandardOutput = $true
+$apiProcessInfo.RedirectStandardError = $true
+$apiProcessInfo.CreateNoWindow = $true
+$apiProcess = [System.Diagnostics.Process]::new()
+$apiProcess.StartInfo = $apiProcessInfo
+$apiProcess.add_OutputDataReceived({
+  param($sender, $eventArgs)
+  if ($eventArgs.Data -ne $null) {
+    $apiOutStream.WriteLine($eventArgs.Data)
+    $apiOutStream.Flush()
+  }
+})
+$apiProcess.add_ErrorDataReceived({
+  param($sender, $eventArgs)
+  if ($eventArgs.Data -ne $null) {
+    $apiErrStream.WriteLine($eventArgs.Data)
+    $apiErrStream.Flush()
+  }
+})
+if (-not $apiProcess.Start()) {
+  Write-Host "API failed to start process." -ForegroundColor Red
+  exit 1
+}
+$apiProcess.BeginOutputReadLine()
+$apiProcess.BeginErrorReadLine()
 
 $apiReady = $false
 for ($attempt = 1; $attempt -le 20; $attempt++) {

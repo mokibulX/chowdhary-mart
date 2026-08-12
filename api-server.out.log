@@ -1,60 +1,1740 @@
-[15:03:22.440] [32mINFO[39m (852): [36mConfigured admin account synced[39m
+[08:21:44.476] [32mINFO[39m (28280): [36mConfigured admin account synced[39m
     [35madminEmail[39m: "chowdhary909090@gmail.com"
-[15:03:22.445] [32mINFO[39m (852): [36mServer listening[39m
+[08:21:44.516] [32mINFO[39m (28280): [36mServer listening[39m
     [35mport[39m: 5000
-[15:03:24.323] [32mINFO[39m (852): [36mrequest completed[39m
+[08:21:47.257] [32mINFO[39m (28280): [36mrequest aborted[39m
     [35mreq[39m: {
       "id": 1,
-      "requestId": "f80e052f-717a-41c6-bd3c-8929ca1efcbd",
-      "correlationId": "f80e052f-717a-41c6-bd3c-8929ca1efcbd",
+      "requestId": "e1483980-0ca2-426f-88d8-f8cf23eadd3f",
+      "correlationId": "e1483980-0ca2-426f-88d8-f8cf23eadd3f",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": null
+    }
+    [35mresponseTime[39m: 1975
+[08:21:48.482] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 2,
+      "requestId": "99af9e5e-f8f7-4598-8d5e-a88df3f103c4",
+      "correlationId": "99af9e5e-f8f7-4598-8d5e-a88df3f103c4",
       "method": "GET",
       "url": "/api/health/ready"
     }
     [35mres[39m: {
       "statusCode": 200
     }
-    [35mresponseTime[39m: 1530
-[15:03:24.992] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 2,
-      "requestId": "f5a2b101-0029-4088-9779-2d5d3e3de1ca",
-      "correlationId": "f5a2b101-0029-4088-9779-2d5d3e3de1ca",
-      "method": "GET",
-      "url": "/api/products"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 1558
-[15:03:31.931] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mresponseTime[39m: 193
+[08:22:46.839] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
       "id": 3,
-      "requestId": "582bdf3c-d4b1-4eca-8a39-ef75b353b1ea",
-      "correlationId": "582bdf3c-d4b1-4eca-8a39-ef75b353b1ea",
+      "requestId": "cc2fe9be-4d2b-45c4-ae2c-8bb598a952ce",
+      "correlationId": "cc2fe9be-4d2b-45c4-ae2c-8bb598a952ce",
+      "method": "OPTIONS",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 8
+[08:22:46.892] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 4,
+      "requestId": "f099d805-923f-4798-8f7e-cc215f81b6e8",
+      "correlationId": "f099d805-923f-4798-8f7e-cc215f81b6e8",
+      "method": "GET",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 42
+[08:22:47.073] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 5,
+      "requestId": "76b03d05-c555-44f7-a257-46eceef43ab1",
+      "correlationId": "76b03d05-c555-44f7-a257-46eceef43ab1",
+      "method": "OPTIONS",
+      "url": "/api/homepage"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 2
+[08:22:49.401] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 6,
+      "requestId": "d5cc4739-f156-4d30-9502-8f037508e1d6",
+      "correlationId": "d5cc4739-f156-4d30-9502-8f037508e1d6",
+      "method": "GET",
+      "url": "/api/homepage"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 2294
+[08:22:57.999] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 7,
+      "requestId": "07e8e311-e786-4bf8-9cee-f38f93f74ad6",
+      "correlationId": "07e8e311-e786-4bf8-9cee-f38f93f74ad6",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2186
+[08:23:07.300] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 8,
+      "requestId": "b1ab745e-836c-4417-820a-2153ab94bb95",
+      "correlationId": "b1ab745e-836c-4417-820a-2153ab94bb95",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 2
+[08:23:07.772] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 9,
+      "requestId": "ed037d77-75e6-4077-827f-25bb8a8d9131",
+      "correlationId": "ed037d77-75e6-4077-827f-25bb8a8d9131",
+      "method": "POST",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 437
+[08:23:07.831] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 10,
+      "requestId": "984707a7-691e-4fdf-a189-4b3a7ca89164",
+      "correlationId": "984707a7-691e-4fdf-a189-4b3a7ca89164",
+      "method": "OPTIONS",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 2
+[08:23:08.197] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 11,
+      "requestId": "37ae7406-f9a3-46d0-bcc7-544d3470b346",
+      "correlationId": "37ae7406-f9a3-46d0-bcc7-544d3470b346",
+      "method": "GET",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 350
+[08:23:08.346] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 12,
+      "requestId": "005ec65f-eef2-42b8-9e53-3985facc5bd4",
+      "correlationId": "005ec65f-eef2-42b8-9e53-3985facc5bd4",
+      "method": "OPTIONS",
+      "url": "/api/wallet"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:23:08.351] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 13,
+      "requestId": "be93927d-4bfb-4446-b92b-38ef22f49c45",
+      "correlationId": "be93927d-4bfb-4446-b92b-38ef22f49c45",
+      "method": "OPTIONS",
+      "url": "/api/wallet/transactions"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 3
+[08:23:08.353] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 14,
+      "requestId": "bbab934f-726e-4c72-bdd8-8c1517630105",
+      "correlationId": "bbab934f-726e-4c72-bdd8-8c1517630105",
+      "method": "OPTIONS",
+      "url": "/api/admin/dashboard"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:23:08.355] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 15,
+      "requestId": "2f9efa4b-b858-492f-93ab-4d14c01929e8",
+      "correlationId": "2f9efa4b-b858-492f-93ab-4d14c01929e8",
+      "method": "OPTIONS",
+      "url": "/api/admin/test-controls"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:23:09.775] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 19,
+      "requestId": "3ff6ddc7-c708-4644-8b67-a641bfb47f6a",
+      "correlationId": "3ff6ddc7-c708-4644-8b67-a641bfb47f6a",
+      "method": "GET",
+      "url": "/api/admin/test-controls"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 1390
+[08:23:10.392] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 18,
+      "requestId": "afc996bd-37f0-4a79-97f1-dfdb58f43e3c",
+      "correlationId": "afc996bd-37f0-4a79-97f1-dfdb58f43e3c",
+      "method": "GET",
+      "url": "/api/wallet/transactions"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2010
+[08:23:10.393] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 17,
+      "requestId": "71911c55-468a-4503-aead-50d41b9be45f",
+      "correlationId": "71911c55-468a-4503-aead-50d41b9be45f",
+      "method": "GET",
+      "url": "/api/wallet"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 2016
+[08:23:10.697] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 16,
+      "requestId": "b9abb727-0a9a-42e3-8157-9fbf85d77345",
+      "correlationId": "b9abb727-0a9a-42e3-8157-9fbf85d77345",
+      "method": "GET",
+      "url": "/api/admin/dashboard"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2327
+[08:24:51.664] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 20,
+      "requestId": "1e45f1d8-b3d9-42f1-b88b-6f4de5bc0566",
+      "correlationId": "1e45f1d8-b3d9-42f1-b88b-6f4de5bc0566",
+      "method": "GET",
+      "url": "/api/health/ready"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1394
+[08:27:17.446] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 21,
+      "requestId": "3ec71e56-890f-42f7-9179-f7e9c6c473cd",
+      "correlationId": "3ec71e56-890f-42f7-9179-f7e9c6c473cd",
+      "method": "GET",
+      "url": "/api/admin/banners"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 18
+[08:27:18.783] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 22,
+      "requestId": "fa3d415c-fcbf-4975-b370-0f02cf40d3c8",
+      "correlationId": "fa3d415c-fcbf-4975-b370-0f02cf40d3c8",
+      "method": "GET",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1326
+[08:27:18.789] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 27,
+      "requestId": "fd96b024-d37c-4604-8778-490e2be4b9e0",
+      "correlationId": "fd96b024-d37c-4604-8778-490e2be4b9e0",
       "method": "GET",
       "url": "/api/products"
     }
     [35mres[39m: {
       "statusCode": 200
     }
-    [35mresponseTime[39m: 210
-[15:03:32.227] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mresponseTime[39m: 1218
+[08:27:18.794] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 4,
-      "requestId": "56be54b4-c90f-429d-a0b4-2159e3580a51",
-      "correlationId": "56be54b4-c90f-429d-a0b4-2159e3580a51",
+      "id": 24,
+      "requestId": "134d63e9-afde-4e99-9a57-af1a1c01a674",
+      "correlationId": "134d63e9-afde-4e99-9a57-af1a1c01a674",
       "method": "GET",
-      "url": "/api/search/suggestions"
+      "url": "/api/products"
     }
     [35mres[39m: {
       "statusCode": 200
     }
-    [35mresponseTime[39m: 263
-[15:07:16.658] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mresponseTime[39m: 1285
+[08:27:18.988] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 5,
-      "requestId": "283e780e-5227-49a7-a40b-a3af06210067",
-      "correlationId": "283e780e-5227-49a7-a40b-a3af06210067",
+      "id": 30,
+      "requestId": "08d364a6-64fd-41f2-aa2a-ef271ec9c84a",
+      "correlationId": "08d364a6-64fd-41f2-aa2a-ef271ec9c84a",
+      "method": "GET",
+      "url": "/api/homepage"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 166
+[08:27:18.993] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 28,
+      "requestId": "a3d0eaea-e172-4cef-97ce-273d4c63cdcc",
+      "correlationId": "a3d0eaea-e172-4cef-97ce-273d4c63cdcc",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 182
+[08:27:18.995] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 29,
+      "requestId": "1269537a-5dae-4208-b554-3158f081e670",
+      "correlationId": "1269537a-5dae-4208-b554-3158f081e670",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 178
+[08:27:19.068] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 31,
+      "requestId": "8bbfcf60-6dc3-4477-a9ee-5866c8eac19c",
+      "correlationId": "8bbfcf60-6dc3-4477-a9ee-5866c8eac19c",
+      "method": "GET",
+      "url": "/api/admin/banners"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 1
+[08:27:19.110] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 23,
+      "requestId": "b5d213a5-b9b5-4676-83d2-4d84500e6209",
+      "correlationId": "b5d213a5-b9b5-4676-83d2-4d84500e6209",
+      "method": "GET",
+      "url": "/api/stores"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1619
+[08:27:19.126] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 26,
+      "requestId": "d618dc98-6aca-4e42-ab4b-615d03c84cc1",
+      "correlationId": "d618dc98-6aca-4e42-ab4b-615d03c84cc1",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1563
+[08:27:19.161] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 25,
+      "requestId": "b43ac7c7-aca4-464a-b355-c83da1f6e119",
+      "correlationId": "b43ac7c7-aca4-464a-b355-c83da1f6e119",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1619
+[08:27:20.053] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 34,
+      "requestId": "441e43ab-cc26-4d09-841e-f86750479c20",
+      "correlationId": "441e43ab-cc26-4d09-841e-f86750479c20",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 167
+[08:27:20.138] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 32,
+      "requestId": "d768525c-5bd5-4824-8652-6667e154c69a",
+      "correlationId": "d768525c-5bd5-4824-8652-6667e154c69a",
+      "method": "GET",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 264
+[08:27:20.140] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 33,
+      "requestId": "bdaab073-bf93-4d2a-ad73-df97fb62970e",
+      "correlationId": "bdaab073-bf93-4d2a-ad73-df97fb62970e",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 261
+[08:27:20.192] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 35,
+      "requestId": "3c642435-7521-484b-89c8-83509b4c9702",
+      "correlationId": "3c642435-7521-484b-89c8-83509b4c9702",
+      "method": "GET",
+      "url": "/api/homepage"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 164
+[08:27:20.203] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 36,
+      "requestId": "d9ba6c85-d967-4792-acf1-990d94ccb280",
+      "correlationId": "d9ba6c85-d967-4792-acf1-990d94ccb280",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 171
+[08:27:20.260] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 37,
+      "requestId": "071e9edb-9aae-4bab-ad95-bd5cba80499c",
+      "correlationId": "071e9edb-9aae-4bab-ad95-bd5cba80499c",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 200
+[08:27:20.442] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 40,
+      "requestId": "488843ac-a477-4331-a961-cf2f8ff035be",
+      "correlationId": "488843ac-a477-4331-a961-cf2f8ff035be",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 262
+[08:27:20.443] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 38,
+      "requestId": "4b55ca15-1377-4a59-9045-8061cec975b2",
+      "correlationId": "4b55ca15-1377-4a59-9045-8061cec975b2",
+      "method": "GET",
+      "url": "/api/stores"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 301
+[08:27:20.445] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 39,
+      "requestId": "a29dabb3-84d4-4696-9efc-f55aa7b884e8",
+      "correlationId": "a29dabb3-84d4-4696-9efc-f55aa7b884e8",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 291
+[08:27:54.670] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 41,
+      "requestId": "7fabb9eb-1bb0-4e63-9067-e69dff05868a",
+      "correlationId": "7fabb9eb-1bb0-4e63-9067-e69dff05868a",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 9
+[08:27:58.028] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 42,
+      "requestId": "53e7b926-4ac1-4a84-bc48-d3d00251b99d",
+      "correlationId": "53e7b926-4ac1-4a84-bc48-d3d00251b99d",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2
+[08:38:57.972] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 43,
+      "requestId": "5c5a6d0c-354f-401a-9839-464cd5f8a779",
+      "correlationId": "5c5a6d0c-354f-401a-9839-464cd5f8a779",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 16
+[08:39:00.992] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 44,
+      "requestId": "7aff4005-646a-4ac9-abc8-5a141e893052",
+      "correlationId": "7aff4005-646a-4ac9-abc8-5a141e893052",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3
+[08:39:01.356] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 45,
+      "requestId": "e4e285e7-819a-412a-91d8-891fcd4ae029",
+      "correlationId": "e4e285e7-819a-412a-91d8-891fcd4ae029",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:01.502] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 46,
+      "requestId": "53948eaa-ec72-4b47-9006-5aa2d085896c",
+      "correlationId": "53948eaa-ec72-4b47-9006-5aa2d085896c",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 0
+[08:39:01.650] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 47,
+      "requestId": "32dfce4c-c80e-4c66-8721-14ea6d067c1d",
+      "correlationId": "32dfce4c-c80e-4c66-8721-14ea6d067c1d",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 0
+[08:39:01.801] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 48,
+      "requestId": "2865fa32-a21e-419f-a8dc-78e02c33c89d",
+      "correlationId": "2865fa32-a21e-419f-a8dc-78e02c33c89d",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 4
+[08:39:01.940] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 49,
+      "requestId": "71046eeb-0d2d-4ae1-b4d7-79f98aa23f3b",
+      "correlationId": "71046eeb-0d2d-4ae1-b4d7-79f98aa23f3b",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:02.080] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 50,
+      "requestId": "04f0fdaf-fa17-4bda-be44-315c7aeda9e9",
+      "correlationId": "04f0fdaf-fa17-4bda-be44-315c7aeda9e9",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:02.222] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 51,
+      "requestId": "28b11604-35bd-4a10-8539-3587817156d9",
+      "correlationId": "28b11604-35bd-4a10-8539-3587817156d9",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:02.368] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 52,
+      "requestId": "9c4f38db-9677-4e63-82f6-474ef40f8128",
+      "correlationId": "9c4f38db-9677-4e63-82f6-474ef40f8128",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:02.507] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 53,
+      "requestId": "1694bb66-bbcd-4654-972f-e8f018d3177c",
+      "correlationId": "1694bb66-bbcd-4654-972f-e8f018d3177c",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:02.646] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 54,
+      "requestId": "383e89ec-e2ac-47d9-ad51-bd3ba102050c",
+      "correlationId": "383e89ec-e2ac-47d9-ad51-bd3ba102050c",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2
+[08:39:02.794] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 55,
+      "requestId": "c86ace17-1645-4a32-ab04-5eb9bbeab309",
+      "correlationId": "c86ace17-1645-4a32-ab04-5eb9bbeab309",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:02.932] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 56,
+      "requestId": "e9729c02-5082-4ccd-952a-f16943f7b317",
+      "correlationId": "e9729c02-5082-4ccd-952a-f16943f7b317",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:03.086] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 57,
+      "requestId": "037374bf-a0e4-4b53-ad25-2980c350a850",
+      "correlationId": "037374bf-a0e4-4b53-ad25-2980c350a850",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:03.316] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 58,
+      "requestId": "cc5a224e-2b7e-49be-842a-20cffba0674c",
+      "correlationId": "cc5a224e-2b7e-49be-842a-20cffba0674c",
+      "method": "OPTIONS",
+      "url": "/api/auth/login"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1
+[08:39:15.634] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 62,
+      "requestId": "1ed8001e-ec78-418b-993b-0315dd884550",
+      "correlationId": "1ed8001e-ec78-418b-993b-0315dd884550",
+      "method": "GET",
+      "url": "/api/admin/banners"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 14
+[08:39:17.066] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 61,
+      "requestId": "112257bd-90be-4afb-9d2c-398a02e011ab",
+      "correlationId": "112257bd-90be-4afb-9d2c-398a02e011ab",
+      "method": "GET",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1457
+[08:39:17.068] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 63,
+      "requestId": "5dbb12cf-0295-4763-9b5c-ea8596539ed2",
+      "correlationId": "5dbb12cf-0295-4763-9b5c-ea8596539ed2",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1433
+[08:39:17.068] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 59,
+      "requestId": "8b9a65ce-6f7c-4283-988d-634a0479343b",
+      "correlationId": "8b9a65ce-6f7c-4283-988d-634a0479343b",
+      "method": "GET",
+      "url": "/api/stores"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1517
+[08:39:17.270] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 67,
+      "requestId": "a155ebb3-d1d4-4f0f-b930-6779502193e0",
+      "correlationId": "a155ebb3-d1d4-4f0f-b930-6779502193e0",
+      "method": "GET",
+      "url": "/api/homepage"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 192
+[08:39:17.272] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 66,
+      "requestId": "764b6a4a-a127-4d24-9372-7214b3a7a1e2",
+      "correlationId": "764b6a4a-a127-4d24-9372-7214b3a7a1e2",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 196
+[08:39:17.274] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 68,
+      "requestId": "f30115dd-5b0b-4601-8e14-257e342fd8b2",
+      "correlationId": "f30115dd-5b0b-4601-8e14-257e342fd8b2",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 190
+[08:39:17.285] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 69,
+      "requestId": "7b1bcc6f-11c6-45ad-8497-128e9a8a3e4b",
+      "correlationId": "7b1bcc6f-11c6-45ad-8497-128e9a8a3e4b",
+      "method": "GET",
+      "url": "/api/admin/banners"
+    }
+    [35mres[39m: {
+      "statusCode": 401
+    }
+    [35mresponseTime[39m: 1
+[08:39:17.321] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 65,
+      "requestId": "e072b313-0f57-409e-a123-4806d92a5144",
+      "correlationId": "e072b313-0f57-409e-a123-4806d92a5144",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1668
+[08:39:17.322] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 60,
+      "requestId": "1c7bdca9-cebd-465a-8865-da2db8491203",
+      "correlationId": "1c7bdca9-cebd-465a-8865-da2db8491203",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1727
+[08:39:17.565] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 64,
+      "requestId": "5631340c-ed0f-416d-8722-59cb70e9c978",
+      "correlationId": "5631340c-ed0f-416d-8722-59cb70e9c978",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1921
+[08:39:18.444] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 72,
+      "requestId": "28a93e74-3e40-4abc-9cbf-dbf6deab0268",
+      "correlationId": "28a93e74-3e40-4abc-9cbf-dbf6deab0268",
+      "method": "GET",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 347
+[08:39:18.445] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 71,
+      "requestId": "5d03727a-5833-4a46-810c-7bd0e6d3a245",
+      "correlationId": "5d03727a-5833-4a46-810c-7bd0e6d3a245",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 351
+[08:39:18.445] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 70,
+      "requestId": "91c893db-4b13-4471-95f8-66f5911d4084",
+      "correlationId": "91c893db-4b13-4471-95f8-66f5911d4084",
+      "method": "GET",
+      "url": "/api/stores"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 353
+[08:39:18.533] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 75,
+      "requestId": "f2f9c103-7220-41cd-a0ea-3e56d1278c17",
+      "correlationId": "f2f9c103-7220-41cd-a0ea-3e56d1278c17",
+      "method": "GET",
+      "url": "/api/homepage"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 231
+[08:39:18.546] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 73,
+      "requestId": "ba2199b2-6cde-4c9d-abc2-f207cd586ee3",
+      "correlationId": "ba2199b2-6cde-4c9d-abc2-f207cd586ee3",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 255
+[08:39:18.550] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 74,
+      "requestId": "98feeb51-1608-4bc2-acad-c64abb8490d6",
+      "correlationId": "98feeb51-1608-4bc2-acad-c64abb8490d6",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 255
+[08:39:18.695] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 77,
+      "requestId": "4b542357-43cc-4fde-b6fc-9adbaa436913",
+      "correlationId": "4b542357-43cc-4fde-b6fc-9adbaa436913",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 235
+[08:39:18.700] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 76,
+      "requestId": "3e97fd49-e516-4273-be69-631b8716c001",
+      "correlationId": "3e97fd49-e516-4273-be69-631b8716c001",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 245
+[08:39:18.754] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 78,
+      "requestId": "61559212-30eb-4b0c-9fc6-70c3134fa89a",
+      "correlationId": "61559212-30eb-4b0c-9fc6-70c3134fa89a",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 167
+[08:39:47.095] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 79,
+      "requestId": "786227cc-4065-4088-b854-d8d4111318a9",
+      "correlationId": "786227cc-4065-4088-b854-d8d4111318a9",
+      "method": "OPTIONS",
+      "url": "/api/admin/banners"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:39:47.097] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 80,
+      "requestId": "9bba55f0-68ea-429b-876c-180d98134bce",
+      "correlationId": "9bba55f0-68ea-429b-876c-180d98134bce",
+      "method": "OPTIONS",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:39:47.148] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 82,
+      "requestId": "5dded8a5-d279-47dc-a3c6-c0014385e218",
+      "correlationId": "5dded8a5-d279-47dc-a3c6-c0014385e218",
+      "method": "OPTIONS",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:39:47.150] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 83,
+      "requestId": "2a8c0c5d-c0f7-453e-9e80-570297d47a4d",
+      "correlationId": "2a8c0c5d-c0f7-453e-9e80-570297d47a4d",
+      "method": "OPTIONS",
+      "url": "/api/stores"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:39:47.151] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 84,
+      "requestId": "0f78ad77-0fd7-40f5-b23a-5a8d7306756c",
+      "correlationId": "0f78ad77-0fd7-40f5-b23a-5a8d7306756c",
+      "method": "OPTIONS",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:39:47.156] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 85,
+      "requestId": "83f95669-caf6-4b67-bff4-49d64093eda9",
+      "correlationId": "83f95669-caf6-4b67-bff4-49d64093eda9",
+      "method": "OPTIONS",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 5
+[08:39:47.159] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 86,
+      "requestId": "5d9c5677-0ee9-4fe1-8ec9-31f12d66c50f",
+      "correlationId": "5d9c5677-0ee9-4fe1-8ec9-31f12d66c50f",
+      "method": "OPTIONS",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:39:47.161] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 87,
+      "requestId": "e2373f1e-30a5-4990-9fde-b3998b2f01c9",
+      "correlationId": "e2373f1e-30a5-4990-9fde-b3998b2f01c9",
+      "method": "OPTIONS",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 2
+[08:39:47.198] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 88,
+      "requestId": "c76663b2-bb18-43c3-bae8-8e761e12bc59",
+      "correlationId": "c76663b2-bb18-43c3-bae8-8e761e12bc59",
+      "method": "OPTIONS",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:39:47.199] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 89,
+      "requestId": "340a8e81-162c-442f-8b0a-8c86f18c9420",
+      "correlationId": "340a8e81-162c-442f-8b0a-8c86f18c9420",
+      "method": "OPTIONS",
+      "url": "/api/homepage"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:39:47.200] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 90,
+      "requestId": "a48b0b2d-498a-4dd5-8a41-a4dc549d2877",
+      "correlationId": "a48b0b2d-498a-4dd5-8a41-a4dc549d2877",
+      "method": "OPTIONS",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:39:47.259] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 81,
+      "requestId": "9a3ddde1-1040-4c47-be09-bc20520efeb0",
+      "correlationId": "9a3ddde1-1040-4c47-be09-bc20520efeb0",
+      "method": "GET",
+      "url": "/uploads/seller-products/24/2026-08-03/9a59c4f1-6388-48c4-8338-b7af436c7098.jpg"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 160
+[08:39:47.465] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 92,
+      "requestId": "a4994089-c72c-4be9-97eb-5e3a5a703544",
+      "correlationId": "a4994089-c72c-4be9-97eb-5e3a5a703544",
+      "method": "GET",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 244
+[08:39:47.476] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 95,
+      "requestId": "fd29598f-947a-4efe-a2bd-c8a1b0d3e62d",
+      "correlationId": "fd29598f-947a-4efe-a2bd-c8a1b0d3e62d",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 240
+[08:39:47.482] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 96,
+      "requestId": "664f4769-fbaa-4c6a-8511-e373769c4b6a",
+      "correlationId": "664f4769-fbaa-4c6a-8511-e373769c4b6a",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 239
+[08:39:47.483] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 94,
+      "requestId": "a0707767-0480-4597-8bf2-3913a1e04cd5",
+      "correlationId": "a0707767-0480-4597-8bf2-3913a1e04cd5",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 253
+[08:39:47.488] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 93,
+      "requestId": "449466fd-b71d-47ba-a0b0-6c4e64373dde",
+      "correlationId": "449466fd-b71d-47ba-a0b0-6c4e64373dde",
+      "method": "GET",
+      "url": "/api/stores"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 263
+[08:39:47.671] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 91,
+      "requestId": "4d0a9cc1-32ac-4d2a-a834-8d311d6800b3",
+      "correlationId": "4d0a9cc1-32ac-4d2a-a834-8d311d6800b3",
+      "method": "GET",
+      "url": "/api/admin/banners"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 471
+[08:39:47.677] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 100,
+      "requestId": "88a289a5-77fb-4e31-a260-f094d01cb90d",
+      "correlationId": "88a289a5-77fb-4e31-a260-f094d01cb90d",
+      "method": "GET",
+      "url": "/api/homepage"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 170
+[08:39:47.679] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 99,
+      "requestId": "cd24a3c6-5718-4554-b72d-ebe3ce36bd4f",
+      "correlationId": "cd24a3c6-5718-4554-b72d-ebe3ce36bd4f",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 178
+[08:39:47.730] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 98,
+      "requestId": "e3037e22-81b8-4e8d-a682-d7c05206ac64",
+      "correlationId": "e3037e22-81b8-4e8d-a682-d7c05206ac64",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 234
+[08:39:47.737] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 97,
+      "requestId": "dbc61dd2-b603-436b-9111-fd9ca96f8ed3",
+      "correlationId": "dbc61dd2-b603-436b-9111-fd9ca96f8ed3",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 246
+[08:39:47.837] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 101,
+      "requestId": "7e6946ce-1b9c-4f64-8622-e960bddb22fe",
+      "correlationId": "7e6946ce-1b9c-4f64-8622-e960bddb22fe",
+      "method": "GET",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 327
+[08:40:23.163] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 102,
+      "requestId": "2a6912b7-fe42-4049-9e3e-f110cf8242fc",
+      "correlationId": "2a6912b7-fe42-4049-9e3e-f110cf8242fc",
+      "method": "OPTIONS",
+      "url": "/api/products/38"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:40:23.173] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 103,
+      "requestId": "bab7c716-15f4-4cce-b8a5-eab0213133ed",
+      "correlationId": "bab7c716-15f4-4cce-b8a5-eab0213133ed",
+      "method": "OPTIONS",
+      "url": "/api/orders"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:40:23.174] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 104,
+      "requestId": "e43f9540-4bab-409f-b1d9-8c9e3454f704",
+      "correlationId": "e43f9540-4bab-409f-b1d9-8c9e3454f704",
+      "method": "OPTIONS",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:40:23.177] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 105,
+      "requestId": "7479f5d2-1024-418a-b862-be2f1c8e6b5a",
+      "correlationId": "7479f5d2-1024-418a-b862-be2f1c8e6b5a",
+      "method": "OPTIONS",
+      "url": "/api/wishlist"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:40:23.178] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 106,
+      "requestId": "9fe924d5-183b-4bad-a23d-8f1b3cfda3ab",
+      "correlationId": "9fe924d5-183b-4bad-a23d-8f1b3cfda3ab",
+      "method": "OPTIONS",
+      "url": "/api/products/38/reviews"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:40:25.176] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 111,
+      "requestId": "9a61db48-81f7-4e72-bac7-3051d0723c4a",
+      "correlationId": "9a61db48-81f7-4e72-bac7-3051d0723c4a",
+      "method": "GET",
+      "url": "/api/products/38/reviews"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1979
+[08:40:25.366] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 110,
+      "requestId": "28d10f06-14f1-47b2-bca3-a06ba9f3a3f9",
+      "correlationId": "28d10f06-14f1-47b2-bca3-a06ba9f3a3f9",
+      "method": "GET",
+      "url": "/api/wishlist"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2171
+[08:40:25.369] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 109,
+      "requestId": "84e58fd1-3aa4-4fad-ae01-cad5082cbe16",
+      "correlationId": "84e58fd1-3aa4-4fad-ae01-cad5082cbe16",
+      "method": "GET",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 2176
+[08:40:26.043] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 108,
+      "requestId": "16f1268e-8e67-46c8-83d5-b2e9c3229a71",
+      "correlationId": "16f1268e-8e67-46c8-83d5-b2e9c3229a71",
+      "method": "GET",
+      "url": "/api/orders"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 2854
+[08:40:26.230] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 107,
+      "requestId": "48d23080-3c3d-4821-adbd-e59083b4bf03",
+      "correlationId": "48d23080-3c3d-4821-adbd-e59083b4bf03",
+      "method": "GET",
+      "url": "/api/products/38"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3046
+[08:40:26.262] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 112,
+      "requestId": "5070eb72-fc77-4fa9-9323-0c2816b8e648",
+      "correlationId": "5070eb72-fc77-4fa9-9323-0c2816b8e648",
+      "method": "OPTIONS",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:40:26.263] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 113,
+      "requestId": "c649c39b-324b-4905-ba67-b01398b47b9f",
+      "correlationId": "c649c39b-324b-4905-ba67-b01398b47b9f",
+      "method": "OPTIONS",
+      "url": "/api/products/38/related"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:40:26.526] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 114,
+      "requestId": "f6027408-db54-4c59-8bdd-3988e643c2b8",
+      "correlationId": "f6027408-db54-4c59-8bdd-3988e643c2b8",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 252
+[08:40:26.699] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 115,
+      "requestId": "a4ca7cd2-2d06-4dc2-9a5a-6a24a560ffd7",
+      "correlationId": "a4ca7cd2-2d06-4dc2-9a5a-6a24a560ffd7",
+      "method": "GET",
+      "url": "/api/products/38/related"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 423
+[08:40:45.866] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 118,
+      "requestId": "64bbad95-0480-4068-9a94-7d64746da48c",
+      "correlationId": "64bbad95-0480-4068-9a94-7d64746da48c",
+      "method": "OPTIONS",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:40:45.877] [32mINFO[39m (28280): [36mrequest aborted[39m
+    [35mreq[39m: {
+      "id": 116,
+      "requestId": "157d1185-bcff-481b-ad36-02cff432dd54",
+      "correlationId": "157d1185-bcff-481b-ad36-02cff432dd54",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": null
+    }
+    [35mresponseTime[39m: 33
+[08:40:46.042] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 117,
+      "requestId": "0e7afad0-ebd0-450a-a670-c648127f5980",
+      "correlationId": "0e7afad0-ebd0-450a-a670-c648127f5980",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 187
+[08:40:46.046] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 119,
+      "requestId": "c2b41407-0747-4668-b3a1-14077e30ecae",
+      "correlationId": "c2b41407-0747-4668-b3a1-14077e30ecae",
+      "method": "GET",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 168
+[08:40:46.084] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 120,
+      "requestId": "d3e337dc-0dad-4e8a-a604-d3db6187318b",
+      "correlationId": "d3e337dc-0dad-4e8a-a604-d3db6187318b",
+      "method": "OPTIONS",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:40:46.770] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 121,
+      "requestId": "1acbf66c-aca4-4ce3-b226-e475148fbada",
+      "correlationId": "1acbf66c-aca4-4ce3-b226-e475148fbada",
+      "method": "GET",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 678
+[08:40:57.221] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 122,
+      "requestId": "7e73bdf2-5af7-4e38-ad45-eaa0f1f1104f",
+      "correlationId": "7e73bdf2-5af7-4e38-ad45-eaa0f1f1104f",
+      "method": "OPTIONS",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:40:57.650] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 123,
+      "requestId": "fdc8bf45-2eac-4721-a7ef-f54c2f1f60fb",
+      "correlationId": "fdc8bf45-2eac-4721-a7ef-f54c2f1f60fb",
+      "method": "POST",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 420
+[08:41:16.248] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 124,
+      "requestId": "8b48cb7f-b398-401d-85d9-90c3aad872ed",
+      "correlationId": "8b48cb7f-b398-401d-85d9-90c3aad872ed",
+      "method": "OPTIONS",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:41:16.500] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 125,
+      "requestId": "28affce5-21ad-4ed1-b2f3-b4c1212ac16e",
+      "correlationId": "28affce5-21ad-4ed1-b2f3-b4c1212ac16e",
+      "method": "POST",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 245
+[08:41:37.657] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 126,
+      "requestId": "438c6ade-a703-492a-a30a-0e981e9e8c81",
+      "correlationId": "438c6ade-a703-492a-a30a-0e981e9e8c81",
+      "method": "OPTIONS",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:41:38.000] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 127,
+      "requestId": "57bd7113-38f0-4207-a8d8-09d48d3fc7be",
+      "correlationId": "57bd7113-38f0-4207-a8d8-09d48d3fc7be",
+      "method": "POST",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 337
+[08:41:57.982] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 128,
+      "requestId": "0d763cb3-ad5a-4ec0-9e1a-a5a819987685",
+      "correlationId": "0d763cb3-ad5a-4ec0-9e1a-a5a819987685",
+      "method": "OPTIONS",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:41:58.287] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 129,
+      "requestId": "a81eb43f-4d7f-406d-aaae-f5e66802cec8",
+      "correlationId": "a81eb43f-4d7f-406d-aaae-f5e66802cec8",
+      "method": "POST",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 300
+[08:42:11.907] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 130,
+      "requestId": "aad8d2d4-263b-4162-a2c4-667f31fc62b0",
+      "correlationId": "aad8d2d4-263b-4162-a2c4-667f31fc62b0",
+      "method": "OPTIONS",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:42:12.211] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 131,
+      "requestId": "6622012b-13fa-40a2-9a8b-153c5f4803cd",
+      "correlationId": "6622012b-13fa-40a2-9a8b-153c5f4803cd",
+      "method": "POST",
+      "url": "/api/search/image"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 297
+[08:51:45.630] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 132,
+      "requestId": "cd6d2109-143f-4d0c-9afd-7d40a38afa5c",
+      "correlationId": "cd6d2109-143f-4d0c-9afd-7d40a38afa5c",
+      "method": "OPTIONS",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 10
+[08:51:48.106] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 133,
+      "requestId": "60b6d3b6-d7ec-4d93-a4da-e9b98cacef59",
+      "correlationId": "60b6d3b6-d7ec-4d93-a4da-e9b98cacef59",
+      "method": "GET",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 2468
+[08:51:48.451] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 134,
+      "requestId": "f1f05f9f-c234-494c-84e0-563720409112",
+      "correlationId": "f1f05f9f-c234-494c-84e0-563720409112",
+      "method": "OPTIONS",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 3
+[08:51:48.453] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 135,
+      "requestId": "18bd358e-5359-42c3-96ed-89f87a5ab446",
+      "correlationId": "18bd358e-5359-42c3-96ed-89f87a5ab446",
+      "method": "OPTIONS",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:51:48.709] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 136,
+      "requestId": "f8c773eb-bf2d-45be-9930-3995b2cfc973",
+      "correlationId": "f8c773eb-bf2d-45be-9930-3995b2cfc973",
+      "method": "GET",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 236
+[08:51:50.197] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 137,
+      "requestId": "f77a1bd2-fcb0-43b5-8d54-0eae8f934a96",
+      "correlationId": "f77a1bd2-fcb0-43b5-8d54-0eae8f934a96",
+      "method": "GET",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 1720
+[08:52:55.284] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 138,
+      "requestId": "ef20c3db-7a3c-4569-b725-a6b803bd1939",
+      "correlationId": "ef20c3db-7a3c-4569-b725-a6b803bd1939",
+      "method": "OPTIONS",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:52:57.047] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 139,
+      "requestId": "fe428718-aa80-433b-a476-97a68e6d8e3a",
+      "correlationId": "fe428718-aa80-433b-a476-97a68e6d8e3a",
+      "method": "GET",
+      "url": "/api/auth/me"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 1750
+[08:52:57.357] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 141,
+      "requestId": "546c32c4-1598-4da7-b0e6-1068e5587857",
+      "correlationId": "546c32c4-1598-4da7-b0e6-1068e5587857",
+      "method": "OPTIONS",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 1
+[08:52:57.358] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 142,
+      "requestId": "b154eb2a-c252-4de0-be58-9eeed5351bea",
+      "correlationId": "b154eb2a-c252-4de0-be58-9eeed5351bea",
+      "method": "OPTIONS",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 204
+    }
+    [35mresponseTime[39m: 0
+[08:52:58.417] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 140,
+      "requestId": "94d6f86a-161f-4a28-bf57-103c6c506945",
+      "correlationId": "94d6f86a-161f-4a28-bf57-103c6c506945",
+      "method": "GET",
+      "url": "/api/products"
+    }
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1147
+[08:52:58.526] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 144,
+      "requestId": "1efe2048-2b54-4336-a354-2333f88c9035",
+      "correlationId": "1efe2048-2b54-4336-a354-2333f88c9035",
+      "method": "GET",
+      "url": "/api/categories"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 1153
+[08:52:58.667] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 143,
+      "requestId": "fd273df6-2629-4dc5-a989-b9a3a352775b",
+      "correlationId": "fd273df6-2629-4dc5-a989-b9a3a352775b",
+      "method": "GET",
+      "url": "/api/cart"
+    }
+    [35mres[39m: {
+      "statusCode": 304
+    }
+    [35mresponseTime[39m: 1296
+[08:54:06.658] [32mINFO[39m (28280): [36mrequest completed[39m
+    [35mreq[39m: {
+      "id": 145,
+      "requestId": "9b3b1246-ef16-412a-8eb1-acb14d9e6e1e",
+      "correlationId": "9b3b1246-ef16-412a-8eb1-acb14d9e6e1e",
       "method": "OPTIONS",
       "url": "/api/auth/me"
     }
@@ -62,591 +1742,99 @@
       "statusCode": 204
     }
     [35mresponseTime[39m: 3
-[15:07:17.468] [32mINFO[39m (852): [36mrequest completed[39m
+[08:54:08.717] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 7,
-      "requestId": "74d64ff7-4825-45dc-bc8b-be935e4f3ad7",
-      "correlationId": "74d64ff7-4825-45dc-bc8b-be935e4f3ad7",
-      "method": "OPTIONS",
-      "url": "/api/admin/media-library"
-    }
-    [35mres[39m: {
-      "statusCode": 401
-    }
-    [35mresponseTime[39m: 2
-[15:07:18.639] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 6,
-      "requestId": "339f0630-4a35-4399-b0ab-74bde5881738",
-      "correlationId": "339f0630-4a35-4399-b0ab-74bde5881738",
+      "id": 146,
+      "requestId": "742be913-b8fd-4524-b304-0413f615492c",
+      "correlationId": "742be913-b8fd-4524-b304-0413f615492c",
       "method": "GET",
       "url": "/api/auth/me"
     }
     [35mres[39m: {
-      "statusCode": 200
+      "statusCode": 304
     }
-    [35mresponseTime[39m: 1970
-[15:07:18.891] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mresponseTime[39m: 2041
+[08:54:08.971] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 8,
-      "requestId": "cd082a08-7a76-4a4f-b26e-16caa4f04725",
-      "correlationId": "cd082a08-7a76-4a4f-b26e-16caa4f04725",
+      "id": 148,
+      "requestId": "0583a9fc-23b6-4b97-996d-30b12234dd64",
+      "correlationId": "0583a9fc-23b6-4b97-996d-30b12234dd64",
       "method": "OPTIONS",
-      "url": "/api/products/38"
+      "url": "/api/categories"
     }
     [35mres[39m: {
       "statusCode": 204
     }
-    [35mresponseTime[39m: 0
-[15:07:18.893] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mresponseTime[39m: 1
+[08:54:08.983] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 9,
-      "requestId": "a8d03432-a275-4f1f-a400-3156528ed566",
-      "correlationId": "a8d03432-a275-4f1f-a400-3156528ed566",
-      "method": "OPTIONS",
-      "url": "/api/products/38/reviews"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 0
-[15:07:18.896] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 10,
-      "requestId": "5efd2abf-9612-4b77-be0c-38ecceeccb5a",
-      "correlationId": "5efd2abf-9612-4b77-be0c-38ecceeccb5a",
+      "id": 149,
+      "requestId": "eae0531b-e2e2-4a1f-acb5-68724f38afb1",
+      "correlationId": "eae0531b-e2e2-4a1f-acb5-68724f38afb1",
       "method": "OPTIONS",
       "url": "/api/cart"
     }
     [35mres[39m: {
       "statusCode": 204
     }
-    [35mresponseTime[39m: 1
-[15:07:18.911] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 14,
-      "requestId": "d73e4a8f-4d06-4183-ac1f-2c3b2388ab2f",
-      "correlationId": "d73e4a8f-4d06-4183-ac1f-2c3b2388ab2f",
-      "method": "OPTIONS",
-      "url": "/api/wishlist"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
     [35mresponseTime[39m: 0
-[15:07:18.912] [32mINFO[39m (852): [36mrequest completed[39m
+[08:54:10.497] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 15,
-      "requestId": "9b94564e-c548-4ce8-bdc3-40aa67fdfcea",
-      "correlationId": "9b94564e-c548-4ce8-bdc3-40aa67fdfcea",
-      "method": "OPTIONS",
-      "url": "/api/orders"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 1
-[15:07:20.336] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 12,
-      "requestId": "793372e3-f19b-4598-bb7c-d73036068fed",
-      "correlationId": "793372e3-f19b-4598-bb7c-d73036068fed",
+      "id": 147,
+      "requestId": "22ee40d7-b4f0-485a-9577-7142275a9aa3",
+      "correlationId": "22ee40d7-b4f0-485a-9577-7142275a9aa3",
       "method": "GET",
-      "url": "/api/products/38/reviews"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 1434
-[15:07:20.520] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 11,
-      "requestId": "88a7a3d2-c854-43fe-b838-9eb61827c458",
-      "correlationId": "88a7a3d2-c854-43fe-b838-9eb61827c458",
-      "method": "GET",
-      "url": "/api/products/38"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 1622
-[15:07:20.562] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 17,
-      "requestId": "82c22393-edfc-4951-ae00-1c934d53234d",
-      "correlationId": "82c22393-edfc-4951-ae00-1c934d53234d",
-      "method": "GET",
-      "url": "/api/orders"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 1644
-[15:07:20.563] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 16,
-      "requestId": "fa637f6a-9d38-4944-9713-8d8957a4687e",
-      "correlationId": "fa637f6a-9d38-4944-9713-8d8957a4687e",
-      "method": "GET",
-      "url": "/api/wishlist"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 1647
-[15:07:20.597] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 18,
-      "requestId": "af3618e2-8234-4160-9036-945b4fb9b418",
-      "correlationId": "af3618e2-8234-4160-9036-945b4fb9b418",
-      "method": "OPTIONS",
       "url": "/api/products"
     }
     [35mres[39m: {
-      "statusCode": 204
+      "statusCode": 304
     }
-    [35mresponseTime[39m: 1
-[15:07:20.597] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mresponseTime[39m: 1605
+[08:54:10.499] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 19,
-      "requestId": "230f63de-e5e7-456f-8832-6bc872665666",
-      "correlationId": "230f63de-e5e7-456f-8832-6bc872665666",
-      "method": "OPTIONS",
-      "url": "/api/products/38/related"
+      "id": 150,
+      "requestId": "447cdbed-6ad7-4c53-8c9d-54ea8dadd4b9",
+      "correlationId": "447cdbed-6ad7-4c53-8c9d-54ea8dadd4b9",
+      "method": "GET",
+      "url": "/api/categories"
     }
     [35mres[39m: {
-      "statusCode": 204
+      "statusCode": 304
     }
-    [35mresponseTime[39m: 0
-[15:07:20.598] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mresponseTime[39m: 1507
+[08:54:10.657] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 13,
-      "requestId": "206df90f-380e-4d2f-866e-59df9840b3ec",
-      "correlationId": "206df90f-380e-4d2f-866e-59df9840b3ec",
+      "id": 151,
+      "requestId": "5f034416-6de4-4dea-91f2-d0099187c2a5",
+      "correlationId": "5f034416-6de4-4dea-91f2-d0099187c2a5",
       "method": "GET",
       "url": "/api/cart"
     }
     [35mres[39m: {
       "statusCode": 304
     }
-    [35mresponseTime[39m: 1690
-[15:07:20.829] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mresponseTime[39m: 1659
+[08:55:37.068] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 20,
-      "requestId": "0e36ca3b-53b8-436c-8877-d17f75a9a3e1",
-      "correlationId": "0e36ca3b-53b8-436c-8877-d17f75a9a3e1",
-      "method": "GET",
-      "url": "/api/products"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 225
-[15:07:21.039] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 21,
-      "requestId": "0c3293aa-7502-40a9-a834-65574b9c28bc",
-      "correlationId": "0c3293aa-7502-40a9-a834-65574b9c28bc",
-      "method": "GET",
-      "url": "/api/products/38/related"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 430
-[15:08:09.699] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 22,
-      "requestId": "4e44918a-d50c-4927-a187-b432ac9d999c",
-      "correlationId": "4e44918a-d50c-4927-a187-b432ac9d999c",
+      "id": 152,
+      "requestId": "1a70b567-05cb-4eda-8d26-ceb3f266e765",
+      "correlationId": "1a70b567-05cb-4eda-8d26-ceb3f266e765",
       "method": "OPTIONS",
-      "url": "/api/wallet/transactions"
+      "url": "/api/cart"
     }
     [35mres[39m: {
       "statusCode": 204
     }
-    [35mresponseTime[39m: 0
-[15:08:09.701] [32mINFO[39m (852): [36mrequest completed[39m
+    [35mresponseTime[39m: 3
+[08:55:38.477] [32mINFO[39m (28280): [36mrequest completed[39m
     [35mreq[39m: {
-      "id": 23,
-      "requestId": "2b780bf4-57f2-427a-8f9d-c8aef1fe61f9",
-      "correlationId": "2b780bf4-57f2-427a-8f9d-c8aef1fe61f9",
-      "method": "OPTIONS",
-      "url": "/api/wallet"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 1
-[15:08:09.701] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 24,
-      "requestId": "a483cb52-91f8-4c2b-b810-206900e40fdb",
-      "correlationId": "a483cb52-91f8-4c2b-b810-206900e40fdb",
-      "method": "OPTIONS",
-      "url": "/api/admin/dashboard"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 0
-[15:08:09.703] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 25,
-      "requestId": "55615b29-a250-4e1b-a683-3506c591f73f",
-      "correlationId": "55615b29-a250-4e1b-a683-3506c591f73f",
-      "method": "OPTIONS",
-      "url": "/api/admin/test-controls"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 0
-[15:08:12.237] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 27,
-      "requestId": "7258c42d-94b1-46ad-a0fe-70807d256525",
-      "correlationId": "7258c42d-94b1-46ad-a0fe-70807d256525",
+      "id": 153,
+      "requestId": "65f41fb7-2362-4bfa-8293-aba6adacdbd3",
+      "correlationId": "65f41fb7-2362-4bfa-8293-aba6adacdbd3",
       "method": "GET",
-      "url": "/api/wallet/transactions"
+      "url": "/api/cart"
     }
     [35mres[39m: {
       "statusCode": 304
     }
-    [35mresponseTime[39m: 2527
-[15:08:12.245] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 26,
-      "requestId": "fe4e3a45-d3f2-48dc-a1ed-f66745f5d5a8",
-      "correlationId": "fe4e3a45-d3f2-48dc-a1ed-f66745f5d5a8",
-      "method": "GET",
-      "url": "/api/wallet"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 2537
-[15:08:12.247] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 29,
-      "requestId": "509e7129-ad9a-4385-8ce9-d03992caa1c1",
-      "correlationId": "509e7129-ad9a-4385-8ce9-d03992caa1c1",
-      "method": "GET",
-      "url": "/api/admin/test-controls"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 2531
-[15:08:14.718] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 28,
-      "requestId": "fb52852b-3461-4c42-8018-98945fb6f241",
-      "correlationId": "fb52852b-3461-4c42-8018-98945fb6f241",
-      "method": "GET",
-      "url": "/api/admin/dashboard"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 5004
-[15:12:09.516] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 30,
-      "requestId": "06f4e783-aca7-4561-b1e8-02f33007fb22",
-      "correlationId": "06f4e783-aca7-4561-b1e8-02f33007fb22",
-      "method": "OPTIONS",
-      "url": "/api/admin/media-library"
-    }
-    [35mres[39m: {
-      "statusCode": 401
-    }
-    [35mresponseTime[39m: 1
-[15:14:42.171] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 31,
-      "requestId": "8a3c10ee-fea6-4278-90d9-975807fca55d",
-      "correlationId": "8a3c10ee-fea6-4278-90d9-975807fca55d",
-      "method": "OPTIONS",
-      "url": "/api/admin/media-library"
-    }
-    [35mres[39m: {
-      "statusCode": 401
-    }
-    [35mresponseTime[39m: 0
-[15:14:43.222] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 32,
-      "requestId": "f5d69a3b-8d6f-4978-9aee-1994b8449010",
-      "correlationId": "f5d69a3b-8d6f-4978-9aee-1994b8449010",
-      "method": "OPTIONS",
-      "url": "/api/admin/media-library"
-    }
-    [35mres[39m: {
-      "statusCode": 401
-    }
-    [35mresponseTime[39m: 1
-[15:15:07.355] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 33,
-      "requestId": "dbeeb5fe-8fc6-46f1-97e5-11e932f4455a",
-      "correlationId": "dbeeb5fe-8fc6-46f1-97e5-11e932f4455a",
-      "method": "OPTIONS",
-      "url": "/api/admin/users"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 1
-[15:15:11.983] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 34,
-      "requestId": "9947a8d8-aa67-44fa-902b-90873725d705",
-      "correlationId": "9947a8d8-aa67-44fa-902b-90873725d705",
-      "method": "GET",
-      "url": "/api/admin/users"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 4616
-[15:15:57.192] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 35,
-      "requestId": "e17f07a5-ab12-4c50-a8ce-076ca7449b54",
-      "correlationId": "e17f07a5-ab12-4c50-a8ce-076ca7449b54",
-      "method": "OPTIONS",
-      "url": "/api/auth/me"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 8
-[15:15:57.413] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 36,
-      "requestId": "f6c9823a-85a4-4c3b-9f50-3063208f4ad9",
-      "correlationId": "f6c9823a-85a4-4c3b-9f50-3063208f4ad9",
-      "method": "OPTIONS",
-      "url": "/api/homepage"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 2
-[15:16:45.335] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 37,
-      "requestId": "ba0d20fc-bb9d-41e9-bd24-22e942802c89",
-      "correlationId": "ba0d20fc-bb9d-41e9-bd24-22e942802c89",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 1
-[15:16:46.877] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 38,
-      "requestId": "c5c2a9a7-3dd3-4f30-83c5-920d6b89f83b",
-      "correlationId": "c5c2a9a7-3dd3-4f30-83c5-920d6b89f83b",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 1
-[15:16:47.016] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 39,
-      "requestId": "054252d1-baf9-4b4f-8ee0-604dd0027608",
-      "correlationId": "054252d1-baf9-4b4f-8ee0-604dd0027608",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 1
-[15:16:47.148] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 40,
-      "requestId": "d21bca88-4628-4a36-982c-9c7bbbeeac88",
-      "correlationId": "d21bca88-4628-4a36-982c-9c7bbbeeac88",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 0
-[15:16:47.288] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 41,
-      "requestId": "75bd8f89-a0bb-4268-a040-8fd2ff1c5685",
-      "correlationId": "75bd8f89-a0bb-4268-a040-8fd2ff1c5685",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 1
-[15:16:47.507] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 42,
-      "requestId": "4c9a4c1e-070f-4575-b8d6-84a9a77198f4",
-      "correlationId": "4c9a4c1e-070f-4575-b8d6-84a9a77198f4",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 1
-[15:17:17.184] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 43,
-      "requestId": "686f834b-1feb-47bc-8616-5471624e0d20",
-      "correlationId": "686f834b-1feb-47bc-8616-5471624e0d20",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 1
-[15:17:20.351] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 44,
-      "requestId": "abc2f9b2-ebb9-45f8-aae0-50f9bcd69a40",
-      "correlationId": "abc2f9b2-ebb9-45f8-aae0-50f9bcd69a40",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 1
-[15:17:23.356] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 45,
-      "requestId": "d894f3f4-de3d-42e3-8ee8-539e2b869638",
-      "correlationId": "d894f3f4-de3d-42e3-8ee8-539e2b869638",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 0
-[15:17:51.145] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 46,
-      "requestId": "828fe48b-df0e-40ad-ae67-cf152a8ccd9b",
-      "correlationId": "828fe48b-df0e-40ad-ae67-cf152a8ccd9b",
-      "method": "OPTIONS",
-      "url": "/api/auth/login"
-    }
-    [35mres[39m: {
-      "statusCode": 200
-    }
-    [35mresponseTime[39m: 1
-[15:18:00.957] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 47,
-      "requestId": "0c646a11-a9c7-412b-a651-00f423a80b61",
-      "correlationId": "0c646a11-a9c7-412b-a651-00f423a80b61",
-      "method": "OPTIONS",
-      "url": "/api/auth/me"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 0
-[15:18:02.921] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 48,
-      "requestId": "16034e7a-4adf-48b6-ae63-86bb8ed50b79",
-      "correlationId": "16034e7a-4adf-48b6-ae63-86bb8ed50b79",
-      "method": "GET",
-      "url": "/api/auth/me"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 1957
-[15:18:03.019] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 49,
-      "requestId": "42136944-db85-4136-86fb-8609233faae6",
-      "correlationId": "42136944-db85-4136-86fb-8609233faae6",
-      "method": "OPTIONS",
-      "url": "/api/admin/users"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 1
-[15:18:03.412] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 50,
-      "requestId": "08d388d7-3d81-497c-8554-9b8faf26efda",
-      "correlationId": "08d388d7-3d81-497c-8554-9b8faf26efda",
-      "method": "GET",
-      "url": "/api/admin/users"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 384
-[15:19:51.214] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 51,
-      "requestId": "e6642975-e405-4928-b528-02daeeee7393",
-      "correlationId": "e6642975-e405-4928-b528-02daeeee7393",
-      "method": "OPTIONS",
-      "url": "/api/auth/me"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 6
-[15:19:51.356] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 53,
-      "requestId": "a52223af-4d46-4527-ad09-a8e7d3694781",
-      "correlationId": "a52223af-4d46-4527-ad09-a8e7d3694781",
-      "method": "OPTIONS",
-      "url": "/api/admin/users"
-    }
-    [35mres[39m: {
-      "statusCode": 204
-    }
-    [35mresponseTime[39m: 0
-[15:19:52.685] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 52,
-      "requestId": "57bfffa4-d0be-4f21-aa5b-02de95010bf9",
-      "correlationId": "57bfffa4-d0be-4f21-aa5b-02de95010bf9",
-      "method": "GET",
-      "url": "/api/auth/me"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 1441
-[15:19:52.697] [32mINFO[39m (852): [36mrequest completed[39m
-    [35mreq[39m: {
-      "id": 54,
-      "requestId": "90c204de-27ef-4516-adef-930c8f3d7e4e",
-      "correlationId": "90c204de-27ef-4516-adef-930c8f3d7e4e",
-      "method": "GET",
-      "url": "/api/admin/users"
-    }
-    [35mres[39m: {
-      "statusCode": 304
-    }
-    [35mresponseTime[39m: 1332
+    [35mresponseTime[39m: 1402

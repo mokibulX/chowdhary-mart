@@ -594,6 +594,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
       deliveryStatus: deliveryPartner ? ((deliveryPartner as any).deliveryStatus ?? ((deliveryPartner as any).delivery_status) ?? (deliveryPartner.isVerified ? "approved" : "pending")) : null,
       currentZoneId: deliveryPartner?.currentZoneId ?? store?.zoneId ?? null,
       storeId: store?.id ?? null,
+      vendorStatus: store ? (store.isVerified && store.isActive ? "approved" : "pending") : (user.role === "vendor" ? "pending" : null),
       storeIsOpen: store?.isOpen ?? null,
       storeIsActive: store?.isActive ?? null,
       createdAt: user.createdAt,

@@ -178,8 +178,8 @@ const MOCK_STORAGE_KEY = "local-commerce-hub.mock.v3";
 function getAdminCredentials() {
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
   return {
-    email: env.VITE_ADMIN_EMAIL || "admin@local.test",
-    password: env.VITE_ADMIN_PASSWORD || "123456",
+    email: env.VITE_DEMO_ADMIN_EMAIL || "admin.demo@chowdharymart.test",
+    password: env.VITE_DEMO_ADMIN_PASSWORD || "Demo@Admin123",
   };
 }
 

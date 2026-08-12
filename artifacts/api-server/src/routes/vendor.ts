@@ -4,12 +4,12 @@ import {
   db, storesTable, ordersTable, orderItemsTable, productsTable,
   orderTrackingTable, usersTable, mediaLibraryTable, categoriesTable
 } from "@workspace/db";
-import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
+import { requireApprovedVendor, requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { sellerZoneIds } from "../lib/zones";
 
 const router = Router();
 
-router.use(requireAuth, requireRole("vendor", "admin"));
+router.use(requireAuth, requireRole("vendor", "admin"), requireApprovedVendor);
 
 let mediaLibraryReady: Promise<void> | null = null;
 function ensureMediaLibraryTable() {
@@ -66,6 +66,55 @@ function cleanProductImages(images: unknown) {
   if (valid.length !== urls.length) throw new Error("Every product image must be a valid storage URL.");
   return Array.from(new Set(valid)).slice(0, 12);
 }
+
+function textValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+// GET /api/vendor/barcode/:barcode
+router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
+  const barcode = String(req.params.barcode ?? "").replace(/\D/g, "");
+  if (barcode.length < 8 || barcode.length > 14) {
+    res.status(400).json({ error: "Enter a valid 8 to 14 digit barcode" });
+    return;
+  }
+  try {
+    const fields = "code,product_name,product_name_en,generic_name,generic_name_en,brands,quantity,categories,categories_tags,image_url,image_front_url,image_front_small_url,ingredients_text";
+    const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${fields}`, {
+      headers: { "User-Agent": "ChowdharyMart/1.0 (barcode product import)" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error(`Barcode provider returned ${response.status}`);
+    const result = await response.json() as { status?: number; product?: Record<string, unknown> };
+    const product = result.product;
+    if (result.status !== 1 || !product) {
+      res.status(404).json({ error: "No product details found for this barcode" });
+      return;
+    }
+    const name = textValue(product.product_name) || textValue(product.product_name_en) || textValue(product.generic_name) || textValue(product.generic_name_en);
+    if (!name) {
+      res.status(404).json({ error: "Product exists, but its name is not available" });
+      return;
+    }
+    const imageUrls = [product.image_url, product.image_front_url, product.image_front_small_url]
+      .map(textValue)
+      .filter((url, index, values) => /^https:\/\//i.test(url) && values.indexOf(url) === index);
+    res.json({
+      barcode,
+      name,
+      brand: textValue(product.brands),
+      description: textValue(product.generic_name) || textValue(product.generic_name_en) || textValue(product.ingredients_text),
+      quantity: textValue(product.quantity),
+      category: textValue(product.categories),
+      categoryTags: Array.isArray(product.categories_tags) ? product.categories_tags.map(textValue).filter(Boolean) : [],
+      images: imageUrls,
+      source: "Open Food Facts",
+    });
+  } catch (err) {
+    req.log.error(err);
+    res.status(502).json({ error: "Barcode service is temporarily unavailable" });
+  }
+});
 
 // GET /api/vendor/store
 router.get("/store", async (req: AuthRequest, res) => {
@@ -244,7 +293,7 @@ router.post("/products", async (req: AuthRequest, res) => {
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(400).json({ error: "No store found" }); return; }
 
-    const { name, description, categoryId, brandId, price, mrp, images, weight, unit, stock, isAvailable, isFeatured } = req.body;
+    const { name, description, categoryId, brandId, price, mrp, images, weight, unit, sku, specifications, stock, isAvailable, isFeatured } = req.body;
     const productImages = cleanProductImages(images);
     const discountPercent = mrp && price ? (((Number(mrp) - Number(price)) / Number(mrp)) * 100).toFixed(2) : "0";
 
@@ -261,6 +310,8 @@ router.post("/products", async (req: AuthRequest, res) => {
       images: productImages,
       weight,
       unit,
+      sku: textValue(sku) || null,
+      specifications: specifications && typeof specifications === "object" ? specifications : {},
       stock: stock ?? 0,
       isAvailable: isAvailable ?? true,
       isFeatured: isFeatured ?? false,
@@ -277,7 +328,7 @@ router.post("/products", async (req: AuthRequest, res) => {
 router.patch("/products/:productId", async (req: AuthRequest, res) => {
   try {
     const productId = Number(req.params.productId);
-    const { name, description, price, mrp, stock, isAvailable, isFeatured, images } = req.body;
+    const { name, description, categoryId, price, mrp, weight, unit, sku, specifications, stock, isAvailable, isFeatured, images } = req.body;
 
     let discountPercent;
     if (mrp && price) {
@@ -291,7 +342,7 @@ router.patch("/products/:productId", async (req: AuthRequest, res) => {
     const nextImages = images === undefined ? existing.images : cleanProductImages(images);
 
     const [product] = await db.update(productsTable)
-      .set({ name, description, price, mrp, stock, isAvailable, isFeatured, images: nextImages, discountPercent, updatedAt: new Date() })
+      .set({ name, description, categoryId, price, mrp, weight, unit, sku: textValue(sku) || null, specifications, stock, isAvailable, isFeatured, images: nextImages, discountPercent, updatedAt: new Date() })
       .where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id)))
       .returning();
 

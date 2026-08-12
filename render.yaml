@@ -25,7 +25,7 @@ services:
       - key: DATA_ENCRYPTION_KEY
         generateValue: true
       - key: CORS_ORIGINS
-        sync: false
+        value: https://chowdharymart-web.onrender.com,https://chowdhary-mart.onrender.com
       - key: RAZORPAY_KEY_ID
         sync: false
       - key: RAZORPAY_KEY_SECRET
@@ -47,13 +47,13 @@ services:
     autoDeploy: true
     envVars:
       - key: VITE_API_URL
-        sync: false
+        value: https://chowdharymart-api.onrender.com
       - key: VITE_PUBLIC_API_URL
-        sync: false
+        value: https://chowdharymart-api.onrender.com
       - key: VITE_WEBSOCKET_URL
-        sync: false
+        value: wss://chowdharymart-api.onrender.com
       - key: VITE_PUBLIC_WEBSOCKET_URL
-        sync: false
+        value: wss://chowdharymart-api.onrender.com
       - key: VITE_RAZORPAY_KEY_ID
         sync: false
       - key: VITE_APP_TEST_MODE

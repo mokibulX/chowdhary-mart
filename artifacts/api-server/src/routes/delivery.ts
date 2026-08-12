@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { eq, desc, and } from "drizzle-orm";
 import { db, ordersTable, deliveryPartnersTable, liveLocationsTable, orderTrackingTable, storesTable, activeDeliveryLocationsTable, deliveryTrackingHistoryTable } from "@workspace/db";
-import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
+import { requireApprovedDeliveryPartner, requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { riderZoneIds, isInsideZone } from "../lib/zones";
 
 const router = Router();
 
-router.use(requireAuth, requireRole("delivery_partner", "admin"));
+router.use(requireAuth, requireRole("delivery_partner", "admin"), requireApprovedDeliveryPartner);
 
 async function getDP(userId: number) {
   const [dp] = await db.select().from(deliveryPartnersTable)

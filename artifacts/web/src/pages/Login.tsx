@@ -81,6 +81,13 @@ export default function Login() {
   const RoleIcon = content.icon;
   const isAdminLogin = role === "admin";
   const visibleDemoAccounts = isAdminLogin && env.VITE_SHOW_ADMIN_DEMO_ON_ADMIN_LOGIN === "true" ? [adminDemoAccount] : [];
+  const registrationLink = role === "customer"
+    ? { href: "/register", label: "Create customer account" }
+    : role === "vendor"
+      ? { href: "/seller/register", label: "Register your shop" }
+      : role === "delivery_partner"
+        ? { href: "/delivery/register", label: "Register as delivery partner" }
+        : null;
   const canSubmit = useMemo(() => {
     if (mode === "password") return Boolean(identifier.trim() && password);
     if (mode === "otp") return Boolean(identifier.trim() && (!otpSent || otp.length >= 4));
@@ -333,13 +340,11 @@ export default function Login() {
           </Tabs>
 
           <div className="mt-5 grid gap-2 text-center text-sm">
-            {role !== "admin" && (
+            {registrationLink && (
               <p className="text-muted-foreground">
-                New here? <Link href={`/register?role=${role}`} className="font-medium text-primary hover:underline">Create account</Link>
+                New here? <Link href={registrationLink.href} className="font-medium text-primary hover:underline">{registrationLink.label}</Link>
               </p>
             )}
-            {role === "vendor" && <Link href="/seller/register" className="font-semibold text-[#0f3f8f] hover:underline">Register your shop</Link>}
-            {role === "delivery_partner" && <Link href="/delivery/register" className="font-semibold text-gray-900 hover:underline">Register as delivery partner</Link>}
             {role === "admin" && <Link href="/login" className="font-semibold text-muted-foreground hover:text-primary">Back to customer login</Link>}
           </div>
         </section>

@@ -9,14 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
-import { Bike, Eye, EyeOff, ShieldCheck, Store, UserRound } from "lucide-react";
+import { Eye, EyeOff, ShieldCheck, UserRound } from "lucide-react";
 import { testMode } from "@/lib/test-mode";
 import { getFirstFormError, getFriendlyErrorMessage } from "@/lib/error-message";
-import { IndiaStateDistrictSelects } from "@/components/IndiaLocationSelects";
 
 const schema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.string().email("Enter a valid email").optional().or(z.literal("")),
+  signupEmail: z.string().email("Enter a valid email").optional().or(z.literal("")),
   phone: z.string().min(10, "Enter a valid phone number"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string().min(6, "Confirm your password"),
@@ -54,23 +53,40 @@ export default function Register() {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [emailEditable, setEmailEditable] = useState(false);
+  const requestedRole = new URLSearchParams(window.location.search).get("role");
 
   useEffect(() => {
-    if (user) setLocation("/");
-  }, [user, setLocation]);
+    if (user) {
+      setLocation("/");
+      return;
+    }
+    if (requestedRole === "vendor") setLocation("/seller/register");
+    if (requestedRole === "delivery_partner") setLocation("/delivery/register");
+  }, [requestedRole, user, setLocation]);
 
-  const urlRole = new URLSearchParams(window.location.search).get("role");
-  const initialRole = urlRole === "vendor" || urlRole === "delivery_partner" ? urlRole : "customer";
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
-    defaultValues: { role: initialRole, termsAccepted: false },
+    defaultValues: {
+      name: "",
+      signupEmail: "",
+      phone: "",
+      password: "",
+      confirmPassword: "",
+      role: "customer",
+      referralCode: "",
+      termsAccepted: false,
+    },
   });
   const role = watch("role");
-  const roleMeta = role === "vendor"
-    ? { title: "Seller Registration", subtitle: "Submit your shop details. Admin approval unlocks the seller dashboard.", icon: Store }
-    : role === "delivery_partner"
-      ? { title: "Delivery Partner Registration", subtitle: "Verify mobile and vehicle details before deliveries are assigned.", icon: Bike }
-      : { title: "Create Customer Account", subtitle: "Start shopping from verified nearby stores.", icon: UserRound };
-  const RoleIcon = roleMeta.icon;
+  const RoleIcon = UserRound;
+
+  const handleRoleChange = (nextRole: "customer" | "vendor" | "delivery_partner") => {
+    setValue("role", nextRole, { shouldDirty: true });
+    setOtpSent(false);
+    setOtp("");
+    if (nextRole === "vendor") setLocation("/seller/register");
+    if (nextRole === "delivery_partner") setLocation("/delivery/register");
+  };
 
   const onSubmit = async (rawData: FormData) => {
     const parsed = schema.safeParse(rawData);
@@ -83,25 +99,15 @@ export default function Register() {
       return;
     }
     const data = parsed.data;
-    if (!data.email && !data.phone) {
+    if (!data.signupEmail && !data.phone) {
       authToast({ title: "Mobile required", description: "OTP account-er jonno mobile number din.", variant: "destructive" });
-      return;
-    }
-    if (data.role === "vendor") {
-      authToast({ title: "Secure seller registration", description: "Shop GPS and service zone select korte seller registration page open hocche." });
-      setLocation("/seller/register");
-      return;
-    }
-    if (data.role === "delivery_partner") {
-      authToast({ title: "Secure delivery registration", description: "Delivery KYC, GPS and service zone select korte delivery registration page open hocche." });
-      setLocation("/delivery/register");
       return;
     }
     if (!otpSent) {
       try {
         await customFetch("/api/auth/otp/send", {
           method: "POST",
-          body: JSON.stringify({ phone: data.phone, email: data.email || undefined, purpose: "register" }),
+          body: JSON.stringify({ phone: data.phone, email: data.signupEmail || undefined, purpose: "register" }),
         });
         setOtpSent(true);
         setOtp("");
@@ -121,7 +127,7 @@ export default function Register() {
         method: "POST",
         body: JSON.stringify({
           name: data.name,
-          email: data.email || undefined,
+          email: data.signupEmail || undefined,
           phone: data.phone,
           otp,
           password: data.password,
@@ -160,6 +166,8 @@ export default function Register() {
     });
   };
 
+  if (requestedRole === "vendor" || requestedRole === "delivery_partner") return null;
+
   return (
     <div className="native-page-scroll relative min-h-[100dvh] overflow-x-hidden bg-[#f7f8fb] px-3 py-3 sm:px-4 sm:py-8">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_8%,rgba(249,115,22,.18),transparent_28%),radial-gradient(circle_at_88%_18%,rgba(37,99,235,.14),transparent_28%),linear-gradient(135deg,#fff7ed_0%,#f8fafc_48%,#eff6ff_100%)]" />
@@ -186,17 +194,17 @@ export default function Register() {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">CHOWDHARY MART</p>
-              <h1 className="text-xl font-black leading-tight sm:text-2xl">{roleMeta.title}</h1>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">{roleMeta.subtitle}</p>
+              <h1 className="text-xl font-black leading-tight sm:text-2xl">Create Customer Account</h1>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">Start shopping from verified nearby stores.</p>
             </div>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-4" autoComplete="off" noValidate>
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
               <Label className="mb-2 block text-xs font-bold uppercase tracking-wide text-muted-foreground">Account type</Label>
-              <Select value={role} onValueChange={(v) => { setValue("role", v as "customer" | "vendor" | "delivery_partner"); setOtpSent(false); setOtp(""); }}>
+              <Select value={role} onValueChange={(value) => handleRoleChange(value as "customer" | "vendor" | "delivery_partner")}>
                 <SelectTrigger className="h-12 rounded-2xl bg-white text-base font-bold" data-testid="select-role">
-                  <SelectValue />
+                  <SelectValue placeholder="Select account type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="customer">Customer</SelectItem>
@@ -204,6 +212,7 @@ export default function Register() {
                   <SelectItem value="delivery_partner">Delivery partner</SelectItem>
                 </SelectContent>
               </Select>
+              <input type="hidden" {...register("role")} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="name">Full name</Label>
@@ -211,9 +220,23 @@ export default function Register() {
               {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
             </div>
             <div className="space-y-1">
-              <Label htmlFor="email">Email (optional)</Label>
-              <Input id="email" className="h-12 rounded-2xl" type="email" placeholder="you@email.com" {...register("email")} data-testid="input-email" autoComplete="off" />
-              {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+              <Label htmlFor="customer-signup-email">Email (optional)</Label>
+              <Input
+                id="customer-signup-email"
+                className="h-12 rounded-2xl"
+                type="email"
+                placeholder="you@email.com"
+                {...register("signupEmail")}
+                readOnly={!emailEditable}
+                onFocus={() => setEmailEditable(true)}
+                autoComplete="off"
+                autoCapitalize="none"
+                inputMode="email"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-testid="input-email"
+              />
+              {errors.signupEmail && <p className="text-xs text-red-500">{errors.signupEmail.message}</p>}
             </div>
             <div className="space-y-1">
               <Label htmlFor="phone">Phone *</Label>
@@ -235,59 +258,6 @@ export default function Register() {
               <Input id="confirmPassword" type={showPassword ? "text" : "password"} placeholder="Re-enter password" {...register("confirmPassword")} className="h-12 rounded-2xl" autoComplete="new-password" />
               {errors.confirmPassword && <p className="text-xs text-red-500">{errors.confirmPassword.message}</p>}
             </div>
-            {role === "vendor" && (
-              <div className="rounded-2xl border bg-blue-50 p-3 sm:p-4">
-                <div className="mb-3 flex items-start gap-2">
-                  <Store className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-700" />
-                  <div>
-                    <p className="font-semibold text-blue-950">Shop owner registration</p>
-                    <p className="text-xs text-blue-700">Admin details verify kore approve korle seller panel unlock hobe. GST optional.</p>
-                  </div>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <FieldInput label="Shop name *" name="shopName" register={register} placeholder="e.g. New Town Fresh Store" />
-                  <FieldInput label="Business type" name="businessType" register={register} placeholder="Retail / Grocery / Electronics" />
-                  <FieldInput label="Main category" name="shopCategory" register={register} placeholder="Grocery, Mobile, Fashion..." />
-                  <FieldInput label="GST number (optional)" name="gstNumber" register={register} placeholder="Optional" />
-                  <FieldInput label="PAN number" name="panNumber" register={register} placeholder="Optional for demo" />
-                  <FieldInput label="UPI ID *" name="upiId" register={register} placeholder="shop@upi" />
-                  <div className="sm:col-span-2">
-                    <FieldInput label="Shop / pickup address *" name="shopAddress" register={register} placeholder="Full shop address" />
-                  </div>
-                  <FieldInput label="City *" name="city" register={register} placeholder="Kolkata" />
-                  <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
-                    <IndiaStateDistrictSelects
-                      state={watch("state") || ""}
-                      district={watch("district") || ""}
-                      onStateChange={(state, district) => {
-                        setValue("state", state, { shouldValidate: true, shouldDirty: true });
-                        setValue("district", district, { shouldValidate: true, shouldDirty: true });
-                      }}
-                      onDistrictChange={(district) => setValue("district", district, { shouldValidate: true, shouldDirty: true })}
-                    />
-                    <input type="hidden" {...register("state")} />
-                    <input type="hidden" {...register("district")} />
-                  </div>
-                  <FieldInput label="Pincode *" name="pincode" register={register} placeholder="700156" />
-                </div>
-              </div>
-            )}
-            {role === "delivery_partner" && (
-              <div className="rounded-2xl border bg-emerald-50 p-3 sm:p-4">
-                <div className="mb-3 flex items-start gap-2">
-                  <Bike className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-700" />
-                  <div>
-                    <p className="font-semibold text-emerald-950">Delivery partner verification</p>
-                    <p className="text-xs text-emerald-700">Admin approval-er age dashboard locked thakbe.</p>
-                  </div>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <FieldInput label="Vehicle type *" name="vehicleType" register={register} placeholder="Bike / Scooter / Bicycle" />
-                  <FieldInput label="Vehicle number *" name="vehicleNumber" register={register} placeholder="WB 00 AB 1234" />
-                  <FieldInput label="Licence number" name="licenseNumber" register={register} placeholder="Required for motor vehicle" />
-                </div>
-              </div>
-            )}
             <div className="space-y-1">
               <Label htmlFor="referralCode">Referral code (optional)</Label>
               <Input id="referralCode" className="h-12 rounded-2xl" placeholder="e.g. WELCOME50" {...register("referralCode")} data-testid="input-referral" />
@@ -326,15 +296,6 @@ export default function Register() {
           </p>
         </section>
       </main>
-    </div>
-  );
-}
-
-function FieldInput({ label, name, register, placeholder }: { label: string; name: keyof FormData; register: ReturnType<typeof useForm<FormData>>["register"]; placeholder: string }) {
-  return (
-    <div className="space-y-1">
-      <Label htmlFor={String(name)}>{label}</Label>
-      <Input id={String(name)} className="h-12 rounded-2xl" placeholder={placeholder} {...register(name)} />
     </div>
   );
 }

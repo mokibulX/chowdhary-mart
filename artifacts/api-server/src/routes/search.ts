@@ -52,6 +52,7 @@ function visualTerms(payload: Record<string, unknown>) {
     payload.colorHint,
     payload.mimeType,
   ].map(normalize).join(" ");
+  for (const token of tokenise(payload.fileName)) terms.add(token);
   for (const token of tokenise(payload.keywordHint)) terms.add(token);
   for (const token of tokenise(payload.colorHint)) terms.add(token);
   for (const [pattern, aliases] of visualAliases) {

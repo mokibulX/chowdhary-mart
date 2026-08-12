@@ -204,13 +204,6 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
         lng: deliveryLocation.lng,
         radiusKm: 5,
       });
-      if (result.matchType === "same" && result.exactProduct?.id) {
-        setSearch(result.exactProduct.name);
-        saveRecentSearch(result.exactProduct.name);
-        setLocation(`/product/${result.exactProduct.id}`);
-        setSuggestOpen(false);
-        return;
-      }
       const items = Array.isArray(result.items) ? result.items : [];
       if (items.length) {
         sessionStorage.setItem("cm_image_search_results", JSON.stringify({
@@ -219,8 +212,17 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
           message: result.message,
           savedAt: Date.now(),
         }));
-        setSearch("");
-        setLocation("/search?image=1&visual=1");
+        const exactName = result.matchType === "same" && result.exactProduct?.name ? result.exactProduct.name : "";
+        if (exactName) saveRecentSearch(exactName);
+        setSearch(exactName);
+        setLocation(`/search?image=1&visual=1&t=${Date.now()}`);
+        setSuggestOpen(false);
+        return;
+      }
+      if (result.matchType === "same" && result.exactProduct?.id) {
+        setSearch(result.exactProduct.name);
+        saveRecentSearch(result.exactProduct.name);
+        setLocation(`/product/${result.exactProduct.id}`);
         setSuggestOpen(false);
         return;
       }
