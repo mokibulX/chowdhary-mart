@@ -64,6 +64,17 @@ const FALLBACK_BANNERS = [
   },
 ];
 
+function listItems<T = any>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (Array.isArray(record.items)) return record.items as T[];
+    if (Array.isArray(record.data)) return record.data as T[];
+    if (Array.isArray(record.results)) return record.results as T[];
+  }
+  return [];
+}
+
 export default function Home() {
   const [recentlyViewed, setRecentlyViewed] = useState<any[]>([]);
   const [secondsLeft, setSecondsLeft] = useState(3600 * 5 + 42 * 60 + 12);
@@ -81,6 +92,9 @@ export default function Home() {
   const { data: dailyEssentials } = useListProducts({ categoryId: 2, limit: 12, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ categoryId: 2, limit: 12, ...zoneParams }) } });
   const { data: bestSellers } = useListProducts({ sort: "rating" as any, limit: 8, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ sort: "rating" as any, limit: 8, ...zoneParams }) } });
   const { data: newest } = useListProducts({ limit: 8, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ limit: 8, ...zoneParams }) } });
+  const bannerItems = listItems<any>(banners);
+  const categoryItems = listItems<any>(categories);
+  const storeItems = listItems<any>(stores);
   const zoneId = (deliveryLocation as DeliveryLocation & { zoneId?: number }).zoneId;
   const { data: homepageData } = useQuery({
     queryKey: ["/api/homepage", zoneId],
@@ -124,8 +138,8 @@ export default function Home() {
     }
   }, [bestSellers, dailyEssentials, featured, newest, recentlyViewed]);
 
-  const slides = banners?.length ? banners : FALLBACK_BANNERS;
-  const selectedCategory = categories?.find((cat) => cat.id === selectedCategoryId);
+  const slides = bannerItems.length ? bannerItems : FALLBACK_BANNERS;
+  const selectedCategory = categoryItems.find((cat) => cat.id === selectedCategoryId);
   const quickPhotoProducts = (newest?.items ?? featured?.items ?? []).slice(0, 7);
   const countdown = useMemo(() => {
     const hours = Math.floor(secondsLeft / 3600).toString().padStart(2, "0");
@@ -187,7 +201,7 @@ export default function Home() {
           <div className="flex max-w-full gap-3 overflow-x-auto pb-1">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 min-w-16 rounded-full" />)}</div>
         ) : (
           <div className="lch-clean-scroll flex max-w-full gap-3 overflow-x-auto pb-1">
-            {categories?.map((cat, index) => (
+            {categoryItems.map((cat, index) => (
               <button key={cat.id} type="button" onClick={() => setSelectedCategoryId(cat.id)} className="group min-w-[72px] text-center">
                 <div className={`lch-category-orbit lch-category-tone-${index % 8} ${index % 2 ? "lch-category-reverse" : ""} mx-auto h-16 w-16 ${selectedCategoryId === cat.id ? "is-selected" : ""}`}>
                   <div className="lch-category-orbit-media">
@@ -311,7 +325,7 @@ export default function Home() {
           <div className="grid grid-cols-4 gap-3 md:grid-cols-10">{Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-20" />)}</div>
         ) : (
           <div className="grid grid-cols-4 gap-3 md:grid-cols-10">
-            {categories?.map((cat, index) => (
+            {categoryItems.map((cat, index) => (
               <Link key={cat.id} href={`/search?categoryId=${cat.id}`} className="group text-center">
                 <div className={`lch-category-orbit lch-category-tone-${index % 8} ${index % 2 ? "lch-category-reverse" : ""} mx-auto h-16 w-16`}>
                   <div className="lch-category-orbit-media">
@@ -394,7 +408,7 @@ export default function Home() {
           <div className="grid gap-3 md:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)}</div>
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
-            {stores?.map((store) => (
+            {storeItems.map((store) => (
               <Link key={store.id} href={`/store/${store.id}`} className="overflow-hidden rounded-xl border bg-white transition-all hover:-translate-y-1 hover:shadow-md">
                 <div className="h-28 overflow-hidden bg-gray-100 sm:h-32 md:h-36">
                   {store.logoUrl && <img src={store.logoUrl} alt={store.name} className="h-full w-full object-cover" />}
