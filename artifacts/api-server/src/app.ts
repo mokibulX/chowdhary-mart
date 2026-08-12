@@ -10,6 +10,9 @@ import { requestContext } from "./middleware/request-context";
 import { getCorsOptions, securityHeaders } from "./middleware/security";
 
 const app: Express = express();
+const workspaceRoot = path.basename(process.cwd()) === "api-server"
+  ? path.resolve(process.cwd(), "..", "..")
+  : process.cwd();
 
 app.disable("x-powered-by");
 app.use(requestContext);
@@ -36,7 +39,7 @@ app.use(
   }),
 );
 app.use(cors(getCorsOptions()));
-app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), {
+app.use("/uploads", express.static(path.resolve(workspaceRoot, "uploads"), {
   immutable: true,
   maxAge: "30d",
   setHeaders(res) {
@@ -56,7 +59,7 @@ app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_FORM_LIM
 
 app.use("/api", router);
 
-const webDist = path.resolve(process.cwd(), "artifacts", "web", "dist", "public");
+const webDist = path.resolve(workspaceRoot, "artifacts", "web", "dist", "public");
 const webIndex = path.join(webDist, "index.html");
 if (existsSync(webIndex)) {
   app.use(express.static(webDist, { index: false, maxAge: "1h" }));
