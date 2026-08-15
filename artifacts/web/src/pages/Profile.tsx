@@ -7,6 +7,7 @@ import { z } from "zod/v4";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { getLanguageName } from "@/lib/i18n";
 import { getGetMeQueryKey, useUpdateMe } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -104,7 +105,7 @@ export default function Profile() {
         { label: "Change Password", desc: "Update your account password", icon: Lock, color: "text-green-600", href: "/login" },
         { label: "Notification Preferences", desc: "Manage your notification settings", icon: Bell, color: "text-yellow-500", href: "/notifications" },
         { label: "Privacy Settings", desc: "Manage privacy and data settings", icon: ShieldCheck, color: "text-[#0757ee]", href: "/privacy" },
-        { label: "Language", desc: "Change app language", icon: Globe2, color: "text-purple-600", value: localStorage.getItem("ekart_language") || "English", href: "/language" },
+        { label: "Language", desc: "Change app language", icon: Globe2, color: "text-purple-600", value: getLanguageName(), href: "/language" },
       ],
     },
     {

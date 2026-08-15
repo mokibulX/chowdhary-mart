@@ -1,6 +1,7 @@
 export type DeliveryLocation = {
   pincode: string;
   city: string;
+  district?: string;
   state: string;
   area: string;
   lat: number;

@@ -3,38 +3,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Check, Globe2 } from "lucide-react";
-import { LANGUAGE_STORAGE_KEY } from "@/lib/i18n";
-
-const LANGUAGES = [
-  ["en", "English", "English"],
-  ["bn", "বাংলা", "Bengali"],
-  ["hi", "हिन्दी", "Hindi"],
-  ["ta", "தமிழ்", "Tamil"],
-  ["te", "తెలుగు", "Telugu"],
-  ["kn", "ಕನ್ನಡ", "Kannada"],
-  ["ml", "മലയാളം", "Malayalam"],
-  ["mr", "मराठी", "Marathi"],
-  ["gu", "ગુજરાતી", "Gujarati"],
-  ["pa", "ਪੰਜਾਬੀ", "Punjabi"],
-  ["or", "ଓଡ଼ିଆ", "Odia"],
-  ["ur", "اردو", "Urdu"],
-  ["as", "অসমীয়া", "Assamese"],
-  ["ne", "नेपाली", "Nepali"],
-  ["es", "Español", "Spanish"],
-  ["fr", "Français", "French"],
-  ["de", "Deutsch", "German"],
-  ["ar", "العربية", "Arabic"],
-  ["zh", "中文", "Chinese"],
-  ["ja", "日本語", "Japanese"],
-];
+import { applyDocumentLanguage, INDIAN_LANGUAGES, LANGUAGE_STORAGE_KEY } from "@/lib/i18n";
 
 export default function Language() {
   const { toast } = useToast();
   const [selected, setSelected] = useState(() => localStorage.getItem(LANGUAGE_STORAGE_KEY) || "en");
-  const current = LANGUAGES.find(([code]) => code === selected);
+  const current = INDIAN_LANGUAGES.find(([code]) => code === selected);
 
   const save = () => {
     localStorage.setItem(LANGUAGE_STORAGE_KEY, selected);
+    applyDocumentLanguage(selected);
     window.dispatchEvent(new CustomEvent("language-change", { detail: selected }));
     toast({ title: "Language saved", description: `${current?.[1] ?? "English"} selected for your app preference.` });
     window.setTimeout(() => window.location.reload(), 350);
@@ -56,12 +34,13 @@ export default function Language() {
       </div>
 
       <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
-        {LANGUAGES.map(([code, native, english]) => {
+        {INDIAN_LANGUAGES.map(([code, native, english]) => {
           const active = selected === code;
           return (
             <button
               key={code}
               type="button"
+              data-no-translate
               onClick={() => setSelected(code)}
               className={`flex w-full items-center gap-3 border-b p-4 text-left last:border-b-0 ${active ? "bg-blue-50" : "bg-white"}`}
             >

@@ -12,6 +12,7 @@ export const addressesTable = pgTable("addresses", {
   line1: text("line1").notNull(),
   line2: text("line2"),
   city: varchar("city", { length: 100 }).notNull(),
+  district: varchar("district", { length: 120 }),
   state: varchar("state", { length: 100 }).notNull(),
   pincode: varchar("pincode", { length: 10 }).notNull(),
   lat: real("lat"),

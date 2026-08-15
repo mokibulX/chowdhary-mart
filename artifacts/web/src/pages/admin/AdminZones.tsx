@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LocateFixed, MapPin, Navigation, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { IndiaStateSelect } from "@/components/IndiaLocationSelects";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
-import { getBrowserLocation } from "@/lib/live-location";
+import { getCurrentIndianLocation } from "@/lib/live-location";
 
 const QUERY_KEY = ["/api/admin/service-zones"];
 
@@ -233,14 +233,14 @@ function ZoneLocationTools({ lat, lng, city, state, onChange }: {
   const useGps = async () => {
     setLocating(true);
     try {
-      const gps = await getBrowserLocation();
+      const gps = await getCurrentIndianLocation();
       onChange({
         lat: gps.lat.toFixed(6),
         lng: gps.lng.toFixed(6),
-        city,
-        state,
+        city: gps.city || city,
+        state: gps.state || state,
       });
-      toast({ title: "GPS selected", description: "Latitude and longitude auto filled." });
+      toast({ title: "Current location selected", description: "City, state, latitude and longitude were filled automatically." });
     } catch (error) {
       toast({
         title: "GPS failed",
@@ -268,7 +268,7 @@ function ZoneLocationTools({ lat, lng, city, state, onChange }: {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm">
           <p className="font-semibold">Zone centre GPS</p>
-          <p className="text-xs text-muted-foreground">GPS diye auto fill korun, ba map-e pin select korun.</p>
+          <p className="text-xs text-muted-foreground">Use current GPS to auto-fill the location, or select a different point on the map.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={useGps} disabled={locating}>
@@ -292,7 +292,7 @@ function ZoneLocationTools({ lat, lng, city, state, onChange }: {
             mode="inline"
             initial={initial}
             title="Select zone centre"
-            subtitle="Map-e tap/drag kore centre point set korun, ba GPS use korun."
+            subtitle="Tap or drag the map to set the centre point, or use current GPS."
             confirmLabel="Use this zone centre"
             locateFirst={!initial}
             compact

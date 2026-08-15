@@ -69,6 +69,14 @@ const bn: Dictionary = {
   "Location permissions": "লোকেশন অনুমতি",
   "Order privacy": "অর্ডার প্রাইভেসি",
   "Marketing preferences": "মার্কেটিং পছন্দ",
+  Shop: "দোকান",
+  Support: "সহায়তা",
+  Policies: "নীতিমালা",
+  Offers: "অফার",
+  Cancel: "বাতিল করুন",
+  Close: "বন্ধ করুন",
+  District: "জেলা",
+  "Add New": "নতুন যোগ করুন",
 };
 
 const hi: Dictionary = {
@@ -99,45 +107,74 @@ const hi: Dictionary = {
   "Privacy Settings": "प्राइवेसी सेटिंग्स",
   Language: "भाषा",
   "Save Language": "भाषा सेव करें",
+  Shop: "दुकान",
+  Support: "सहायता",
+  Policies: "नीतियां",
+  Offers: "ऑफर",
+  Cancel: "रद्द करें",
+  Close: "बंद करें",
+  District: "ज़िला",
+  "Add New": "नया जोड़ें",
 };
 
-const generic: Dictionary = {
-  Home: "Home",
-  Categories: "Categories",
-  Orders: "Orders",
-  Wishlist: "Wishlist",
-  Help: "Help",
-  Notifications: "Notifications",
-  Account: "Account",
-  Cart: "Cart",
-  Login: "Login",
-};
+function core(values: string[]): Dictionary {
+  const keys = ["Home", "Categories", "Orders", "Wishlist", "Help", "Notifications", "Account", "Cart", "Login", "Language", "App Language", "Save Language", "Help Center"];
+  return Object.fromEntries(keys.map((key, index) => [key, values[index] ?? key]));
+}
 
 const dictionaries: Record<string, Dictionary> = {
   bn,
   hi,
-  ta: generic,
-  te: generic,
-  kn: generic,
-  ml: generic,
-  mr: generic,
-  gu: generic,
-  pa: generic,
-  or: generic,
-  ur: generic,
-  as: generic,
-  ne: generic,
-  es: { ...generic, Home: "Inicio", Categories: "Categorias", Orders: "Pedidos", Cart: "Carrito", Login: "Iniciar sesion" },
-  fr: { ...generic, Home: "Accueil", Categories: "Categories", Orders: "Commandes", Cart: "Panier", Login: "Connexion" },
-  de: { ...generic, Home: "Start", Categories: "Kategorien", Orders: "Bestellungen", Cart: "Warenkorb", Login: "Anmelden" },
-  ar: { ...generic, Home: "الرئيسية", Categories: "الفئات", Orders: "الطلبات", Cart: "السلة", Login: "تسجيل الدخول" },
-  zh: { ...generic, Home: "首页", Categories: "分类", Orders: "订单", Cart: "购物车", Login: "登录" },
-  ja: { ...generic, Home: "ホーム", Categories: "カテゴリ", Orders: "注文", Cart: "カート", Login: "ログイン" },
+  as: core(["হোম", "শ্ৰেণীসমূহ", "অৰ্ডাৰ", "ইচ্ছা তালিকা", "সহায়তা", "জাননী", "একাউণ্ট", "কাৰ্ট", "লগইন", "ভাষা", "এপৰ ভাষা", "ভাষা সংৰক্ষণ কৰক", "সহায়তা কেন্দ্ৰ"]),
+  brx: core(["न'", "थाखो", "बिथोन", "लुबैनाय फारिलाइ", "मदद", "मिथिसार", "एकाउन्ट", "कार्ट", "लगइन", "राव", "एप राव", "रावखौ थिना", "मदद मिरु"]),
+  doi: core(["घर", "श्रेणियां", "ऑर्डर", "पसंद सूची", "मदद", "सूचनां", "खाता", "कार्ट", "लॉगिन", "भाशा", "ऐप दी भाशा", "भाशा सहेजो", "मदद केंद्र"]),
+  gu: core(["હોમ", "શ્રેણીઓ", "ઓર્ડર", "ઇચ્છાસૂચિ", "મદદ", "સૂચનાઓ", "ખાતું", "કાર્ટ", "લૉગિન", "ભાષા", "એપની ભાષા", "ભાષા સાચવો", "મદદ કેન્દ્ર"]),
+  kn: core(["ಮುಖಪುಟ", "ವರ್ಗಗಳು", "ಆರ್ಡರ್‌ಗಳು", "ಇಚ್ಛಾಪಟ್ಟಿ", "ಸಹಾಯ", "ಅಧಿಸೂಚನೆಗಳು", "ಖಾತೆ", "ಕಾರ್ಟ್", "ಲಾಗಿನ್", "ಭಾಷೆ", "ಅಪ್ಲಿಕೇಶನ್ ಭಾಷೆ", "ಭಾಷೆಯನ್ನು ಉಳಿಸಿ", "ಸಹಾಯ ಕೇಂದ್ರ"]),
+  ks: core(["گھر", "زُمرٕ", "آرڈر", "خواہش فہرست", "مدد", "اطلاعات", "کھاتہ", "کارٹ", "لاگ اِن", "زبان", "ایپ زبان", "زبان محفوظ کریں", "مدد مرکز"]),
+  kok: core(["मुखेल पान", "वर्ग", "ऑर्डर", "इत्सा वळेरी", "मजत", "सुचोवण्यो", "खातें", "कार्ट", "लॉगीन", "भास", "ॲपाची भास", "भास सांबाळ", "मजत केंद्र"]),
+  mai: core(["मुखपृष्ठ", "श्रेणी", "ऑर्डर", "इच्छा सूची", "सहायता", "सूचना", "खाता", "कार्ट", "लॉगिन", "भाषा", "ऐपक भाषा", "भाषा सहेजू", "सहायता केन्द्र"]),
+  ml: core(["ഹോം", "വിഭാഗങ്ങൾ", "ഓർഡറുകൾ", "ഇഷ്ടപ്പട്ടിക", "സഹായം", "അറിയിപ്പുകൾ", "അക്കൗണ്ട്", "കാർട്ട്", "ലോഗിൻ", "ഭാഷ", "ആപ്പ് ഭാഷ", "ഭാഷ സംരക്ഷിക്കുക", "സഹായ കേന്ദ്രം"]),
+  mni: core(["ꯌꯨꯝ", "ꯃꯈꯜꯁꯤꯡ", "ꯑꯣꯔꯗꯔ", "ꯄꯥꯝꯕ ꯄꯔꯦꯡ", "ꯃꯇꯦꯡ", "ꯄꯥꯎꯖꯦꯜ", "ꯑꯦꯀꯥꯎꯟ", "ꯀꯥꯔꯠ", "ꯂꯣꯒꯏꯟ", "ꯂꯣꯟ", "ꯑꯦꯞ ꯂꯣꯟ", "ꯂꯣꯟ ꯁꯦꯚ ꯇꯧ", "ꯃꯇꯦꯡ ꯀꯦꯟꯗ꯭ꯔ"]),
+  mr: core(["मुख्यपृष्ठ", "श्रेणी", "ऑर्डर", "इच्छा यादी", "मदत", "सूचना", "खाते", "कार्ट", "लॉगिन", "भाषा", "ॲपची भाषा", "भाषा जतन करा", "मदत केंद्र"]),
+  ne: core(["गृहपृष्ठ", "श्रेणीहरू", "अर्डरहरू", "इच्छा सूची", "सहायता", "सूचनाहरू", "खाता", "कार्ट", "लगइन", "भाषा", "एपको भाषा", "भाषा सुरक्षित गर्नुहोस्", "सहायता केन्द्र"]),
+  or: core(["ହୋମ୍", "ବର୍ଗଗୁଡ଼ିକ", "ଅର୍ଡର", "ଇଚ୍ଛା ତାଲିକା", "ସହାୟତା", "ବିଜ୍ଞପ୍ତି", "ଆକାଉଣ୍ଟ", "କାର୍ଟ", "ଲଗଇନ୍", "ଭାଷା", "ଆପ୍ ଭାଷା", "ଭାଷା ସଞ୍ଚୟ କରନ୍ତୁ", "ସହାୟତା କେନ୍ଦ୍ର"]),
+  pa: core(["ਮੁੱਖ ਪੰਨਾ", "ਸ਼੍ਰੇਣੀਆਂ", "ਆਰਡਰ", "ਇੱਛਾ ਸੂਚੀ", "ਮਦਦ", "ਸੂਚਨਾਵਾਂ", "ਖਾਤਾ", "ਕਾਰਟ", "ਲੌਗਇਨ", "ਭਾਸ਼ਾ", "ਐਪ ਦੀ ਭਾਸ਼ਾ", "ਭਾਸ਼ਾ ਸੰਭਾਲੋ", "ਮਦਦ ਕੇਂਦਰ"]),
+  sa: core(["गृहम्", "वर्गाः", "आदेशाः", "इच्छासूची", "साहाय्यम्", "सूचनाः", "लेखा", "क्रयपुटः", "प्रवेशः", "भाषा", "अनुप्रयोगभाषा", "भाषां रक्षतु", "साहाय्यकेन्द्रम्"]),
+  sat: core(["ᱚᱲᱟᱜ", "ᱦᱟᱹᱴᱤᱧ", "ᱚᱨᱰᱟᱨ", "ᱠᱩᱥᱤ ᱛᱟᱞᱠᱟ", "ᱜᱚᱲᱚ", "ᱠᱷᱚᱵᱚᱨ", "ᱮᱠᱟᱣᱩᱱᱴ", "ᱠᱟᱨᱴ", "ᱞᱚᱜᱤᱱ", "ᱯᱟᱹᱨᱥᱤ", "ᱮᱯ ᱯᱟᱹᱨᱥᱤ", "ᱯᱟᱹᱨᱥᱤ ᱥᱟᱧᱪᱟᱣ", "ᱜᱚᱲᱚ ᱛᱷᱟᱶ"]),
+  sd: core(["گهر", "زمرا", "آرڊر", "خواهش فهرست", "مدد", "اطلاع", "کاتو", "ڪارٽ", "لاگ اِن", "ٻولي", "ايپ ٻولي", "ٻولي محفوظ ڪريو", "مدد مرڪز"]),
+  ta: core(["முகப்பு", "வகைகள்", "ஆர்டர்கள்", "விருப்பப்பட்டியல்", "உதவி", "அறிவிப்புகள்", "கணக்கு", "கார்ட்", "உள்நுழை", "மொழி", "செயலி மொழி", "மொழியைச் சேமி", "உதவி மையம்"]),
+  te: core(["హోమ్", "వర్గాలు", "ఆర్డర్లు", "కోరికల జాబితా", "సహాయం", "నోటిఫికేషన్లు", "ఖాతా", "కార్ట్", "లాగిన్", "భాష", "యాప్ భాష", "భాషను సేవ్ చేయండి", "సహాయ కేంద్రం"]),
+  ur: core(["گھر", "زمرے", "آرڈرز", "پسند کی فہرست", "مدد", "اطلاعات", "اکاؤنٹ", "کارٹ", "لاگ اِن", "زبان", "ایپ کی زبان", "زبان محفوظ کریں", "مدد مرکز"]),
 };
+
+export const INDIAN_LANGUAGES = [
+  ["en", "English", "English"], ["as", "অসমীয়া", "Assamese"], ["bn", "বাংলা", "Bengali"],
+  ["brx", "बड़ो", "Bodo"], ["doi", "डोगरी", "Dogri"], ["gu", "ગુજરાતી", "Gujarati"],
+  ["hi", "हिन्दी", "Hindi"], ["kn", "ಕನ್ನಡ", "Kannada"], ["ks", "کٲشُر", "Kashmiri"],
+  ["kok", "कोंकणी", "Konkani"], ["mai", "मैथिली", "Maithili"], ["ml", "മലയാളം", "Malayalam"],
+  ["mni", "ꯃꯩꯇꯩꯂꯣꯟ", "Manipuri"], ["mr", "मराठी", "Marathi"], ["ne", "नेपाली", "Nepali"],
+  ["or", "ଓଡ଼ିଆ", "Odia"], ["pa", "ਪੰਜਾਬੀ", "Punjabi"], ["sa", "संस्कृतम्", "Sanskrit"],
+  ["sat", "ᱥᱟᱱᱛᱟᱲᱤ", "Santali"], ["sd", "سنڌي", "Sindhi"], ["ta", "தமிழ்", "Tamil"],
+  ["te", "తెలుగు", "Telugu"], ["ur", "اردو", "Urdu"],
+] as const;
+
+export const SUPPORTED_LANGUAGE_CODES: ReadonlySet<string> = new Set(INDIAN_LANGUAGES.map(([code]) => code));
+export const RTL_LANGUAGE_CODES = new Set(["ks", "sd", "ur"]);
+
+export function getLanguageName(code = getAppLanguage()) {
+  return INDIAN_LANGUAGES.find(([languageCode]) => languageCode === code)?.[1] ?? "English";
+}
+
+export function applyDocumentLanguage(language = getAppLanguage()) {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = language;
+  document.documentElement.dir = RTL_LANGUAGE_CODES.has(language) ? "rtl" : "ltr";
+}
 
 export function getAppLanguage() {
   if (typeof window === "undefined") return "en";
-  return window.localStorage.getItem(LANGUAGE_STORAGE_KEY) || "en";
+  const saved = window.localStorage.getItem(LANGUAGE_STORAGE_KEY) || "en";
+  return SUPPORTED_LANGUAGE_CODES.has(saved) ? saved : "en";
 }
 
 export function t(text: string, language = getAppLanguage()) {

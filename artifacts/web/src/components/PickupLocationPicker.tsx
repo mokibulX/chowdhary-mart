@@ -23,6 +23,7 @@ export type PickupLocation = {
   available: boolean;
   pincode?: string;
   city?: string;
+  district?: string;
   state?: string;
   area?: string;
 };
@@ -148,12 +149,13 @@ function locationPartsFromGeocodeResult(result: any, fallbackAddress: string) {
     || addressComponent(components, "administrative_area_level_3")
     || addressComponent(components, "administrative_area_level_2");
   const state = addressComponent(components, "administrative_area_level_1");
+  const district = addressComponent(components, "administrative_area_level_2");
   const area = addressComponent(components, "sublocality_level_1")
     || addressComponent(components, "sublocality")
     || addressComponent(components, "route")
     || result?.name
     || fallbackAddress;
-  return { pincode, city, state, area };
+  return { pincode, city, district, state, area };
 }
 
 function clampLat(lat: number) {
@@ -238,7 +240,7 @@ export function PickupLocationPicker({
     try {
       const distance = storePoint ? haversineKm(storePoint, point) : null;
       let address = `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`;
-      let parts: ReturnType<typeof locationPartsFromGeocodeResult> = { pincode: "", city: "", state: "", area: "" };
+      let parts: ReturnType<typeof locationPartsFromGeocodeResult> = { pincode: "", city: "", district: "", state: "", area: "" };
       if (geocoder.current) {
         try {
           const result = await geocoder.current.geocode({ location: point });
@@ -251,6 +253,11 @@ export function PickupLocationPicker({
           address = best?.formatted_address || address;
           parts = locationPartsFromGeocodeResult(best, address);
         }
+      } else {
+        const data = await customFetch<any>(`/api/maps/geocode?latlng=${point.lat},${point.lng}`, { responseType: "json" });
+        const best = data.results?.[0];
+        address = best?.formatted_address || address;
+        parts = locationPartsFromGeocodeResult(best, address);
       }
       setSelected({
         lat: point.lat,

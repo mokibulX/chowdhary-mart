@@ -284,6 +284,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
     applyLocation({
       pincode: point.pincode || fallbackNearest?.pincode || "",
       city: point.city || fallbackNearest?.city || "Selected city",
+      district: point.district || fallbackNearest?.district,
       state: point.state || fallbackNearest?.state || "",
       area: point.area || point.address || fallbackNearest?.area || "Selected map location",
       lat: point.lat,
@@ -296,7 +297,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
   const applyPincode = (value = pincodeInput, closeDialog = true) => {
     const found = lookupPincode(value);
     if (!found) {
-      setPincodeError("Ei demo-te ei pincode serviceable noy. Nicher popular pincode try korun.");
+      setPincodeError("This pincode is not serviceable yet. Try one of the available pincodes below.");
       return;
     }
     applyLocation({ ...found, source: "pincode" }, closeDialog);
@@ -319,6 +320,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
         mapped = {
           pincode: getComponent(components, "postal_code") || nearest.location.pincode,
           city: getComponent(components, "locality") || getComponent(components, "administrative_area_level_2") || nearest.location.city,
+          district: getComponent(components, "administrative_area_level_2") || nearest.location.district,
           state: getComponent(components, "administrative_area_level_1") || nearest.location.state,
           area: result?.formatted_address || `Live GPS near ${nearest.location.area}`,
         };
@@ -718,7 +720,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
           <FooterColumn title="Shop" links={[["Categories", "/search"], ["Offers", "/coupons"], ["Wishlist", "/wishlist"], ["Cart", "/cart"]]} />
           <FooterColumn title="Support" links={[["Help Center", "/help"], ["My Orders", "/orders"], ["My Returns", "/returns"], ["Privacy Settings", "/privacy"]]} />
           <div>
-            <h3 className="text-sm font-bold uppercase tracking-wide text-white/70">Policies</h3>
+            <h3 className="text-sm font-bold uppercase tracking-wide text-white/70">{t("Policies")}</h3>
             <p className="mt-3 text-sm leading-6 text-white/70">
               Delivery may vary by live location and stock. If delivery cannot be completed for operational reasons, the order acceptance policy still applies. Damaged items are return eligible.
             </p>
@@ -757,6 +759,7 @@ function MobileMenu({
   setLocationOpen: (open: boolean) => void;
   deliveryLocation: DeliveryLocation;
 }) {
+  const { t } = useI18n();
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -773,10 +776,10 @@ function MobileMenu({
           <p className="text-muted-foreground">{deliveryLocation.city} - {deliveryLocation.pincode}{deliveryLocation.source === "gps" ? " - Live GPS" : ""}</p>
         </button>
         <div className="flex flex-col gap-2">
-          <Link href="/" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Home className="h-4 w-4" /> Home</Link>
-          <Link href="/search" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Grid2X2 className="h-4 w-4" /> Categories</Link>
-          {user && <Link href="/orders" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Package className="h-4 w-4" /> Orders</Link>}
-          {user && <Link href="/wishlist" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Heart className="h-4 w-4" /> Wishlist</Link>}
+          <Link href="/" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Home className="h-4 w-4" /> {t("Home")}</Link>
+          <Link href="/search" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Grid2X2 className="h-4 w-4" /> {t("Categories")}</Link>
+          {user && <Link href="/orders" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Package className="h-4 w-4" /> {t("Orders")}</Link>}
+          {user && <Link href="/wishlist" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Heart className="h-4 w-4" /> {t("Wishlist")}</Link>}
           {user?.role === "vendor" && <Link href="/vendor" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Store className="h-4 w-4" /> Seller Dashboard</Link>}
           {user?.role === "admin" && <Link href="/admin/dashboard" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Settings className="h-4 w-4" /> Admin Dashboard</Link>}
         </div>
@@ -787,12 +790,13 @@ function MobileMenu({
 }
 
 function FooterColumn({ title, links }: { title: string; links: Array<[string, string]> }) {
+  const { t } = useI18n();
   return (
     <div>
-      <h3 className="text-sm font-bold uppercase tracking-wide text-white/70">{title}</h3>
+      <h3 className="text-sm font-bold uppercase tracking-wide text-white/70">{t(title)}</h3>
       <div className="mt-3 space-y-2">
         {links.map(([label, href]) => (
-          <Link key={label} href={href} className="block text-sm text-white/70 hover:text-white">{label}</Link>
+          <Link key={label} href={href} className="block text-sm text-white/70 hover:text-white">{t(label)}</Link>
         ))}
       </div>
     </div>

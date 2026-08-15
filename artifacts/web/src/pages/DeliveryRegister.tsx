@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { fileToDataUrl, getBrowserLocation } from "@/lib/live-location";
+import { fileToDataUrl, getCurrentIndianLocation } from "@/lib/live-location";
 import { testMode } from "@/lib/test-mode";
 import {
   Bike,
@@ -294,10 +294,20 @@ export default function DeliveryRegister() {
   const captureGps = async () => {
     setGpsBusy(true);
     try {
-      const gps = await getBrowserLocation();
-      update("lat", String(gps.lat));
-      update("lng", String(gps.lng));
-      authToast({ title: "Live location added", description: "GPS location saved with your address." });
+      const gps = await getCurrentIndianLocation();
+      setForm((current) => ({
+        ...current,
+        lat: String(gps.lat),
+        lng: String(gps.lng),
+        fullAddress: gps.address || current.fullAddress,
+        area: gps.area || current.area,
+        city: gps.city || current.city,
+        district: gps.district || current.district,
+        state: gps.state || current.state,
+        pincode: gps.pincode || current.pincode,
+        permanentAddress: current.sameAddress ? (gps.address || current.fullAddress) : current.permanentAddress,
+      }));
+      authToast({ title: "Current location added", description: "Address, district, city, state, pincode and GPS were filled automatically." });
     } catch (error) {
       authToast({ title: "GPS permission needed", description: getFriendlyErrorMessage(error, "Could not get location."), variant: "destructive" });
     } finally {

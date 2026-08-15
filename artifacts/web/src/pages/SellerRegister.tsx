@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, CheckCircle2, ClipboardCheck, Eye, EyeOff, LocateFixed, MapPin, PackagePlus, ShieldCheck, Store } from "lucide-react";
 import { isDemoOtp, testMode } from "@/lib/test-mode";
-import { getBrowserLocation } from "@/lib/live-location";
+import { getCurrentIndianLocation } from "@/lib/live-location";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 import { getFriendlyErrorMessage } from "@/lib/error-message";
 import { IndiaStateDistrictSelects } from "@/components/IndiaLocationSelects";
@@ -100,10 +100,18 @@ export default function SellerRegister() {
   const captureGps = async () => {
     setGpsBusy(true);
     try {
-      const gps = await getBrowserLocation();
-      update("lat", String(gps.lat));
-      update("lng", String(gps.lng));
-      authToast({ title: "Live GPS added", description: "Nearest service zones loaded." });
+      const gps = await getCurrentIndianLocation();
+      setForm((current) => ({
+        ...current,
+        lat: String(gps.lat),
+        lng: String(gps.lng),
+        shopAddress: gps.address || current.shopAddress,
+        city: gps.city || current.city,
+        district: gps.district || current.district,
+        state: gps.state || current.state,
+        pincode: gps.pincode || current.pincode,
+      }));
+      authToast({ title: "Current location added", description: "Address, district, city, state, pincode and GPS were filled automatically." });
     } catch (error) {
       authToast({ title: "GPS permission needed", description: getFriendlyErrorMessage(error, "Could not get live location."), variant: "destructive" });
     } finally {
@@ -308,9 +316,16 @@ export default function SellerRegister() {
                   compact
                   onClose={() => undefined}
                   onConfirm={(location) => {
-                    update("lat", String(location.lat));
-                    update("lng", String(location.lng));
-                    update("shopAddress", location.address);
+                    setForm((current) => ({
+                      ...current,
+                      lat: String(location.lat),
+                      lng: String(location.lng),
+                      shopAddress: location.address,
+                      city: location.city || current.city,
+                      district: location.district || current.district,
+                      state: location.state || current.state,
+                      pincode: location.pincode || current.pincode,
+                    }));
                     authToast({ title: "Shop pickup point selected", description: location.address });
                   }}
                 />

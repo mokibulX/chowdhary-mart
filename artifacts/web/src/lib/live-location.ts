@@ -1,3 +1,5 @@
+import { customFetch } from "@workspace/api-client-react";
+
 export type LiveLocation = {
   lat: number;
   lng: number;
@@ -6,6 +8,53 @@ export type LiveLocation = {
   heading?: number;
   capturedAt: string;
 };
+
+export type ResolvedIndianLocation = LiveLocation & {
+  address: string;
+  area: string;
+  city: string;
+  district: string;
+  state: string;
+  pincode: string;
+};
+
+function addressComponent(components: any[] | undefined, type: string) {
+  return String(components?.find((item) => item.types?.includes(type))?.long_name ?? "");
+}
+
+export async function resolveIndianLocation(location: LiveLocation): Promise<ResolvedIndianLocation> {
+  const data = await customFetch<any>(`/api/maps/geocode?latlng=${location.lat},${location.lng}`, { responseType: "json" });
+  const result = data?.results?.[0];
+  const components = result?.address_components ?? [];
+  const district = addressComponent(components, "administrative_area_level_2");
+  const city = addressComponent(components, "locality")
+    || addressComponent(components, "postal_town")
+    || addressComponent(components, "administrative_area_level_3")
+    || district;
+  const area = addressComponent(components, "sublocality_level_1")
+    || addressComponent(components, "sublocality")
+    || addressComponent(components, "neighborhood")
+    || addressComponent(components, "route");
+
+  return {
+    ...location,
+    address: String(result?.formatted_address ?? `${location.lat}, ${location.lng}`),
+    area,
+    city,
+    district,
+    state: addressComponent(components, "administrative_area_level_1"),
+    pincode: addressComponent(components, "postal_code"),
+  };
+}
+
+export async function getCurrentIndianLocation() {
+  const gps = await getBrowserLocation();
+  try {
+    return await resolveIndianLocation(gps);
+  } catch {
+    return { ...gps, address: `${gps.lat}, ${gps.lng}`, area: "", city: "", district: "", state: "", pincode: "" };
+  }
+}
 
 function normalizePosition(position: GeolocationPosition): LiveLocation {
   return {

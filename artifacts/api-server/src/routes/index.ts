@@ -23,6 +23,7 @@ import razorpayWebhookRouter from "./razorpay-webhook";
 import mapsRouter from "./maps";
 import publicRouter from "./public";
 import uploadsRouter from "./uploads";
+import translateRouter from "./translate";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use("/webhooks", razorpayWebhookRouter);
 router.use("/maps", mapsRouter);
 router.use("/public", publicRouter);
 router.use("/uploads", uploadsRouter);
+router.use(translateRouter);
 
 export default router;

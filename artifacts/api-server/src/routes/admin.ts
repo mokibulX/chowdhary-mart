@@ -1033,6 +1033,7 @@ router.delete("/users/:userId", async (req: AuthRequest, res) => {
     }
 
     await db.transaction(async (tx) => {
+      if (existing.role === "vendor") {
       await tx.execute(sql`delete from delivery_earnings where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
       await tx.execute(sql`delete from rider_earning_transactions where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
       await tx.execute(sql`delete from seller_settlements where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
@@ -1056,15 +1057,11 @@ router.delete("/users/:userId", async (req: AuthRequest, res) => {
       await tx.execute(sql`delete from seller_zone_assignments where seller_id = ${userId} or shop_id in (select id from stores where owner_id = ${userId})`);
       await tx.execute(sql`delete from products where store_id in (select id from stores where owner_id = ${userId})`);
       await tx.execute(sql`delete from stores where owner_id = ${userId}`);
+      }
       await tx.execute(sql`
         update users
-        set email = null,
-            phone = null,
-            password_hash = null,
-            name = ${`Deleted User #${userId}`},
-            avatar_url = null,
-            referral_code = null,
-            is_active = false,
+        set is_active = false,
+            warning = 'deleted',
             deleted_at = now(),
             updated_at = now()
         where id = ${userId}
@@ -1074,7 +1071,10 @@ router.delete("/users/:userId", async (req: AuthRequest, res) => {
     res.json({ message: existing.role === "vendor" ? "Seller, store and products deleted" : "User deleted", id: userId });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Could not delete user" });
+    res.status(500).json({
+      error: "Could not delete user",
+      details: process.env.NODE_ENV === "production" || !(err instanceof Error) ? undefined : err.message,
+    });
   }
 });
 

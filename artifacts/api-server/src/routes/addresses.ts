@@ -1,15 +1,23 @@
 import { Router } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db, addressesTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 
 const router = Router();
+
+let addressLocationColumnsReady = false;
+async function ensureAddressLocationColumns() {
+  if (addressLocationColumnsReady) return;
+  await db.execute(sql`alter table addresses add column if not exists district varchar(120)`);
+  addressLocationColumnsReady = true;
+}
 
 router.use(requireAuth);
 
 // GET /api/addresses
 router.get("/", async (req: AuthRequest, res) => {
   try {
+    await ensureAddressLocationColumns();
     const addresses = await db.select().from(addressesTable)
       .where(eq(addressesTable.userId, req.user!.userId));
     res.json(addresses);
@@ -22,7 +30,8 @@ router.get("/", async (req: AuthRequest, res) => {
 // POST /api/addresses
 router.post("/", async (req: AuthRequest, res) => {
   try {
-    const { label, name, phone, line1, line2, city, state, pincode, lat, lng, isDefault } = req.body;
+    await ensureAddressLocationColumns();
+    const { label, name, phone, line1, line2, city, district, state, pincode, lat, lng, isDefault } = req.body;
     const userId = req.user!.userId;
 
     if (isDefault) {
@@ -40,6 +49,7 @@ router.post("/", async (req: AuthRequest, res) => {
       line1,
       line2,
       city,
+      district: district || null,
       state,
       pincode,
       lat,
@@ -59,7 +69,8 @@ router.patch("/:addressId", async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.addressId);
     const userId = req.user!.userId;
-    const { label, name, phone, line1, line2, city, state, pincode, lat, lng, isDefault } = req.body;
+    await ensureAddressLocationColumns();
+    const { label, name, phone, line1, line2, city, district, state, pincode, lat, lng, isDefault } = req.body;
 
     if (isDefault) {
       await db.update(addressesTable)
@@ -68,7 +79,7 @@ router.patch("/:addressId", async (req: AuthRequest, res) => {
     }
 
     const [address] = await db.update(addressesTable)
-      .set({ label, name, phone, line1, line2, city, state, pincode, lat, lng, isDefault })
+      .set({ label, name, phone, line1, line2, city, district: district || null, state, pincode, lat, lng, isDefault })
       .where(and(eq(addressesTable.id, id), eq(addressesTable.userId, userId)))
       .returning();
 

@@ -19,9 +19,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Camera, LocateFixed, MapPin, Navigation, Plus, Pencil, Trash2 } from "lucide-react";
 import { Link } from "wouter";
 import { getSavedDeliveryLocation, lookupPincode } from "@/lib/pincode";
-import { fileToDataUrl, getBrowserLocation } from "@/lib/live-location";
+import { fileToDataUrl, getCurrentIndianLocation } from "@/lib/live-location";
 import { getFirstFormError, getFriendlyErrorMessage } from "@/lib/error-message";
 import { IndiaStateSelect } from "@/components/IndiaLocationSelects";
+import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
+import { useI18n } from "@/lib/i18n";
 
 const schema = z.object({
   label: z.string().optional().or(z.literal("")),
@@ -30,6 +32,7 @@ const schema = z.object({
   line1: z.string().min(3, "Address required"),
   line2: z.string().optional().or(z.literal("")),
   city: z.string().min(2, "City required"),
+  district: z.string().optional().or(z.literal("")),
   state: z.string().min(2, "State required"),
   pincode: z.string().length(6, "Valid 6-digit pincode"),
   lat: z.coerce.number().optional(),
@@ -42,6 +45,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export default function Addresses() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -49,6 +53,7 @@ export default function Addresses() {
   const [editId, setEditId] = useState<number | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState("");
+  const [mapOpen, setMapOpen] = useState(false);
 
   const { data: addresses, isLoading } = useListAddresses({
     query: { enabled: !!user, queryKey: getListAddressesQueryKey() },
@@ -84,11 +89,17 @@ export default function Addresses() {
   const captureLiveLocation = async () => {
     setLocationLoading(true);
     try {
-      const location = await getBrowserLocation();
+      const location = await getCurrentIndianLocation();
       setValue("lat", location.lat, { shouldValidate: true });
       setValue("lng", location.lng, { shouldValidate: true });
       setValue("locationAccuracy", location.accuracy);
       setValue("locationCapturedAt", location.capturedAt);
+      if (location.address) setValue("line1", location.address, { shouldValidate: true });
+      if (location.area) setValue("line2", location.area);
+      if (location.city) setValue("city", location.city, { shouldValidate: true });
+      if (location.district) setValue("district", location.district);
+      if (location.state) setValue("state", location.state, { shouldValidate: true });
+      if (location.pincode) setValue("pincode", location.pincode, { shouldValidate: true });
       toast({
         title: "Live location captured",
         description: location.accuracy ? `Accuracy around ${location.accuracy}m` : "GPS location saved for delivery",
@@ -130,6 +141,7 @@ export default function Addresses() {
     reset({
       label: addr.label ?? "", name: addr.name, phone: addr.phone,
       line1: addr.line1, line2: addr.line2 ?? "", city: addr.city,
+      district: addr.district ?? "",
       state: addr.state, pincode: addr.pincode, lat: addr.lat ?? undefined, lng: addr.lng ?? undefined,
       locationAccuracy: addr.locationAccuracy ?? undefined,
       locationCapturedAt: addr.locationCapturedAt ?? "",
@@ -137,6 +149,20 @@ export default function Addresses() {
       isDefault: !!addr.isDefault,
     });
     setDialogOpen(true);
+  };
+
+  const applyMapLocation = (location: PickupLocation) => {
+    setValue("lat", location.lat, { shouldValidate: true });
+    setValue("lng", location.lng, { shouldValidate: true });
+    setValue("line1", location.address, { shouldValidate: true });
+    if (location.area) setValue("line2", location.area);
+    if (location.city) setValue("city", location.city, { shouldValidate: true });
+    if (location.district) setValue("district", location.district);
+    if (location.state) setValue("state", location.state, { shouldValidate: true });
+    if (location.pincode) setValue("pincode", location.pincode, { shouldValidate: true });
+    setValue("locationCapturedAt", new Date().toISOString());
+    setMapOpen(false);
+    toast({ title: "Map location selected", description: location.address });
   };
 
   const onSubmit = async (data: FormData) => {
@@ -226,7 +252,7 @@ export default function Addresses() {
                       {addr.isDefault && <Badge className="text-xs bg-primary/10 text-primary border-primary/20">Default</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ""}</p>
-                    <p className="text-sm text-muted-foreground">{addr.city}, {addr.state} - {addr.pincode}</p>
+                    <p className="text-sm text-muted-foreground">{addr.city}{addr.district ? `, ${addr.district}` : ""}, {addr.state} - {addr.pincode}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{addr.phone}</p>
                     {addr.lat && addr.lng && (
                       <p className="mt-1 text-[11px] text-emerald-700">GPS saved: {Number(addr.lat).toFixed(4)}, {Number(addr.lng).toFixed(4)}</p>
@@ -268,6 +294,10 @@ export default function Addresses() {
                 <Input {...register("name")} data-testid="input-addr-name" />
                 {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
               </div>
+            </div>
+            <div className="space-y-1">
+              <Label>{t("District")}</Label>
+              <Input {...register("district")} placeholder={t("District")} data-testid="input-addr-district" />
             </div>
             <div className="space-y-1">
               <Label>Phone *</Label>
@@ -321,6 +351,9 @@ export default function Addresses() {
                   <Navigation className="mr-1 h-3.5 w-3.5" />
                   {locationLoading ? "Capturing..." : "Use GPS"}
                 </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setMapOpen(true)}>
+                  <MapPin className="mr-1 h-3.5 w-3.5" /> Select Map
+                </Button>
               </div>
             </div>
             <div className="rounded-xl border bg-white p-3">
@@ -342,7 +375,7 @@ export default function Addresses() {
               <span className="text-sm">Set as default address</span>
             </label>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>{t("Cancel")}</Button>
               <Button type="submit" disabled={create.isPending || update.isPending} data-testid="btn-save-addr">
                 {create.isPending || update.isPending ? "Saving..." : "Save Address"}
               </Button>
@@ -350,6 +383,16 @@ export default function Addresses() {
           </form>
         </DialogContent>
       </Dialog>
+      <PickupLocationPicker
+        open={mapOpen}
+        initial={latValue && lngValue ? { lat: Number(latValue), lng: Number(lngValue), address: watch("line1") || "Selected address", distanceKm: null, available: true, city: watch("city"), district: watch("district"), state: stateValue, pincode: pincodeValue } : null}
+        title="Select delivery location"
+        subtitle="Use current GPS, search an address, or move the map pin. You can edit every field after selection."
+        confirmLabel="Use This Location"
+        locateFirst={!latValue || !lngValue}
+        onClose={() => setMapOpen(false)}
+        onConfirm={applyMapLocation}
+      />
     </div>
   );
 }
