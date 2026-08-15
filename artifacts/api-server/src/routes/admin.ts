@@ -1133,7 +1133,8 @@ router.delete("/users/:userId", async (req: AuthRequest, res) => {
       await tx.execute(sql`delete from payment_orders where parent_order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
       await tx.execute(sql`delete from order_items where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
       await tx.execute(sql`delete from orders where store_id in (select id from stores where user_id = ${userId})`);
-      await tx.execute(sql`delete from cart_items where store_id in (select id from stores where user_id = ${userId}) or product_id in (select id from products where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from cart_items where product_id in (select id from products where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`update carts set store_id = null, updated_at = now() where store_id in (select id from stores where user_id = ${userId})`);
       await tx.execute(sql`delete from wishlist where product_id in (select id from products where store_id in (select id from stores where user_id = ${userId}))`);
       await tx.execute(sql`delete from homepage_section_products where product_id in (select id from products where store_id in (select id from stores where user_id = ${userId}))`);
       await tx.execute(sql`delete from inventory_ledger where product_id in (select id from products where store_id in (select id from stores where user_id = ${userId}))`);
@@ -1486,7 +1487,8 @@ router.delete("/stores/:storeId", async (req: AuthRequest, res) => {
       await tx.execute(sql`delete from payment_orders where parent_order_id in (select id from orders where store_id = ${storeId})`);
       await tx.execute(sql`delete from order_items where order_id in (select id from orders where store_id = ${storeId})`);
       await tx.delete(ordersTable).where(eq(ordersTable.storeId, storeId));
-      await tx.execute(sql`delete from cart_items where store_id = ${storeId} or product_id in (select id from products where store_id = ${storeId})`);
+      await tx.execute(sql`delete from cart_items where product_id in (select id from products where store_id = ${storeId})`);
+      await tx.execute(sql`update carts set store_id = null, updated_at = now() where store_id = ${storeId}`);
       await tx.execute(sql`delete from wishlist where product_id in (select id from products where store_id = ${storeId})`);
       await tx.delete(homepageSectionProductsTable).where(sql`product_id in (select id from products where store_id = ${storeId})`);
       await tx.execute(sql`delete from inventory_ledger where product_id in (select id from products where store_id = ${storeId})`);
