@@ -172,6 +172,12 @@ router.patch("/store", async (req: AuthRequest, res) => {
     if (city !== undefined) updates.city = city;
     if (pincode !== undefined) updates.pincode = pincode;
 
+    const nextShopFrontPhoto = bannerUrl !== undefined ? String(bannerUrl).trim() : String(store.bannerUrl ?? "").trim();
+    if (!nextShopFrontPhoto) {
+      res.status(400).json({ error: "A clear shop front photo is required for delivery pickup." });
+      return;
+    }
+
     const [updated] = await db.update(storesTable)
       .set(updates)
       .where(eq(storesTable.id, store.id))
@@ -292,6 +298,10 @@ router.post("/products", async (req: AuthRequest, res) => {
   try {
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(400).json({ error: "No store found" }); return; }
+    if (!String(store.bannerUrl ?? "").trim()) {
+      res.status(400).json({ error: "Add a shop front photo in Store Settings before adding products." });
+      return;
+    }
 
     const { name, description, categoryId, brandId, price, mrp, images, weight, unit, sku, specifications, stock, isAvailable, isFeatured } = req.body;
     const productImages = cleanProductImages(images);

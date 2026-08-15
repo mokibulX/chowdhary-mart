@@ -321,6 +321,19 @@ export default function DeliveryDashboard() {
               <div className="space-y-3">
                 {(orders as any[]).map((order) => (
                   <div key={order.id} className="rounded-lg border p-3 shadow-sm sm:p-4">
+                    {order.store?.bannerUrl ? (
+                      <div className="mb-3 overflow-hidden rounded-lg border bg-gray-50">
+                        <img src={order.store.bannerUrl} alt={`${order.store?.name ?? "Pickup shop"} front`} className="h-40 w-full object-cover sm:h-48" loading="lazy" decoding="async" />
+                        <div className="flex items-center gap-2 border-t bg-white px-3 py-2">
+                          <Camera className="h-4 w-4 text-orange-600" />
+                          <span className="text-xs font-semibold">Pickup shop front photo</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
+                        Shop front photo is not available. Confirm the pickup address before travelling.
+                      </div>
+                    )}
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">

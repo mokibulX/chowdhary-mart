@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BadgePercent, Grid3X3, Image, Images, Package, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { BadgePercent, Camera, Grid3X3, Image, Images, Package, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getFriendlyErrorMessage } from "@/lib/error-message";
 
@@ -508,13 +508,19 @@ function ImageUrlUploadField({ form, setForm, folder, required, captureFileName,
           <img src={form.imageUrl} alt="" loading="lazy" decoding="async" className="max-h-48 w-full object-contain p-2" />
         </div>
       ) : null}
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <label className={`inline-flex h-10 shrink-0 cursor-pointer items-center justify-center rounded-md border bg-white px-3 text-sm font-medium hover:bg-muted ${uploading ? "pointer-events-none opacity-70" : ""}`}>
           <Upload className="mr-2 h-4 w-4" />
           {uploading ? "Uploading..." : "Upload image"}
           <input type="file" accept="image/*" className="hidden" onChange={upload} disabled={uploading} />
         </label>
+        <label className={`inline-flex h-10 shrink-0 cursor-pointer items-center justify-center rounded-md border border-orange-200 bg-orange-50 px-3 text-sm font-medium text-orange-700 hover:bg-orange-100 ${uploading ? "pointer-events-none opacity-70" : ""}`}>
+          <Camera className="mr-2 h-4 w-4" />
+          {uploading ? "Preparing..." : "Take photo"}
+          <input type="file" accept="image/*" capture="environment" className="hidden" onChange={upload} disabled={uploading} />
+        </label>
         <Input
+          className="min-w-[220px] flex-1"
           value={form.imageUrl ?? ""}
           onChange={(event) => setForm({ ...form, imageUrl: event.target.value })}
           onBlur={(event) => setForm({ ...form, imageUrl: normalizeImageUrl(event.target.value) })}

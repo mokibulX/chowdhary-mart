@@ -63,6 +63,14 @@ function ensureDeliveryReviewColumns() {
     await db.execute(sql`alter table delivery_partners add column if not exists full_address text`);
     await db.execute(sql`alter table delivery_partners add column if not exists city varchar(120)`);
     await db.execute(sql`alter table delivery_partners add column if not exists pincode varchar(12)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists address_proof_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists vehicle_front_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists number_plate_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists license_front_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists license_back_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists identity_front_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists identity_back_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists bank_proof_image text`);
   })();
   return deliveryReviewColumnsReady;
 }
@@ -362,7 +370,15 @@ router.post("/register", async (req, res) => {
             emergency_phone = ${cleanPhone(req.body.emergencyPhone) ?? null},
             full_address = ${cleanText(req.body.fullAddress) ?? null},
             city = ${cleanText(req.body.city) ?? null},
-            pincode = ${cleanText(req.body.pincode) ?? null}
+            pincode = ${cleanText(req.body.pincode) ?? null},
+            address_proof_image = ${cleanText(req.body.addressProofImage) ?? null},
+            vehicle_front_image = ${cleanText(req.body.vehicleFrontImage) ?? null},
+            number_plate_image = ${cleanText(req.body.numberPlateImage) ?? null},
+            license_front_image = ${cleanText(req.body.licenseFrontImage) ?? null},
+            license_back_image = ${cleanText(req.body.licenseBackImage) ?? null},
+            identity_front_image = ${cleanText(req.body.identityFrontImage) ?? null},
+            identity_back_image = ${cleanText(req.body.identityBackImage) ?? null},
+            bank_proof_image = ${cleanText(req.body.bankProofImage) ?? null}
           where id = ${partner.id}
         `);
         if (zoneValidation?.ok) {
@@ -566,6 +582,7 @@ router.post("/logout", (_req, res) => {
 // GET /api/auth/me
 router.get("/me", requireAuth, async (req: AuthRequest, res) => {
   try {
+    await ensureDeliveryReviewColumns();
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
     if (!user) {
       res.status(404).json({ error: "User not found" });
@@ -577,6 +594,10 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
     const [store] = user.role === "vendor"
       ? await db.select().from(storesTable).where(eq(storesTable.userId, user.id)).limit(1)
       : [null];
+    const deliveryStatusRows = user.role === "delivery_partner"
+      ? await db.execute(sql`select delivery_status as "deliveryStatus" from delivery_partners where user_id = ${user.id} limit 1`)
+      : null;
+    const deliveryReviewStatus = deliveryStatusRows ? (((deliveryStatusRows as any).rows ?? deliveryStatusRows)?.[0]?.deliveryStatus ?? null) : null;
     res.json({
       id: user.id,
       email: user.email,
@@ -591,10 +612,10 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
       isOnline: deliveryPartner?.isOnline ?? false,
       deliveryPartnerId: deliveryPartner?.id ?? null,
       deliveryPartnerVerified: deliveryPartner?.isVerified ?? false,
-      deliveryStatus: deliveryPartner ? ((deliveryPartner as any).deliveryStatus ?? ((deliveryPartner as any).delivery_status) ?? (deliveryPartner.isVerified ? "approved" : "pending")) : null,
+      deliveryStatus: deliveryPartner ? (deliveryReviewStatus ?? (deliveryPartner.isVerified ? "approved" : "pending")) : null,
       currentZoneId: deliveryPartner?.currentZoneId ?? store?.zoneId ?? null,
       storeId: store?.id ?? null,
-      vendorStatus: store ? (store.isVerified && store.isActive ? "approved" : "pending") : (user.role === "vendor" ? "pending" : null),
+      vendorStatus: store ? (store.isVerified && store.isActive ? "approved" : !store.isActive ? "rejected" : "pending") : (user.role === "vendor" ? "pending" : null),
       storeIsOpen: store?.isOpen ?? null,
       storeIsActive: store?.isActive ?? null,
       createdAt: user.createdAt,

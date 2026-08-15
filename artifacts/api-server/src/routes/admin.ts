@@ -89,6 +89,14 @@ function ensureDeliveryReviewColumns() {
     await db.execute(sql`alter table delivery_partners add column if not exists full_address text`);
     await db.execute(sql`alter table delivery_partners add column if not exists city varchar(120)`);
     await db.execute(sql`alter table delivery_partners add column if not exists pincode varchar(12)`);
+    await db.execute(sql`alter table delivery_partners add column if not exists address_proof_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists vehicle_front_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists number_plate_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists license_front_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists license_back_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists identity_front_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists identity_back_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists bank_proof_image text`);
   })();
   return deliveryReviewColumnsReady;
 }
@@ -820,6 +828,67 @@ router.post("/wallet-withdrawals/:id/:action", async (req: AuthRequest, res) => 
   }
 });
 
+router.get("/store-applications", async (req: AuthRequest, res) => {
+  try {
+    const rows = await db.select({ store: storesTable, owner: usersTable })
+      .from(storesTable)
+      .innerJoin(usersTable, eq(storesTable.userId, usersTable.id))
+      .where(eq(usersTable.role, "vendor"))
+      .orderBy(desc(storesTable.createdAt));
+    res.json(rows.map(({ store, owner }) => ({
+      id: store.id,
+      userId: owner.id,
+      ownerName: owner.name,
+      ownerEmail: owner.email,
+      ownerPhone: owner.phone,
+      shopName: store.name,
+      businessType: store.description,
+      category: "Local store",
+      gstNumber: store.gstin,
+      address: store.address,
+      city: store.city,
+      state: "",
+      pincode: store.pincode,
+      logoUrl: store.logoUrl,
+      shopFrontPhoto: store.bannerUrl,
+      status: store.isVerified ? "approved" : store.isActive ? "pending" : "rejected",
+      createdAt: store.createdAt,
+    })));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load shop applications" });
+  }
+});
+
+router.post("/store-applications/:id/:action", async (req: AuthRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const action = String(req.params.action);
+    if (!Number.isInteger(id) || !["approve", "reject"].includes(action)) {
+      res.status(400).json({ error: "Invalid shop application action" });
+      return;
+    }
+    const approved = action === "approve";
+    const [store] = await db.update(storesTable).set({
+      isVerified: approved,
+      isActive: approved,
+      isOpen: approved,
+      updatedAt: new Date(),
+    }).where(eq(storesTable.id, id)).returning();
+    if (!store) { res.status(404).json({ error: "Shop application not found" }); return; }
+    await db.update(usersTable)
+      .set({ isVerified: approved, updatedAt: new Date() })
+      .where(eq(usersTable.id, store.userId));
+    await db.update(sellerZoneAssignmentsTable)
+      .set({ status: approved ? "approved" : "rejected", assignedByAdminId: req.user!.userId, assignedAt: new Date() })
+      .where(eq(sellerZoneAssignmentsTable.shopId, id));
+    res.json({ id, status: approved ? "approved" : "rejected" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not review shop application" });
+  }
+});
+
 router.get("/delivery-applications", async (req: AuthRequest, res) => {
   try {
     await ensureDeliveryReviewColumns();
@@ -856,6 +925,14 @@ router.get("/delivery-applications", async (req: AuthRequest, res) => {
         dp.full_address as "fullAddress",
         dp.city,
         dp.pincode,
+        dp.address_proof_image as "addressProofImage",
+        dp.vehicle_front_image as "vehicleFrontImage",
+        dp.number_plate_image as "numberPlateImage",
+        dp.license_front_image as "licenseFrontImage",
+        dp.license_back_image as "licenseBackImage",
+        dp.identity_front_image as "identityFrontImage",
+        dp.identity_back_image as "identityBackImage",
+        dp.bank_proof_image as "bankProofImage",
         dp.created_at as "createdAt"
       from delivery_partners dp
       join users u on u.id = dp.user_id
@@ -911,6 +988,12 @@ router.post("/delivery-partners/:id/:action", async (req: AuthRequest, res) => {
       res.status(404).json({ error: "Delivery partner not found" });
       return;
     }
+    await db.update(usersTable)
+      .set({ isVerified: action === "approve", updatedAt: new Date() })
+      .where(eq(usersTable.id, updated.userId));
+    await db.update(riderZoneAssignmentsTable)
+      .set({ status: action === "approve" ? "approved" : "rejected", assignedByAdminId: req.user!.userId, assignedAt: new Date() })
+      .where(eq(riderZoneAssignmentsTable.riderId, updated.userId));
     res.json(updated);
   } catch (err) {
     req.log.error(err);

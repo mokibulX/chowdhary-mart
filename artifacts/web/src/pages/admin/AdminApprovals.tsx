@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Camera, CheckCircle2, Store, XCircle } from "lucide-react";
+import { Camera, CheckCircle2, ExternalLink, Store, XCircle } from "lucide-react";
 
 const QUERY_KEY = ["/api/admin/store-applications"];
 const DELIVERY_QUERY_KEY = ["/api/admin/delivery-applications"];
@@ -143,6 +143,10 @@ function ApplicationCard({ app, children }: { app: any; children?: ReactNode }) 
         <Info label="PAN" value={app.panNumber || "Not provided"} />
         <Info label="Address" value={`${app.address}, ${app.city}, ${app.state} - ${app.pincode}`} wide />
       </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <DocumentPreview title="Store logo" src={app.logoUrl} />
+        <DocumentPreview title="Shop front photo" src={app.shopFrontPhoto || app.bannerUrl} />
+      </div>
       {children && <div className="mt-5 flex flex-wrap gap-2">{children}</div>}
     </div>
   );
@@ -187,9 +191,17 @@ function DeliveryCard({ partner, children }: { partner: any; children?: ReactNod
         <Info label="Bank status" value={partner.bankVerificationStatus || "pending_review"} />
         <Info label="Address" value={`${partner.fullAddress || "Not provided"} ${partner.pincode ? `- ${partner.pincode}` : ""}`} wide />
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <SelfiePreview title="Profile selfie" src={partner.profileSelfie} />
-        <SelfiePreview title="Live selfie" src={partner.liveSelfie} />
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <DocumentPreview title="Address proof" src={partner.addressProofImage} />
+        <DocumentPreview title="Vehicle front" src={partner.vehicleFrontImage} />
+        <DocumentPreview title="Number plate" src={partner.numberPlateImage} />
+        <DocumentPreview title="Licence front" src={partner.licenseFrontImage} />
+        <DocumentPreview title="Licence back" src={partner.licenseBackImage} />
+        <DocumentPreview title="Identity front" src={partner.identityFrontImage} />
+        <DocumentPreview title="Identity back" src={partner.identityBackImage} />
+        <DocumentPreview title="Bank proof" src={partner.bankProofImage} />
+        <DocumentPreview title="Profile selfie" src={partner.profileSelfie} />
+        <DocumentPreview title="Live selfie" src={partner.liveSelfie} />
       </div>
       {Array.isArray(partner.selfieVerifications) && partner.selfieVerifications.length > 0 && (
         <div className="mt-3 rounded-lg bg-gray-50 p-3 text-xs text-muted-foreground">
@@ -201,14 +213,20 @@ function DeliveryCard({ partner, children }: { partner: any; children?: ReactNod
   );
 }
 
-function SelfiePreview({ title, src }: { title: string; src?: string }) {
+function DocumentPreview({ title, src }: { title: string; src?: string }) {
+  const available = Boolean(src && (src.startsWith("data:image/") || /^https?:\/\//i.test(src) || src.startsWith("/")));
   return (
     <div className="rounded-lg border bg-gray-50 p-3">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
-      {src?.startsWith("data:image/") ? (
-        <img src={src} alt="" className="h-28 w-full rounded-md object-cover" />
+      {available ? (
+        <a href={src} target="_blank" rel="noreferrer" className="group block" title={`Open ${title} full size`}>
+          <img src={src} alt={title} className="h-36 w-full rounded-md border bg-white object-contain" loading="lazy" decoding="async" />
+          <span className="mt-2 flex items-center justify-center gap-1 text-xs font-semibold text-blue-700 group-hover:underline">
+            <ExternalLink className="h-3.5 w-3.5" /> View full size
+          </span>
+        </a>
       ) : (
-        <div className="flex h-28 items-center justify-center rounded-md border border-dashed bg-white text-sm text-muted-foreground">
+        <div className="flex h-36 items-center justify-center rounded-md border border-dashed bg-white text-sm text-muted-foreground">
           <Camera className="mr-2 h-4 w-4" /> Not submitted
         </div>
       )}

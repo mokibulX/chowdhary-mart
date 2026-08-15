@@ -1,4 +1,5 @@
 import { resolveRuntimeApiUrl } from "@/lib/mobile-runtime";
+import { fileToDataUrl } from "@/lib/live-location";
 
 export type VisualSearchPayload = {
   fileName: string;
@@ -69,22 +70,13 @@ function loadImage(dataUrl: string) {
   });
 }
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("Could not read selected image."));
-    reader.readAsDataURL(file);
-  });
-}
-
 async function sha256File(file: File) {
   const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
   return Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 export async function buildVisualSearchPayload(file: File): Promise<VisualSearchPayload> {
-  const originalDataUrl = await readFileAsDataUrl(file);
+  const originalDataUrl = await fileToDataUrl(file);
   const fileHash = await sha256File(file).catch(() => "");
   const image = await loadImage(originalDataUrl);
   const canvas = document.createElement("canvas");

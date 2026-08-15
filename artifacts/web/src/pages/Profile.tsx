@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { getLanguageName } from "@/lib/i18n";
+import { fileToDataUrl } from "@/lib/live-location";
 import { getGetMeQueryKey, useUpdateMe } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -140,19 +141,15 @@ export default function Profile() {
     });
   };
 
-  const handleAvatarUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    event.currentTarget.value = "";
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Please choose an image file", variant: "destructive" });
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== "string") return;
-      setAvatarPreview(reader.result);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setAvatarPreview(dataUrl);
       updateMe.mutate(
-        { data: { avatarUrl: reader.result } },
+        { data: { avatarUrl: dataUrl } },
         {
           onSuccess: () => {
             qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
@@ -161,8 +158,9 @@ export default function Profile() {
           onError: () => toast({ title: "Photo update failed", variant: "destructive" }),
         },
       );
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+      toast({ title: "Photo update failed", description: error instanceof Error ? error.message : "Please take the photo again.", variant: "destructive" });
+    }
   };
 
   return (
@@ -173,11 +171,15 @@ export default function Profile() {
             <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-[#0757ee] text-white">
               {avatarPreview ? <img src={avatarPreview} alt={user.name} className="h-full w-full object-cover" /> : <User className="h-10 w-10" />}
             </div>
-            <label className="absolute -bottom-1 -right-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-white text-[#0757ee] shadow-md ring-1 ring-gray-200">
+            <label title="Take profile photo" className="absolute -bottom-1 -right-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-white text-[#0757ee] shadow-md ring-1 ring-gray-200">
               <Camera className="h-4 w-4" />
-              <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} data-testid="input-avatar" />
+              <input type="file" accept="image/*" capture="user" className="hidden" onChange={handleAvatarUpload} data-testid="input-avatar-camera" />
             </label>
           </div>
+          <label className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center rounded-md border px-3 text-sm font-medium text-[#0757ee] hover:bg-blue-50">
+            Choose photo
+            <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} data-testid="input-avatar" />
+          </label>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-xl font-bold">{user.name}</h1>
             <p className="text-sm text-muted-foreground">{user.phone || "+91 98765 43210"}</p>

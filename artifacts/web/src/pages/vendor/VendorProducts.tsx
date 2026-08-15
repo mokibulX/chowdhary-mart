@@ -18,7 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { BadgePercent, CheckCircle2, ImagePlus, Loader2, Plus, Pencil, ScanBarcode, Trash2, Package, AlertTriangle, X } from "lucide-react";
+import { BadgePercent, Camera, CheckCircle2, ImagePlus, Loader2, Plus, Pencil, ScanBarcode, Trash2, Package, AlertTriangle, X } from "lucide-react";
 import { uploadImageFile } from "@/lib/image-upload";
 import { getFriendlyErrorMessage, getFirstFormError } from "@/lib/error-message";
 
@@ -528,7 +528,7 @@ export default function VendorProducts() {
                       <p className="text-xs text-blue-700">Barcode dile available details, weight and images auto-fill hobe. Price and date apnake set korte hobe.</p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap justify-end gap-2">
                     <Input
                       id="product-barcode"
                       inputMode="numeric"
@@ -701,6 +701,10 @@ export default function VendorProducts() {
                       <ImagePlus className="mr-1 h-3.5 w-3.5" />
                       Upload
                       <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} data-testid="input-product-images" />
+                    </label>
+                    <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-orange-200 bg-orange-50 px-3 text-xs font-medium text-orange-700 hover:bg-orange-100">
+                      <Camera className="mr-1 h-3.5 w-3.5" /> Camera
+                      <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} data-testid="input-product-camera" />
                     </label>
                     <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addImageField}>
                       <Plus className="mr-1 h-3 w-3" />URL
@@ -960,11 +964,15 @@ export default function VendorProducts() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Product Photos</Label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
                   <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs font-medium hover:bg-muted">
                     <ImagePlus className="mr-1 h-3.5 w-3.5" />
                     Upload
                     <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} data-testid="input-product-images" />
+                  </label>
+                  <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-orange-200 bg-orange-50 px-3 text-xs font-medium text-orange-700 hover:bg-orange-100">
+                    <Camera className="mr-1 h-3.5 w-3.5" /> Camera
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} data-testid="input-product-camera" />
                   </label>
                   <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addImageField}>
                     <Plus className="mr-1 h-3 w-3" />URL

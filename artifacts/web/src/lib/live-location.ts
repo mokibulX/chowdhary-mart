@@ -115,46 +115,87 @@ export function watchBrowserLocation(
 
 export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (!file.size) {
+      reject(new Error("The selected photo is empty. Please take it again."));
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      reject(new Error("Photo is too large. Please use a photo under 25 MB."));
+      return;
+    }
+
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    const inferredMime: Record<string, string> = {
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+      gif: "image/gif", heic: "image/heic", heif: "image/heif",
+    };
+    const readableFile = file.type.startsWith("image/")
+      ? file
+      : new Blob([file], { type: inferredMime[extension ?? ""] ?? "image/jpeg" });
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    const finish = (value: string) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const compress = (source: CanvasImageSource, sourceWidth: number, sourceHeight: number) => {
+      const maxSide = 1200;
+      const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+      canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("Could not prepare the selected photo.");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(source, 0, 0, canvas.width, canvas.height);
+      const compressed = canvas.toDataURL("image/jpeg", 0.7);
+      if (!compressed.startsWith("data:image/jpeg;base64,")) throw new Error("Photo compression failed.");
+      return compressed;
+    };
     const reader = new FileReader();
     reader.onload = () => {
       const source = String(reader.result ?? "");
       if (!source.startsWith("data:image/")) {
-        reject(new Error("This file is not a supported image."));
+        fail(new Error("This file is not a supported image."));
         return;
       }
       const image = new Image();
-      const timer = window.setTimeout(() => reject(new Error("Photo reading timed out. Please try a JPG or PNG photo.")), 20000);
+      const timer = window.setTimeout(() => fail(new Error("Photo reading timed out. Please take the photo again.")), 30000);
       image.onload = () => {
         window.clearTimeout(timer);
         try {
-          const maxSide = 1200;
-          const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
-          canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
-          const context = canvas.getContext("2d", { alpha: false });
-          if (!context) throw new Error("Could not prepare the selected photo.");
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, canvas.width, canvas.height);
-          context.drawImage(image, 0, 0, canvas.width, canvas.height);
-          const compressed = canvas.toDataURL("image/jpeg", 0.7);
-          if (!compressed.startsWith("data:image/jpeg;base64,")) throw new Error("Photo compression failed.");
-          resolve(compressed);
+          finish(compress(image, image.naturalWidth || image.width, image.naturalHeight || image.height));
         } catch (error) {
-          reject(error instanceof Error ? error : new Error("Could not prepare the selected photo."));
+          fail(error instanceof Error ? error : new Error("Could not prepare the selected photo."));
         }
       };
-      image.onerror = () => {
+      image.onerror = async () => {
         window.clearTimeout(timer);
-        const heic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
-        reject(new Error(heic
-          ? "HEIC/HEIF is not supported by this browser. Turn off High efficiency pictures in Camera settings, or choose a JPG/PNG photo."
-          : "Could not decode this photo. Please choose a JPG, PNG or WEBP image."));
+        try {
+          if (!("createImageBitmap" in window)) throw new Error("Decoder unavailable");
+          const bitmap = await createImageBitmap(readableFile);
+          try {
+            finish(compress(bitmap, bitmap.width, bitmap.height));
+          } finally {
+            bitmap.close();
+          }
+        } catch {
+          const heic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
+          fail(new Error(heic
+            ? "This phone saved the photo as HEIC. Turn off High efficiency pictures in Camera settings, then take the photo again."
+            : "Could not decode this photo. Please retake it or choose a JPG, PNG or WEBP image."));
+        }
       };
       image.src = source;
     };
-    reader.onerror = () => reject(new Error("Could not read the selected photo."));
-    reader.onabort = () => reject(new Error("Photo selection was cancelled."));
-    reader.readAsDataURL(file);
+    reader.onerror = () => fail(new Error("Could not read the selected photo. Please take it again."));
+    reader.onabort = () => fail(new Error("Photo selection was cancelled."));
+    reader.readAsDataURL(readableFile);
   });
 }

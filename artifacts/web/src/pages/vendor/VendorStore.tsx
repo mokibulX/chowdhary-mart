@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Store, Clock, Star, ImagePlus, LocateFixed, MapPin } from "lucide-react";
+import { Store, Clock, Star, Camera, ImagePlus, LocateFixed, MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getBrowserLocation } from "@/lib/live-location";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
@@ -25,7 +25,7 @@ const schema = z.object({
   description: z.string().optional().or(z.literal("")),
   phone: z.string().optional().or(z.literal("")),
   logoUrl: z.string().optional().or(z.literal("")),
-  bannerUrl: z.string().optional().or(z.literal("")),
+  bannerUrl: z.string().min(1, "Shop front photo is required"),
   deliveryFee: z.coerce.number().min(0),
   freeDeliveryAbove: z.coerce.number().min(0),
   minOrderValue: z.coerce.number().min(0),
@@ -138,7 +138,7 @@ export default function VendorStore() {
     }
     uploadImageFile(file, field === "logoUrl" ? "seller-store/logos" : "seller-store/banners").then((uploaded) => {
       setValue(field, uploaded.imageUrl, { shouldDirty: true });
-      toast({ title: field === "logoUrl" ? "Store logo uploaded" : "Store banner uploaded" });
+      toast({ title: field === "logoUrl" ? "Store logo uploaded" : "Shop front photo uploaded" });
     }).catch((error) => {
       toast({ title: "Image upload failed", description: getFriendlyErrorMessage(error, "Please choose another image."), variant: "destructive" });
     });
@@ -205,17 +205,28 @@ export default function VendorStore() {
                   <ImagePlus className="mr-1 h-4 w-4" /> Upload
                   <input type="file" accept="image/*" className="hidden" onChange={(event) => handleImageUpload("logoUrl", event)} />
                 </label>
+                <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md border border-orange-200 bg-orange-50 px-3 text-sm font-medium text-orange-700 hover:bg-orange-100 sm:w-auto">
+                  <Camera className="mr-1 h-4 w-4" /> Camera
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => handleImageUpload("logoUrl", event)} />
+                </label>
               </div>
             </div>
             <div className="space-y-1">
-              <Label>Banner URL</Label>
+              <Label>Shop Front Photo *</Label>
+              <p className="text-xs text-muted-foreground">Take a clear photo from outside so the delivery partner can identify the pickup shop.</p>
+              {watch("bannerUrl") ? <img src={watch("bannerUrl")} alt="Shop front" className="h-40 w-full rounded-lg border object-cover" /> : null}
               <div className="flex flex-col gap-2 sm:flex-row">
-                <Input {...register("bannerUrl")} placeholder="https://... or uploaded image" data-testid="input-banner" />
+                <Input {...register("bannerUrl")} placeholder="Upload or take a shop front photo" data-testid="input-banner" />
                 <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-muted sm:w-auto">
-                  <ImagePlus className="mr-1 h-4 w-4" /> Upload
+                  <ImagePlus className="mr-1 h-4 w-4" /> Gallery
                   <input type="file" accept="image/*" className="hidden" onChange={(event) => handleImageUpload("bannerUrl", event)} />
                 </label>
+                <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md border border-orange-200 bg-orange-50 px-3 text-sm font-medium text-orange-700 hover:bg-orange-100 sm:w-auto">
+                  <Camera className="mr-1 h-4 w-4" /> Take Photo
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => handleImageUpload("bannerUrl", event)} />
+                </label>
               </div>
+              {errors.bannerUrl && <p className="text-xs font-medium text-red-500">{errors.bannerUrl.message}</p>}
             </div>
           </CardContent>
         </Card>
