@@ -1117,29 +1117,29 @@ router.delete("/users/:userId", async (req: AuthRequest, res) => {
 
     await db.transaction(async (tx) => {
       if (existing.role === "vendor") {
-      await tx.execute(sql`delete from delivery_earnings where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from rider_earning_transactions where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from seller_settlements where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from delivery_route where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from delivery_tracking_history where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from active_delivery_locations where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from order_tracking where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from reviews where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from "returns" where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from coupon_uses where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from refunds where parent_order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from payments where parent_order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from payment_attempts where payment_order_id in (select id from payment_orders where parent_order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId})))`);
-      await tx.execute(sql`delete from payment_orders where parent_order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from order_items where order_id in (select id from orders where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from orders where store_id in (select id from stores where owner_id = ${userId})`);
-      await tx.execute(sql`delete from cart_items where store_id in (select id from stores where owner_id = ${userId}) or product_id in (select id from products where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from wishlist where product_id in (select id from products where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from homepage_section_products where product_id in (select id from products where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from inventory_ledger where product_id in (select id from products where store_id in (select id from stores where owner_id = ${userId}))`);
-      await tx.execute(sql`delete from seller_zone_assignments where seller_id = ${userId} or shop_id in (select id from stores where owner_id = ${userId})`);
-      await tx.execute(sql`delete from products where store_id in (select id from stores where owner_id = ${userId})`);
-      await tx.execute(sql`delete from stores where owner_id = ${userId}`);
+      await tx.execute(sql`delete from delivery_earnings where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from rider_earning_transactions where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from seller_settlements where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from delivery_route where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from delivery_tracking_history where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from active_delivery_locations where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from order_tracking where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from reviews where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from "returns" where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from coupon_uses where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from refunds where parent_order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from payments where parent_order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from payment_attempts where payment_order_id in (select id from payment_orders where parent_order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId})))`);
+      await tx.execute(sql`delete from payment_orders where parent_order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from order_items where order_id in (select id from orders where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from orders where store_id in (select id from stores where user_id = ${userId})`);
+      await tx.execute(sql`delete from cart_items where store_id in (select id from stores where user_id = ${userId}) or product_id in (select id from products where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from wishlist where product_id in (select id from products where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from homepage_section_products where product_id in (select id from products where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from inventory_ledger where product_id in (select id from products where store_id in (select id from stores where user_id = ${userId}))`);
+      await tx.execute(sql`delete from seller_zone_assignments where seller_id = ${userId} or shop_id in (select id from stores where user_id = ${userId})`);
+      await tx.execute(sql`delete from products where store_id in (select id from stores where user_id = ${userId})`);
+      await tx.execute(sql`delete from stores where user_id = ${userId}`);
       }
       await tx.execute(sql`
         update users
@@ -1463,7 +1463,7 @@ router.delete("/stores/:storeId", async (req: AuthRequest, res) => {
       res.status(400).json({ error: "Invalid store id" });
       return;
     }
-    const [existing] = await db.select({ id: storesTable.id }).from(storesTable).where(eq(storesTable.id, storeId)).limit(1);
+    const [existing] = await db.select({ id: storesTable.id, userId: storesTable.userId }).from(storesTable).where(eq(storesTable.id, storeId)).limit(1);
     if (!existing) {
       res.status(404).json({ error: "Store not found" });
       return;
@@ -1487,9 +1487,22 @@ router.delete("/stores/:storeId", async (req: AuthRequest, res) => {
       await tx.execute(sql`delete from order_items where order_id in (select id from orders where store_id = ${storeId})`);
       await tx.delete(ordersTable).where(eq(ordersTable.storeId, storeId));
       await tx.execute(sql`delete from cart_items where store_id = ${storeId} or product_id in (select id from products where store_id = ${storeId})`);
+      await tx.execute(sql`delete from wishlist where product_id in (select id from products where store_id = ${storeId})`);
       await tx.delete(homepageSectionProductsTable).where(sql`product_id in (select id from products where store_id = ${storeId})`);
+      await tx.execute(sql`delete from inventory_ledger where product_id in (select id from products where store_id = ${storeId})`);
+      await tx.execute(sql`delete from seller_zone_assignments where shop_id = ${storeId}`);
       await tx.delete(productsTable).where(eq(productsTable.storeId, storeId));
       await tx.delete(storesTable).where(eq(storesTable.id, storeId));
+      await tx.execute(sql`
+        update users
+        set is_active = false,
+            warning = 'deleted',
+            deleted_at = now(),
+            updated_at = now()
+        where id = ${existing.userId}
+          and role = 'vendor'
+          and not exists (select 1 from stores where user_id = ${existing.userId})
+      `);
     });
 
     res.json({ message: "Store permanently deleted", id: storeId });

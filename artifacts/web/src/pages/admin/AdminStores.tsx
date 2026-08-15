@@ -58,7 +58,11 @@ export default function AdminStores() {
         return oldData.filter((item) => Number(item.id) !== Number(store.id));
       });
       qc.invalidateQueries({ queryKey: getListAdminStoresQueryKey(), exact: false });
-      toast({ title: "Store deleted", description: "Store, products and related order data removed." });
+      qc.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      qc.invalidateQueries({ queryKey: ["/api/admin/products"] });
+      qc.invalidateQueries({ queryKey: ["/api/products"] });
+      qc.invalidateQueries({ queryKey: ["/api/stores"] });
+      toast({ title: "Store and seller deleted", description: "Vendor account, store, products and related order data removed." });
     } catch (error) {
       toast({ title: "Store delete failed", description: (error as Error).message, variant: "destructive" });
     }

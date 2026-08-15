@@ -3944,9 +3944,17 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     const store = state.stores.find((item: MockRecord) => item.id === Number(adminStoreMatch[1]));
     if (!store) makeMockError(404, "Store not found", method, path);
     if (method === "DELETE") {
+      const ownerId = Number(store.ownerId ?? store.userId ?? 0);
       removeStoreEverywhere(state, store.id);
+      if (ownerId && !(state.stores ?? []).some((item: MockRecord) => Number(item.ownerId ?? item.userId) === ownerId)) {
+        state.users = (state.users ?? []).filter((item: MockRecord) => Number(item.id) !== ownerId || item.role !== "vendor");
+        state.storeApplications = (state.storeApplications ?? []).filter((item: MockRecord) => Number(item.userId) !== ownerId);
+        Object.keys(state.sessions ?? {}).forEach((token) => {
+          if (Number(state.sessions[token]?.userId) === ownerId) delete state.sessions[token];
+        });
+      }
       saveMockState(state);
-      return ok({ message: "Store deleted" });
+      return ok({ message: "Store and seller deleted" });
     }
     if (method === "PATCH") {
       Object.assign(store, {
