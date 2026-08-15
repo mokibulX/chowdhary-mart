@@ -105,6 +105,28 @@ type DeliveryForm = {
 type RegisterResponse = { token: string };
 
 const draftKey = "cm_delivery_partner_registration_draft";
+const imageFields: Array<keyof DeliveryForm> = [
+  "addressProofImage", "vehicleFrontImage", "numberPlateImage", "licenseFrontImage", "licenseBackImage",
+  "identityFrontImage", "identityBackImage", "bankProofImage", "profileSelfie", "liveSelfie",
+];
+
+function registrationDraft(form: DeliveryForm) {
+  const draft = { ...form };
+  imageFields.forEach((field) => { draft[field] = "" as never; });
+  draft.otp = "";
+  return draft;
+}
+
+function restoreDraft() {
+  try {
+    const saved = { ...initialForm, ...JSON.parse(localStorage.getItem(draftKey) || "{}") } as DeliveryForm;
+    imageFields.forEach((field) => { saved[field] = "" as never; });
+    return saved;
+  } catch {
+    localStorage.removeItem(draftKey);
+    return initialForm;
+  }
+}
 const challenges = ["Blink your eyes", "Turn your head left", "Smile clearly", "Look up once", "Move closer to the camera"];
 const stepTitles = ["Mobile", "OTP", "Personal", "Address", "Vehicle", "Licence", "Identity", "Bank", "Profile photo", "Live selfie", "Agreement", "Review", "Status"];
 const VEHICLE_TYPES = ["Bicycle", "Non-motorised delivery cycle", "Electric bicycle", "Motorbike", "Scooter"];
@@ -231,13 +253,7 @@ export default function DeliveryRegister() {
   const authToast = (options: Parameters<typeof toast>[0]) => toast({ duration: 2000, ...options });
   const [registering, setRegistering] = useState(false);
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState<DeliveryForm>(() => {
-    try {
-      return { ...initialForm, ...JSON.parse(localStorage.getItem(draftKey) || "{}") };
-    } catch {
-      return initialForm;
-    }
-  });
+  const [form, setForm] = useState<DeliveryForm>(restoreDraft);
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpBusy, setOtpBusy] = useState(false);
@@ -248,7 +264,11 @@ export default function DeliveryRegister() {
   const [zoneBusy, setZoneBusy] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem(draftKey, JSON.stringify({ ...form, otp: "" }));
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(registrationDraft(form)));
+    } catch {
+      localStorage.removeItem(draftKey);
+    }
   }, [form]);
 
   useEffect(() => {
@@ -284,10 +304,14 @@ export default function DeliveryRegister() {
     if (!file) return;
     try {
       if (!file.type.startsWith("image/")) throw new Error("Only image files are allowed.");
-      if (file.size > 5 * 1024 * 1024) throw new Error("Image must be under 5 MB.");
-      update(key, await fileToDataUrl(file) as any);
+      if (file.size > 20 * 1024 * 1024) throw new Error("Image must be under 20 MB.");
+      const dataUrl = await fileToDataUrl(file);
+      const estimatedBytes = Math.ceil((dataUrl.length - (dataUrl.indexOf(",") + 1)) * 0.75);
+      if (estimatedBytes > 2 * 1024 * 1024) throw new Error("Compressed image is still too large. Please choose a clearer, smaller photo.");
+      update(key, dataUrl as any);
+      authToast({ title: "Photo added", description: "The image was compressed and is ready to submit." });
     } catch (error) {
-      authToast({ title: "Photo upload failed", description: getFriendlyErrorMessage(error, "Please upload a clear image under 5 MB."), variant: "destructive" });
+      authToast({ title: "Photo upload failed", description: getFriendlyErrorMessage(error, "Please upload a JPG, PNG or WEBP image under 20 MB."), variant: "destructive" });
     }
   };
 
@@ -859,7 +883,19 @@ function PasswordField({ label, value, onChange, visible, setVisible }: {
   );
 }
 
-function ImageInput({ label, value, onFile, capture }: { label: string; value: string; onFile: (file?: File) => void; capture?: boolean }) {
+function ImageInput({ label, value, onFile, capture }: { label: string; value: string; onFile: (file?: File) => Promise<void> | void; capture?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const chooseFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    try {
+      await onFile(file);
+    } finally {
+      setBusy(false);
+      event.target.value = "";
+    }
+  };
   return (
     <div className="min-w-0 space-y-2 rounded-[22px] border bg-gray-50 p-3">
       <Label>{label}</Label>
@@ -873,9 +909,9 @@ function ImageInput({ label, value, onFile, capture }: { label: string; value: s
           <Camera className="mr-2 h-4 w-4" /> No photo selected
         </div>
       )}
-      <label className="inline-flex h-12 w-full cursor-pointer items-center justify-center rounded-2xl border bg-white px-4 text-sm font-medium hover:bg-gray-50 sm:w-auto">
-        <Upload className="mr-2 h-4 w-4" /> Upload / Camera
-        <input className="hidden" type="file" accept="image/*" capture={capture ? "user" : undefined} onChange={(event) => onFile(event.target.files?.[0])} />
+      <label className={`inline-flex h-12 w-full items-center justify-center rounded-2xl border bg-white px-4 text-sm font-medium sm:w-auto ${busy ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-gray-50"}`}>
+        <Upload className="mr-2 h-4 w-4" /> {busy ? "Preparing photo..." : value ? "Change Photo" : "Upload / Camera"}
+        <input className="hidden" type="file" accept="image/jpeg,image/png,image/webp,image/gif" capture={capture ? "user" : undefined} disabled={busy} onChange={chooseFile} />
       </label>
     </div>
   );
