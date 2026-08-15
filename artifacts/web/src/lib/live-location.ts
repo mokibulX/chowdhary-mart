@@ -115,34 +115,46 @@ export function watchBrowserLocation(
 
 export function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (file.type.startsWith("image/")) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const source = String(reader.result ?? "");
+      if (!source.startsWith("data:image/")) {
+        reject(new Error("This file is not a supported image."));
+        return;
+      }
       const image = new Image();
-      const objectUrl = URL.createObjectURL(file);
+      const timer = window.setTimeout(() => reject(new Error("Photo reading timed out. Please try a JPG or PNG photo.")), 20000);
       image.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        const maxSide = 900;
-        const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(image.width * scale));
-        canvas.height = Math.max(1, Math.round(image.height * scale));
-        const context = canvas.getContext("2d");
-        if (!context) {
-          reject(new Error("Could not prepare the selected photo."));
-          return;
+        window.clearTimeout(timer);
+        try {
+          const maxSide = 1200;
+          const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+          canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+          const context = canvas.getContext("2d", { alpha: false });
+          if (!context) throw new Error("Could not prepare the selected photo.");
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          const compressed = canvas.toDataURL("image/jpeg", 0.7);
+          if (!compressed.startsWith("data:image/jpeg;base64,")) throw new Error("Photo compression failed.");
+          resolve(compressed);
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error("Could not prepare the selected photo."));
         }
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.72));
       };
       image.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error("Could not read the selected photo."));
+        window.clearTimeout(timer);
+        const heic = /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
+        reject(new Error(heic
+          ? "HEIC/HEIF is not supported by this browser. Turn off High efficiency pictures in Camera settings, or choose a JPG/PNG photo."
+          : "Could not decode this photo. Please choose a JPG, PNG or WEBP image."));
       };
-      image.src = objectUrl;
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
+      image.src = source;
+    };
     reader.onerror = () => reject(new Error("Could not read the selected photo."));
+    reader.onabort = () => reject(new Error("Photo selection was cancelled."));
     reader.readAsDataURL(file);
   });
 }

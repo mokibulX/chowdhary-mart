@@ -303,7 +303,8 @@ export default function DeliveryRegister() {
   const setImage = async (key: keyof DeliveryForm, file?: File) => {
     if (!file) return;
     try {
-      if (!file.type.startsWith("image/")) throw new Error("Only image files are allowed.");
+      const imageByName = /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(file.name);
+      if (!file.type.startsWith("image/") && !imageByName) throw new Error("Only image files are allowed.");
       if (file.size > 20 * 1024 * 1024) throw new Error("Image must be under 20 MB.");
       const dataUrl = await fileToDataUrl(file);
       const estimatedBytes = Math.ceil((dataUrl.length - (dataUrl.indexOf(",") + 1)) * 0.75);
@@ -909,10 +910,16 @@ function ImageInput({ label, value, onFile, capture }: { label: string; value: s
           <Camera className="mr-2 h-4 w-4" /> No photo selected
         </div>
       )}
-      <label className={`inline-flex h-12 w-full items-center justify-center rounded-2xl border bg-white px-4 text-sm font-medium sm:w-auto ${busy ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-gray-50"}`}>
-        <Upload className="mr-2 h-4 w-4" /> {busy ? "Preparing photo..." : value ? "Change Photo" : "Upload / Camera"}
-        <input className="hidden" type="file" accept="image/jpeg,image/png,image/webp,image/gif" capture={capture ? "user" : undefined} disabled={busy} onChange={chooseFile} />
-      </label>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className={`inline-flex h-12 w-full items-center justify-center rounded-2xl border bg-white px-4 text-sm font-medium ${busy ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-gray-50"}`}>
+          <Upload className="mr-2 h-4 w-4" /> {busy ? "Preparing photo..." : "Choose from Gallery"}
+          <input className="hidden" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif" disabled={busy} onChange={chooseFile} />
+        </label>
+        <label className={`inline-flex h-12 w-full items-center justify-center rounded-2xl border border-orange-200 bg-orange-50 px-4 text-sm font-semibold text-orange-700 ${busy ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-orange-100"}`}>
+          <Camera className="mr-2 h-4 w-4" /> {busy ? "Preparing photo..." : "Take Live Photo"}
+          <input className="hidden" type="file" accept="image/*" capture={capture ? "user" : "environment"} disabled={busy} onChange={chooseFile} />
+        </label>
+      </div>
     </div>
   );
 }
