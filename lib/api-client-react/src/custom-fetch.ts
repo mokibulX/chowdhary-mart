@@ -3987,10 +3987,20 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
   }
   if (path === "/api/admin/store-applications") {
     requireUser();
-    return ok(state.storeApplications.map((application: MockRecord) => ({
-      ...application,
-      user: publicUser(state.users.find((item: MockRecord) => item.id === application.userId) ?? {}),
-    })));
+    return ok(state.storeApplications.map((application: MockRecord) => {
+      const owner = state.users.find((item: MockRecord) => item.id === application.userId) ?? {};
+      const store = state.stores.find((item: MockRecord) => Number(item.ownerId ?? item.userId) === Number(application.userId));
+      const ownerPhoto = owner.avatarUrl ?? application.ownerPhoto ?? application.avatarUrl ?? "";
+      const shopFrontPhoto = store?.bannerUrl ?? application.shopFrontPhoto ?? application.bannerUrl ?? store?.logoUrl ?? "";
+      return {
+        ...application,
+        ownerPhoto,
+        avatarUrl: ownerPhoto,
+        shopFrontPhoto,
+        bannerUrl: shopFrontPhoto,
+        user: publicUser(owner),
+      };
+    }));
   }
   if (path === "/api/admin/delivery-applications") {
     requireAdmin();

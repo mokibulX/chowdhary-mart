@@ -842,6 +842,7 @@ router.get("/store-applications", async (req: AuthRequest, res) => {
       ownerEmail: owner.email,
       ownerPhone: owner.phone,
       ownerPhoto: owner.avatarUrl,
+      avatarUrl: owner.avatarUrl,
       shopName: store.name,
       businessType: store.description,
       category: "Local store",
@@ -851,7 +852,8 @@ router.get("/store-applications", async (req: AuthRequest, res) => {
       state: "",
       pincode: store.pincode,
       logoUrl: store.logoUrl,
-      shopFrontPhoto: store.bannerUrl,
+      shopFrontPhoto: store.bannerUrl ?? store.logoUrl,
+      bannerUrl: store.bannerUrl,
       status: store.isVerified ? "approved" : store.isActive ? "pending" : "rejected",
       createdAt: store.createdAt,
     })));

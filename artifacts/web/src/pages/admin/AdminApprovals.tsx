@@ -214,13 +214,16 @@ function DeliveryCard({ partner, children }: { partner: any; children?: ReactNod
 }
 
 function DocumentPreview({ title, src }: { title: string; src?: string }) {
-  const available = Boolean(src && (src.startsWith("data:image/") || /^https?:\/\//i.test(src) || src.startsWith("/")));
+  const cleanSrc = String(src ?? "").trim();
+  const apiOrigin = String(import.meta.env.VITE_API_URL ?? "").replace(/\/api\/?$/, "").replace(/\/$/, "");
+  const resolvedSrc = cleanSrc.startsWith("/") && apiOrigin ? `${apiOrigin}${cleanSrc}` : cleanSrc;
+  const available = Boolean(resolvedSrc && (resolvedSrc.startsWith("data:image/") || /^https?:\/\//i.test(resolvedSrc) || resolvedSrc.startsWith("/")));
   return (
     <div className="rounded-lg border bg-gray-50 p-3">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
       {available ? (
-        <a href={src} target="_blank" rel="noreferrer" className="group block" title={`Open ${title} full size`}>
-          <img src={src} alt={title} className="h-36 w-full rounded-md border bg-white object-contain" loading="lazy" decoding="async" />
+        <a href={resolvedSrc} target="_blank" rel="noreferrer" className="group block" title={`Open ${title} full size`}>
+          <img src={resolvedSrc} alt={title} className="h-36 w-full rounded-md border bg-white object-contain" loading="lazy" decoding="async" />
           <span className="mt-2 flex items-center justify-center gap-1 text-xs font-semibold text-blue-700 group-hover:underline">
             <ExternalLink className="h-3.5 w-3.5" /> View full size
           </span>
