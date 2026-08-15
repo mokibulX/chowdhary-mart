@@ -3,6 +3,8 @@ import { eq, desc, and } from "drizzle-orm";
 import { db, ordersTable, deliveryPartnersTable, liveLocationsTable, orderTrackingTable, storesTable, activeDeliveryLocationsTable, deliveryTrackingHistoryTable } from "@workspace/db";
 import { requireApprovedDeliveryPartner, requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { riderZoneIds, isInsideZone } from "../lib/zones";
+import { createAndPushNotification } from "../lib/push-service";
+import { deliveryOtp, expireOrderIfNeeded, lifecycleMeta, pickupOtp } from "../lib/order-lifecycle";
 
 const router = Router();
 
@@ -48,8 +50,10 @@ router.get("/orders", async (req: AuthRequest, res) => {
     const storeMap = new Map(stores.map(s => [s.id, s]));
 
     const orders = await Promise.all(orderIds.map(async id => {
-      const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+      const [rawOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+      const order = rawOrder ? await expireOrderIfNeeded(rawOrder) : null;
       const store = order ? storeMap.get(order.storeId) : null;
+      const lifecycle = order ? await lifecycleMeta(order) : null;
       return order ? {
         ...order,
         store,
@@ -64,6 +68,9 @@ router.get("/orders", async (req: AuthRequest, res) => {
             label: "Customer pickup location",
             address: order.pickupAddress ?? "Confirmed pickup point",
           } : null,
+          pickupOtp: lifecycle?.pickupOtp,
+          deliveryOtp: lifecycle?.deliveryOtp,
+          lifecycle,
         },
       } : null;
     }));
@@ -90,7 +97,9 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
       .limit(30);
     const stores = await db.select().from(storesTable);
     const storeMap = new Map(stores.map(s => [s.id, s]));
-    res.json(orders
+    const activeOrders = await Promise.all(orders.map(expireOrderIfNeeded));
+    res.json(activeOrders
+      .filter((order) => order.status === "confirmed")
       .filter((order) => !order.zoneId || zones.includes(order.zoneId))
       .map(order => {
         const store = storeMap.get(order.storeId);
@@ -108,6 +117,7 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
               label: "Customer pickup location",
               address: order.pickupAddress ?? "Confirmed pickup point",
             } : null,
+            lifecycle: { sellerDecisionDeadline: null, preparationDeadline: null, pickupDeadline: null },
           },
         };
       }));
@@ -123,8 +133,10 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
     const dp = await getDP(req.user!.userId);
     if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
     const orderId = Number(req.params.orderId);
-    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+    const [rawOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+    const order = rawOrder ? await expireOrderIfNeeded(rawOrder) : null;
     if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    if (order.status !== "confirmed") { res.status(409).json({ error: "This delivery request is no longer available." }); return; }
     if (!dp.isVerified || !dp.isOnline) { res.status(403).json({ error: "Delivery partner must be approved and online." }); return; }
     const zones = await riderZoneIds(req.user!.userId);
     if (order.zoneId && !zones.includes(order.zoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
@@ -145,6 +157,18 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
       lat: dp.currentLat,
       lng: dp.currentLng,
     });
+
+    try {
+      await createAndPushNotification({
+        userId: order.userId,
+        type: "rider_assigned",
+        title: "Delivery partner assigned",
+        body: `A delivery partner accepted order #${order.orderNumber} and is heading to the shop.`,
+        data: { orderId, status: order.status },
+      });
+    } catch (notificationError) {
+      req.log.warn({ err: notificationError, orderId }, "Rider assignment notification failed");
+    }
 
     res.json({ ...order, riderZoneId: order.zoneId ?? dp.currentZoneId, assignedDeliveryPartnerId: dp.id });
   } catch (err) {
@@ -185,13 +209,23 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     const dp = await getDP(req.user!.userId);
     if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
     const orderId = Number(req.params.orderId);
-    const { status } = req.body as { status: "picked_up" | "on_the_way" | "delivered" };
+    const { status, pickupOtp: enteredPickupOtp, otp } = req.body as { status: "picked_up" | "on_the_way" | "delivered"; pickupOtp?: string; otp?: string };
     const [targetOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
     const zones = await riderZoneIds(req.user!.userId);
     if (!targetOrder || (targetOrder.zoneId && !zones.includes(targetOrder.zoneId))) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
     if (!(await assertDeliveryAssignment(orderId, dp.id))) {
       res.status(403).json({ error: "This order is not assigned to this delivery partner." });
       return;
+    }
+    const validTransition = (status === "picked_up" && targetOrder.status === "packed")
+      || (status === "on_the_way" && targetOrder.status === "picked_up")
+      || (status === "delivered" && targetOrder.status === "on_the_way");
+    if (!validTransition) { res.status(400).json({ error: "Invalid delivery status transition." }); return; }
+    if (status === "picked_up" && String(enteredPickupOtp ?? "") !== pickupOtp(orderId)) {
+      res.status(400).json({ error: "Invalid pickup OTP." }); return;
+    }
+    if (status === "delivered" && String(otp ?? "") !== deliveryOtp(orderId)) {
+      res.status(400).json({ error: "Invalid customer delivery OTP." }); return;
     }
 
     const update: Partial<typeof ordersTable.$inferInsert> = { status, riderZoneId: targetOrder.zoneId ?? dp.currentZoneId ?? null, updatedAt: new Date() };
@@ -210,6 +244,18 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
       lat: dp.currentLat,
       lng: dp.currentLng,
     });
+
+    try {
+      await createAndPushNotification({
+        userId: targetOrder.userId,
+        type: `order_${status}`,
+        title: status === "picked_up" ? "Order picked up" : status === "on_the_way" ? "Order is on the way" : "Order delivered",
+        body: `Order #${targetOrder.orderNumber} is now ${status.replace(/_/g, " ")}.`,
+        data: { orderId, status },
+      });
+    } catch (notificationError) {
+      req.log.warn({ err: notificationError, orderId }, "Delivery status notification failed");
+    }
 
     res.json(order);
   } catch (err) {

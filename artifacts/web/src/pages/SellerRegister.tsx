@@ -9,9 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle2, ClipboardCheck, Eye, EyeOff, LocateFixed, MapPin, PackagePlus, ShieldCheck, Store } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, ClipboardCheck, Eye, EyeOff, LocateFixed, MapPin, PackagePlus, ShieldCheck, Store, Upload, UserRound } from "lucide-react";
 import { isDemoOtp, testMode } from "@/lib/test-mode";
-import { getCurrentIndianLocation } from "@/lib/live-location";
+import { fileToDataUrl, getCurrentIndianLocation } from "@/lib/live-location";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 import { getFriendlyErrorMessage } from "@/lib/error-message";
 import { IndiaStateDistrictSelects } from "@/components/IndiaLocationSelects";
@@ -35,6 +35,8 @@ type SellerForm = {
   lat: string;
   lng: string;
   selectedZoneId: string;
+  ownerPhoto: string;
+  shopFrontPhoto: string;
 };
 type RegisterResponse = { token: string };
 
@@ -57,6 +59,8 @@ const initialForm: SellerForm = {
   lat: "",
   lng: "",
   selectedZoneId: "",
+  ownerPhoto: "",
+  shopFrontPhoto: "",
 };
 
 export default function SellerRegister() {
@@ -119,6 +123,20 @@ export default function SellerRegister() {
     }
   };
 
+  const setPhoto = async (key: "ownerPhoto" | "shopFrontPhoto", file?: File) => {
+    if (!file) return;
+    try {
+      const imageByName = /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(file.name);
+      if (!file.type.startsWith("image/") && !imageByName) throw new Error("Only image files are allowed.");
+      if (file.size > 20 * 1024 * 1024) throw new Error("Image must be under 20 MB.");
+      const dataUrl = await fileToDataUrl(file);
+      update(key, dataUrl);
+      authToast({ title: "Photo added", description: key === "ownerPhoto" ? "Seller photo is ready for admin review." : "Shop front photo is ready for admin review." });
+    } catch (error) {
+      authToast({ title: "Photo upload failed", description: getFriendlyErrorMessage(error, "Please choose a clear JPG, PNG or WEBP image."), variant: "destructive" });
+    }
+  };
+
   const validate = () => {
     const required: Array<keyof SellerForm> = ["name", "email", "phone", "password", "shopName", "shopAddress", "city", "district", "state", "pincode", "upiId"];
     const missing = required.find((key) => !form[key].trim());
@@ -144,6 +162,10 @@ export default function SellerRegister() {
     }
     if (!form.selectedZoneId) {
       authToast({ title: "Service zone required", description: "Admin-created active service zone select korun.", variant: "destructive" });
+      return false;
+    }
+    if (!form.ownerPhoto || !form.shopFrontPhoto) {
+      authToast({ title: "Photos required", description: "Add a clear seller photo and a photo of the shop front for admin verification.", variant: "destructive" });
       return false;
     }
     const selected = zones.find((zone) => String(zone.id) === form.selectedZoneId);
@@ -195,6 +217,8 @@ export default function SellerRegister() {
           selectedZoneId: Number(form.selectedZoneId),
           shopLatitude: Number(form.lat),
           shopLongitude: Number(form.lng),
+          avatarUrl: form.ownerPhoto,
+          bannerUrl: form.shopFrontPhoto,
         }),
       });
       login(res.token);
@@ -296,6 +320,29 @@ export default function SellerRegister() {
                 <Field label="Longitude" value={form.lng} onChange={(value) => update("lng", value)} />
               </div>
 
+              <div className="rounded-3xl border bg-gray-50 p-3 sm:p-4">
+                <div className="mb-3">
+                  <p className="font-bold">Verification photos</p>
+                  <p className="text-xs text-muted-foreground">Admin will review both photos before approving the seller dashboard.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <SellerPhotoInput
+                    label="Seller / owner photo *"
+                    value={form.ownerPhoto}
+                    icon={<UserRound className="h-5 w-5" />}
+                    camera="user"
+                    onFile={(file) => setPhoto("ownerPhoto", file)}
+                  />
+                  <SellerPhotoInput
+                    label="Shop front photo *"
+                    value={form.shopFrontPhoto}
+                    icon={<Store className="h-5 w-5" />}
+                    camera="environment"
+                    onFile={(file) => setPhoto("shopFrontPhoto", file)}
+                  />
+                </div>
+              </div>
+
               <div className="rounded-3xl border bg-white p-2 shadow-sm sm:p-4">
                 <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -395,6 +442,50 @@ export default function SellerRegister() {
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+function SellerPhotoInput({ label, value, icon, camera, onFile }: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  camera: "user" | "environment";
+  onFile: (file?: File) => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const chooseFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    try {
+      await onFile(file);
+    } finally {
+      setBusy(false);
+      event.target.value = "";
+    }
+  };
+  return (
+    <div className="min-w-0 space-y-3 rounded-2xl border bg-white p-3">
+      <Label className="flex items-center gap-2">{icon}{label}</Label>
+      {value ? (
+        <img src={value} alt={label} className="h-40 w-full rounded-xl border object-cover" />
+      ) : (
+        <div className="flex h-40 items-center justify-center rounded-xl border border-dashed bg-gray-50 text-sm text-muted-foreground">
+          <Camera className="mr-2 h-4 w-4" /> No photo selected
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <label className={`inline-flex h-11 cursor-pointer items-center justify-center rounded-xl border px-2 text-center text-sm font-medium hover:bg-gray-50 ${busy ? "pointer-events-none opacity-60" : ""}`}>
+          <Upload className="mr-2 h-4 w-4" /> Gallery
+          <input type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif" className="hidden" disabled={busy} onChange={chooseFile} />
+        </label>
+        <label className={`inline-flex h-11 cursor-pointer items-center justify-center rounded-xl border border-orange-200 bg-orange-50 px-2 text-center text-sm font-semibold text-orange-700 hover:bg-orange-100 ${busy ? "pointer-events-none opacity-60" : ""}`}>
+          <Camera className="mr-2 h-4 w-4" /> Camera
+          <input type="file" accept="image/*" capture={camera} className="hidden" disabled={busy} onChange={chooseFile} />
+        </label>
+      </div>
+      {busy && <p className="text-xs text-muted-foreground">Preparing photo...</p>}
     </div>
   );
 }

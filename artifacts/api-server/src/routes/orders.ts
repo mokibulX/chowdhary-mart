@@ -12,6 +12,8 @@ import { generateOrderNumber } from "../lib/auth";
 import { getEligibleRegistrationZones } from "../lib/zones";
 import { beginIdempotency, getIdempotencyKey, requestHash, saveIdempotencyResponse } from "../lib/idempotency";
 import { validateCouponForUser } from "../lib/coupons";
+import { createAndPushNotification } from "../lib/push-service";
+import { deliveryOtp } from "../lib/order-lifecycle";
 
 const router = Router();
 
@@ -191,7 +193,6 @@ router.post("/", async (req: AuthRequest, res) => {
     const loyaltyEarned = Math.floor(total / 10); // 1 point per ₹10
 
     // Create order
-    const assignedPartner = await assignNearestPartner(store);
     const promisedMins = Math.min(40, Math.max(20, store.estimatedDeliveryMins ?? 40));
 
     const [order] = await tx.insert(ordersTable).values({
@@ -201,14 +202,14 @@ router.post("/", async (req: AuthRequest, res) => {
       zoneId: customerZone?.id ?? store.zoneId ?? null,
       customerZoneId: customerZone?.id ?? null,
       shopZoneId,
-      riderZoneId: assignedPartner?.currentZoneId ?? null,
+      riderZoneId: null,
       addressId,
       addressSnapshot: { line1: selectedAddress || address.line1, city: address.city, pincode: address.pincode, name: address.name },
       pickupLatitude: selectedLat.toFixed(7),
       pickupLongitude: selectedLng.toFixed(7),
       pickupAddress: selectedAddress,
       pickupDistanceKm: shopDistanceKm.toFixed(2),
-      status: assignedPartner ? "confirmed" : "pending",
+      status: "pending",
       paymentMethod,
       paymentStatus: "pending",
       subtotal: subtotal.toFixed(2),
@@ -248,17 +249,15 @@ router.post("/", async (req: AuthRequest, res) => {
     await tx.insert(orderTrackingTable).values([
       {
         orderId: order.id,
-        deliveryPartnerId: assignedPartner?.id,
         status: "pending",
-        message: "Order placed",
+        message: "Order placed. Waiting for seller acceptance.",
       },
       {
         orderId: order.id,
-        deliveryPartnerId: assignedPartner?.id,
-        status: assignedPartner ? "confirmed" : "pending",
-        message: assignedPartner ? "Order confirmed and delivery partner assigned" : "Order confirmed, assigning delivery partner",
-        lat: assignedPartner?.currentLat ?? store.lat,
-        lng: assignedPartner?.currentLng ?? store.lng,
+        status: "pending",
+        message: "Seller has been alerted and must accept or reject the order.",
+        lat: store.lat,
+        lng: store.lng,
       },
     ]);
 
@@ -331,6 +330,20 @@ router.post("/", async (req: AuthRequest, res) => {
       body: result.body as Record<string, unknown>,
       resourceId: String((result.body as { id?: number }).id ?? ""),
     });
+    const createdOrder = result.body as { id: number; orderNumber: string; total: string; store?: { userId?: number } };
+    if (createdOrder.store?.userId) {
+      try {
+        await createAndPushNotification({
+          userId: createdOrder.store.userId,
+          type: "new_order",
+          title: "New order received",
+          body: `Order #${createdOrder.orderNumber} for Rs.${Number(createdOrder.total).toFixed(0)} is waiting for your decision.`,
+          data: { orderId: createdOrder.id, orderNumber: createdOrder.orderNumber, status: "pending" },
+        });
+      } catch (notificationError) {
+        req.log.warn({ err: notificationError, orderId: createdOrder.id }, "Seller new-order notification failed");
+      }
+    }
     res.status(result.status).json(result.body);
   } catch (err) {
     if (err instanceof Error && err.message.startsWith("OUT_OF_STOCK:")) {
@@ -369,6 +382,7 @@ router.get("/:orderId", async (req: AuthRequest, res) => {
         status: order.status,
         timeline: tracking.map(t => ({ status: t.status, message: t.message, updatedAt: t.updatedAt })),
         estimatedMins: order.estimatedDeliveryMins,
+        deliveryOtp: ["picked_up", "on_the_way", "arriving"].includes(order.status) ? deliveryOtp(order.id) : null,
       },
     });
   } catch (err) {

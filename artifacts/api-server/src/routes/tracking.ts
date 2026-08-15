@@ -112,7 +112,7 @@ router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
     } : null;
     const customerLocation = customerCoords ? {
       ...customerCoords,
-      label: address?.label ?? "Customer",
+      label: (order.addressSnapshot as Record<string, unknown> | null)?.name as string ?? address?.label ?? "Customer",
       address: order.pickupAddress ?? (address ? `${address.line1}, ${address.city}` : "Delivery address"),
     } : null;
     const partnerLocation = partnerCoords ? {

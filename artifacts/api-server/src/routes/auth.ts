@@ -281,6 +281,10 @@ router.post("/register", async (req, res) => {
       res.status(400).json({ error: zoneValidation.error });
       return;
     }
+    if (userRole === "vendor" && (!cleanText(req.body.avatarUrl) || !cleanText(req.body.bannerUrl))) {
+      res.status(400).json({ error: "Seller photo and shop front photo are required" });
+      return;
+    }
     if (userRole === "delivery_partner") {
       await ensureDeliveryReviewColumns();
       await validateBankDetails(req.body ?? {});
@@ -292,6 +296,7 @@ router.post("/register", async (req, res) => {
         email: email ?? null,
         phone: phone ?? null,
         passwordHash,
+        avatarUrl: cleanText(req.body.avatarUrl) ?? null,
         role: userRole,
         referralCode,
         isVerified: true,

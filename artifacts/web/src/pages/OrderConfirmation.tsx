@@ -12,7 +12,7 @@ export default function OrderConfirmation() {
   const { user } = useAuth();
 
   const { data: order, isLoading } = useGetOrder(id, {
-    query: { enabled: !!id && !!user, queryKey: getGetOrderQueryKey(id) },
+    query: { enabled: !!id && !!user, queryKey: getGetOrderQueryKey(id), refetchInterval: 4000 },
   });
 
   if (isLoading) {
@@ -29,10 +29,12 @@ export default function OrderConfirmation() {
   return (
     <div className="mx-auto max-w-xl space-y-5">
       <section className="rounded-lg border bg-white p-6 text-center shadow-sm">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-green-700">
-          <CheckCircle2 className="h-9 w-9" />
+        <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${order.status === "cancelled" ? "bg-red-100 text-red-700" : order.status === "pending" ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}`}>
+          {order.status === "pending" ? <Clock className="h-9 w-9" /> : <CheckCircle2 className="h-9 w-9" />}
         </div>
-        <Badge className="mb-3 bg-green-100 text-green-700 hover:bg-green-100">Order confirmed</Badge>
+        <Badge className={`mb-3 ${order.status === "cancelled" ? "bg-red-100 text-red-700" : order.status === "pending" ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}`}>
+          {order.status === "cancelled" ? "Order rejected" : order.status === "pending" ? "Waiting for seller" : "Order confirmed"}
+        </Badge>
         <h1 className="text-2xl font-bold">Thank you for shopping with Chowdhary Mart</h1>
         <p className="mt-2 text-sm text-muted-foreground">Order #{order.orderNumber} has been placed successfully.</p>
       </section>

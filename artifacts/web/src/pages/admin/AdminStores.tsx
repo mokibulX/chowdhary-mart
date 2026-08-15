@@ -37,7 +37,7 @@ export default function AdminStores() {
     try {
       await customFetch(`/api/admin/stores/${store.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ isOpen: !store.isOpen }),
+        body: JSON.stringify({ isOpen: !store.isOpen, isActive: !store.isOpen }),
       });
       qc.invalidateQueries({ queryKey: getListAdminStoresQueryKey() });
       toast({

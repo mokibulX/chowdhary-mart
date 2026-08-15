@@ -144,7 +144,7 @@ function ApplicationCard({ app, children }: { app: any; children?: ReactNode }) 
         <Info label="Address" value={`${app.address}, ${app.city}, ${app.state} - ${app.pincode}`} wide />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <DocumentPreview title="Store logo" src={app.logoUrl} />
+        <DocumentPreview title="Seller / owner photo" src={app.ownerPhoto || app.avatarUrl} />
         <DocumentPreview title="Shop front photo" src={app.shopFrontPhoto || app.bannerUrl} />
       </div>
       {children && <div className="mt-5 flex flex-wrap gap-2">{children}</div>}

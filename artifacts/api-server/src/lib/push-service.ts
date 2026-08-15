@@ -61,7 +61,7 @@ async function sendFcmV1(tokens: string[], payload: PushPayload) {
           token,
           notification: { title: payload.title, body: payload.body },
           data: Object.fromEntries(Object.entries(payload.data ?? {}).map(([key, value]) => [key, String(value)])),
-          android: { priority: "HIGH" },
+          android: { priority: "HIGH", notification: { sound: "default", channel_id: "orders" } },
         },
       }),
     });
@@ -79,7 +79,7 @@ async function sendFcmLegacy(tokens: string[], payload: PushPayload) {
     body: JSON.stringify({
       registration_ids: tokens,
       priority: "high",
-      notification: { title: payload.title, body: payload.body },
+      notification: { title: payload.title, body: payload.body, sound: "default", android_channel_id: "orders" },
       data: payload.data ?? {},
     }),
   });

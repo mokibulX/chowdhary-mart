@@ -6,6 +6,8 @@ import {
 } from "@workspace/db";
 import { requireApprovedVendor, requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { sellerZoneIds } from "../lib/zones";
+import { createAndPushNotification } from "../lib/push-service";
+import { expireOrderIfNeeded, lifecycleMeta } from "../lib/order-lifecycle";
 
 const router = Router();
 
@@ -79,15 +81,34 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
     return;
   }
   try {
-    const fields = "code,product_name,product_name_en,generic_name,generic_name_en,brands,quantity,categories,categories_tags,image_url,image_front_url,image_front_small_url,ingredients_text";
-    const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${fields}`, {
-      headers: { "User-Agent": "ChowdharyMart/1.0 (barcode product import)" },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!response.ok) throw new Error(`Barcode provider returned ${response.status}`);
-    const result = await response.json() as { status?: number; product?: Record<string, unknown> };
-    const product = result.product;
-    if (result.status !== 1 || !product) {
+    const fields = [
+      "code", "product_name", "product_name_en", "generic_name", "generic_name_en", "brands", "quantity",
+      "categories", "categories_tags", "labels", "origins", "manufacturing_places", "countries", "stores",
+      "packaging", "serving_size", "ingredients_text", "allergens", "nutriments", "nutrition_grades",
+      "nova_group", "ecoscore_grade", "image_url", "image_front_url", "image_ingredients_url",
+      "image_nutrition_url", "image_packaging_url",
+    ].join(",");
+    const providers = ["world.openfoodfacts.org", "world.openbeautyfacts.org", "world.openproductsfacts.org"];
+    let product: Record<string, unknown> | undefined;
+    let source = "Open Facts";
+    for (const provider of providers) {
+      try {
+        const response = await fetch(`https://${provider}/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${fields}`, {
+          headers: { "User-Agent": "ChowdharyMart/1.0 (barcode product import)" },
+          signal: AbortSignal.timeout(7000),
+        });
+        if (!response.ok) continue;
+        const result = await response.json() as { status?: number; product?: Record<string, unknown> };
+        if (result.status === 1 && result.product) {
+          product = result.product;
+          source = provider.includes("beauty") ? "Open Beauty Facts" : provider.includes("products") ? "Open Products Facts" : "Open Food Facts";
+          break;
+        }
+      } catch (error) {
+        req.log.warn({ err: error, provider }, "Barcode provider lookup failed");
+      }
+    }
+    if (!product) {
       res.status(404).json({ error: "No product details found for this barcode" });
       return;
     }
@@ -96,9 +117,33 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       res.status(404).json({ error: "Product exists, but its name is not available" });
       return;
     }
-    const imageUrls = [product.image_url, product.image_front_url, product.image_front_small_url]
+    const imageUrls = [product.image_url, product.image_front_url, product.image_ingredients_url, product.image_nutrition_url, product.image_packaging_url]
       .map(textValue)
       .filter((url, index, values) => /^https:\/\//i.test(url) && values.indexOf(url) === index);
+    const nutriments = product.nutriments && typeof product.nutriments === "object" ? product.nutriments as Record<string, unknown> : {};
+    const nutrition = Object.fromEntries(Object.entries(nutriments)
+      .filter(([key, value]) => !key.endsWith("_unit") && !key.endsWith("_value") && ["string", "number"].includes(typeof value))
+      .slice(0, 30));
+    const specifications = Object.fromEntries(Object.entries({
+      Brand: textValue(product.brands),
+      Category: textValue(product.categories),
+      Quantity: textValue(product.quantity),
+      Packaging: textValue(product.packaging),
+      "Serving size": textValue(product.serving_size),
+      Labels: textValue(product.labels),
+      Origin: textValue(product.origins),
+      Manufacturer: textValue(product.manufacturing_places),
+      Countries: textValue(product.countries),
+      Stores: textValue(product.stores),
+      Ingredients: textValue(product.ingredients_text),
+      Allergens: textValue(product.allergens),
+      "Nutrition grade": textValue(product.nutrition_grades),
+      "NOVA group": product.nova_group == null ? "" : String(product.nova_group),
+      "Eco score": textValue(product.ecoscore_grade),
+      Nutrition: Object.keys(nutrition).length ? nutrition : undefined,
+      Source: source,
+      Barcode: barcode,
+    }).filter(([, value]) => value !== "" && value !== undefined));
     res.json({
       barcode,
       name,
@@ -108,7 +153,8 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       category: textValue(product.categories),
       categoryTags: Array.isArray(product.categories_tags) ? product.categories_tags.map(textValue).filter(Boolean) : [],
       images: imageUrls,
-      source: "Open Food Facts",
+      specifications,
+      source,
     });
   } catch (err) {
     req.log.error(err);
@@ -207,7 +253,18 @@ router.get("/orders", async (req: AuthRequest, res) => {
       .orderBy(desc(ordersTable.createdAt))
       .limit(50);
 
-    res.json(orders.map(o => ({ ...o, store })));
+    const enriched = await Promise.all(orders.map(async (rawOrder) => {
+      const order = await expireOrderIfNeeded(rawOrder);
+      const lifecycle = await lifecycleMeta(order);
+      return {
+        ...order,
+        store,
+        items: await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id)),
+        lifecycle,
+        tracking: { pickupOtp: lifecycle.pickupOtp },
+      };
+    }));
+    res.json(enriched);
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -218,23 +275,54 @@ router.get("/orders", async (req: AuthRequest, res) => {
 router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
   try {
     const orderId = Number(req.params.orderId);
-    const { status } = req.body as { status: string };
+    const { status, reason } = req.body as { status: string; reason?: string };
 
     const store = await getVendorStore(req.user!.userId);
     if (!store || !(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "Order is outside your service zone." }); return; }
     const [targetOrder] = await db.select().from(ordersTable).where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, store.id))).limit(1);
     if (!targetOrder || (store.zoneId && targetOrder.zoneId && targetOrder.zoneId !== store.zoneId)) { res.status(404).json({ error: "Order not found in your zone" }); return; }
+    const isAccept = status === "confirmed" && targetOrder.status === "pending";
+    const isReady = status === "packed" && ["confirmed", "preparing"].includes(targetOrder.status);
+    const isReject = status === "cancelled" && ["pending", "confirmed", "preparing", "packed"].includes(targetOrder.status);
+    if (!isAccept && !isReady && !isReject) {
+      res.status(400).json({ error: "Seller can only accept, mark ready, or cancel an order before pickup." });
+      return;
+    }
+    if (isReject && !String(reason ?? "").trim()) {
+      res.status(400).json({ error: "A rejection or cancellation reason is required." });
+      return;
+    }
 
     const [order] = await db.update(ordersTable)
-      .set({ status: status as typeof ordersTable.$inferInsert["status"], updatedAt: new Date() })
+      .set({
+        status: status as typeof ordersTable.$inferInsert["status"],
+        cancellationReason: isReject ? String(reason).trim() : null,
+        cancelledAt: isReject ? new Date() : null,
+        updatedAt: new Date(),
+      })
       .where(eq(ordersTable.id, orderId))
       .returning();
 
     await db.insert(orderTrackingTable).values({
       orderId,
       status,
-      message: `Order status updated to ${status}`,
+      message: isAccept ? "Seller accepted and confirmed the order" : isReady ? "Seller marked the order ready for pickup" : `Seller rejected the order: ${String(reason).trim()}`,
     });
+
+    try {
+      await createAndPushNotification({
+        userId: targetOrder.userId,
+        type: isAccept ? "order_confirmed" : isReady ? "order_ready" : "order_rejected",
+        title: isAccept ? "Order confirmed" : isReady ? "Order ready for pickup" : "Order rejected by seller",
+        body: isAccept
+          ? `The seller accepted order #${targetOrder.orderNumber}. Preparation and delivery matching will begin now.`
+          : isReady ? `Order #${targetOrder.orderNumber} is packed and waiting for the delivery partner.`
+          : `Order #${targetOrder.orderNumber} was rejected. Reason: ${String(reason).trim()}`,
+        data: { orderId, orderNumber: targetOrder.orderNumber, status },
+      });
+    } catch (notificationError) {
+      req.log.warn({ err: notificationError, orderId }, "Customer order notification failed");
+    }
 
     res.json({ ...order, store });
   } catch (err) {

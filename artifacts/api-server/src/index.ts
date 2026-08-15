@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { loadEnv, validateRuntimeEnv } from "@workspace/db/env";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
+import { sweepExpiredOrders } from "./lib/order-lifecycle";
 import { ensureConfiguredAdmin } from "./lib/bootstrap-admin";
 
 loadEnv();
@@ -44,6 +45,12 @@ io.on("connection", (socket) => {
     if (zoneId) socket.join(`zone:riders:${zoneId}`);
   });
 });
+
+const lifecycleTimer = setInterval(() => {
+  void sweepExpiredOrders().catch((error) => logger.error({ err: error }, "Order lifecycle sweep failed"));
+}, 15_000);
+lifecycleTimer.unref();
+void sweepExpiredOrders().catch((error) => logger.error({ err: error }, "Initial order lifecycle sweep failed"));
 
 server.listen(port, (err?: Error) => {
   if (err) {

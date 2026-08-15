@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Eye, FileText, Package, Printer, XCircle } from "lucide-react";
 
-const NEXT_STATUS: Record<string, string> = { pending: "confirmed" };
+const NEXT_STATUS: Record<string, string> = { pending: "confirmed", confirmed: "packed", preparing: "packed" };
 const STATUS_COLORS: Record<string, string> = {
   delivered: "bg-green-100 text-green-700",
   cancelled: "bg-red-100 text-red-700",
@@ -32,7 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
   delivered: "Delivered",
   cancelled: "Cancelled",
 };
-const NEXT_LABEL: Record<string, string> = { pending: "Accept order" };
+const NEXT_LABEL: Record<string, string> = { pending: "Accept order", confirmed: "Mark ready", preparing: "Mark ready" };
 type PrintType = "customer_bill" | "packing_slip" | "preparation_slip";
 const SELLER_REJECT_REASONS = ["Product out of stock", "Shop closed", "Unable to prepare", "Wrong product price", "Too many active orders", "Product unavailable", "Shop temporarily unavailable", "Delivery service unavailable", "Other"];
 const SELLER_CANCEL_REASONS = ["Items became unavailable", "Shop emergency", "Unable to prepare on time", "Technical issue", "Shop closing", "Incorrect stock", "Other"];
@@ -89,7 +89,7 @@ export default function VendorOrders() {
       return;
     }
     updateStatus.mutate(
-      { orderId: decisionOrder.id, data: { status: decisionType === "reject" ? "cancelled" : "cancelled_by_seller", reason } as any },
+      { orderId: decisionOrder.id, data: { status: "cancelled", reason } as any },
       {
         onSuccess: () => {
           refresh();

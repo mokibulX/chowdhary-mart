@@ -118,6 +118,7 @@ export default function VendorProducts() {
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [productStep, setProductStep] = useState(0);
   const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [importedSpecifications, setImportedSpecifications] = useState<Record<string, unknown>>({});
 
   const { data: products, isLoading } = useListVendorProducts({
     query: { enabled: !!user, queryKey: getListVendorProductsQueryKey() },
@@ -152,6 +153,7 @@ export default function VendorProducts() {
     setSelectedColors([]);
     setProductStep(0);
     setBarcodeLoading(false);
+    setImportedSpecifications({});
     reset({
       categoryId: Number((categories as any[] | undefined)?.[0]?.id ?? 2),
       barcode: "",
@@ -176,6 +178,7 @@ export default function VendorProducts() {
     setColorImageUrls(p.colorImages && typeof p.colorImages === "object" ? p.colorImages : {});
     setSelectedSizes(normalizeSizes(p.sizes ?? p.specifications?.Sizes ?? p.specifications?.Size));
     setSelectedColors(normalizeSizes(p.colors ?? p.specifications?.Colors ?? p.specifications?.Color));
+    setImportedSpecifications(p.specifications && typeof p.specifications === "object" ? p.specifications : {});
     reset({
       name: p.name, description: p.description ?? "",
       barcode: p.sku ?? "", productDate: p.specifications?.ProductDate ?? "",
@@ -215,6 +218,7 @@ export default function VendorProducts() {
         .filter(([, url]) => Boolean(url))
     );
     const specifications = {
+      ...importedSpecifications,
       ...(sizes.length ? { Sizes: sizes.join(", ") } : {}),
       ...(colors.length ? { Colors: colors.join(", ") } : {}),
       Return: data.returnWindow || "Damaged items only",
@@ -272,7 +276,12 @@ export default function VendorProducts() {
     try {
       const found = await customFetch<any>(`/api/vendor/barcode/${barcode}`, { responseType: "json" });
       setValue("name", found.name || "", { shouldDirty: true, shouldValidate: true });
-      const description = [found.brand ? `Brand: ${found.brand}` : "", found.description || ""].filter(Boolean).join("\n");
+      const imported = found.specifications && typeof found.specifications === "object" ? found.specifications : {};
+      setImportedSpecifications(imported);
+      const detailLines = Object.entries(imported)
+        .filter(([key, value]) => key !== "Nutrition" && key !== "Barcode" && key !== "Source" && typeof value !== "object")
+        .map(([key, value]) => `${key}: ${String(value)}`);
+      const description = [found.description || "", ...detailLines].filter(Boolean).join("\n");
       setValue("description", description, { shouldDirty: true });
 
       const categoryText = `${found.category || ""} ${(found.categoryTags || []).join(" ")}`.toLowerCase();
@@ -290,11 +299,36 @@ export default function VendorProducts() {
       }
       const images = Array.isArray(found.images) ? found.images.filter((url: unknown) => typeof url === "string" && /^https:\/\//i.test(url)) : [];
       if (images.length) setImageUrls(images);
-      toast({ title: "Product details found", description: "Details and image added. Ekhon price, MRP and product date set korun." });
+      toast({ title: "Product details imported", description: `${images.length} company image(s) and available product details added. Review or edit everything before saving.` });
     } catch (err) {
       toast({ title: "Barcode lookup failed", description: getFriendlyErrorMessage(err, "Product paoa jayni. Details manually add korte parben."), variant: "destructive" });
     } finally {
       setBarcodeLoading(false);
+    }
+  };
+
+  const scanBarcodeImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const Detector = (window as any).BarcodeDetector;
+    if (!Detector) {
+      toast({ title: "Camera scanner unavailable", description: "This browser cannot read barcodes from photos. Enter the barcode number or use Chrome on Android.", variant: "destructive" });
+      return;
+    }
+    setBarcodeLoading(true);
+    try {
+      const bitmap = await createImageBitmap(file);
+      const detector = new Detector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
+      const results = await detector.detect(bitmap);
+      bitmap.close();
+      const barcode = String(results?.[0]?.rawValue ?? "").replace(/\D/g, "");
+      if (!/^\d{8,14}$/.test(barcode)) throw new Error("No valid product barcode was found in the photo.");
+      setValue("barcode", barcode, { shouldDirty: true, shouldValidate: true });
+      window.setTimeout(() => void lookupBarcode(), 0);
+    } catch (error) {
+      setBarcodeLoading(false);
+      toast({ title: "Barcode scan failed", description: getFriendlyErrorMessage(error, "Keep the barcode clear, well-lit and fully inside the camera frame."), variant: "destructive" });
     }
   };
 
@@ -541,6 +575,10 @@ export default function VendorProducts() {
                       {barcodeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanBarcode className="mr-2 h-4 w-4" />}
                       {barcodeLoading ? "Finding" : "Find"}
                     </Button>
+                    <label className={`inline-flex h-10 shrink-0 cursor-pointer items-center justify-center rounded-md border border-blue-200 bg-white px-3 text-sm font-medium hover:bg-blue-50 ${barcodeLoading ? "pointer-events-none opacity-60" : ""}`}>
+                      <Camera className="mr-2 h-4 w-4" /> Scan
+                      <input type="file" accept="image/*" capture="environment" className="hidden" disabled={barcodeLoading} onChange={scanBarcodeImage} />
+                    </label>
                   </div>
                   {errors.barcode && <p className="mt-1 text-xs text-red-500">{errors.barcode.message}</p>}
                 </div>

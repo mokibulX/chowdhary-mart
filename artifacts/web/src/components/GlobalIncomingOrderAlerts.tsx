@@ -43,7 +43,7 @@ export function GlobalIncomingOrderAlerts() {
           pushAlerts(alerts);
         }
         if (user.role === "delivery_partner" && (user as any).isOnline !== false) {
-          const orders = await customFetch<any[]>("/api/delivery/orders", { responseType: "json" });
+          const orders = await customFetch<any[]>("/api/delivery/available-orders", { responseType: "json" });
           const eligible = (orders ?? []).filter((order) => order.status === "confirmed" && !order.deliveryPartnerId);
           const alerts = eligible.map((order) => ({ key: `rider-${user.id}-${order.id}-confirmed`, role: "rider" as const, order }));
           pushAlerts(alerts);

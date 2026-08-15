@@ -321,6 +321,12 @@ export default function DeliveryDashboard() {
               <div className="space-y-3">
                 {(orders as any[]).map((order) => (
                   <div key={order.id} className="rounded-lg border p-3 shadow-sm sm:p-4">
+                    {(() => {
+                      const assigned = Boolean(order.liveTracking?.lifecycle?.assignedDeliveryPartnerId);
+                      const goingToCustomer = ["picked_up", "on_the_way", "arriving"].includes(order.status);
+                      const destinationLabel = goingToCustomer ? "Customer" : "Shop";
+                      return <div className="mb-3 flex flex-wrap items-center gap-2 text-xs"><Badge variant="outline">{assigned ? "Assigned to you" : "Available request"}</Badge><Badge variant="outline">Next: {destinationLabel}</Badge></div>;
+                    })()}
                     {order.store?.bannerUrl ? (
                       <div className="mb-3 overflow-hidden rounded-lg border bg-gray-50">
                         <img src={order.store.bannerUrl} alt={`${order.store?.name ?? "Pickup shop"} front`} className="h-40 w-full object-cover sm:h-48" loading="lazy" decoding="async" />
@@ -363,12 +369,12 @@ export default function DeliveryDashboard() {
                       <Link href={`/track/${order.id}`}>
                         <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> Track map</Button>
                       </Link>
-                      {order.pickupLatitude && order.pickupLongitude && (
-                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${order.pickupLatitude},${order.pickupLongitude}&travelmode=driving`} target="_blank" rel="noreferrer">
-                          <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> Navigate</Button>
+                      {(["picked_up", "on_the_way", "arriving"].includes(order.status) ? order.pickupLatitude && order.pickupLongitude : order.store?.lat && order.store?.lng) && (
+                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${["picked_up", "on_the_way", "arriving"].includes(order.status) ? `${order.pickupLatitude},${order.pickupLongitude}` : `${order.store.lat},${order.store.lng}`}&travelmode=driving`} target="_blank" rel="noreferrer">
+                          <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> {(["picked_up", "on_the_way", "arriving"].includes(order.status)) ? "Directions to customer" : "Directions to shop"}</Button>
                         </a>
                       )}
-                      {["confirmed", "preparing"].includes(order.status) && (
+                      {["confirmed", "preparing"].includes(order.status) && !order.liveTracking?.lifecycle?.assignedDeliveryPartnerId && (
                         <>
                           <Button className="w-full sm:w-auto" size="sm" onClick={() => acceptOrder(order.id)} disabled={busyOrderId === order.id}>
                             <CheckCircle className="mr-2 h-4 w-4" /> Accept

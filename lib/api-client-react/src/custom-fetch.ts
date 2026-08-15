@@ -1440,6 +1440,7 @@ function upsertVendorApplication(state: MockRecord, user: MockRecord, body: Mock
     ownerName: body.name ?? user.name,
     ownerEmail: body.email ?? user.email ?? "",
     ownerPhone: body.phone ?? user.phone ?? "",
+    ownerPhoto: body.avatarUrl ?? user.avatarUrl ?? existing?.ownerPhoto ?? "",
     shopName: body.shopName ?? existing?.shopName ?? `${body.name ?? user.name}'s Store`,
     businessType: body.businessType ?? existing?.businessType ?? "Local retail store",
     category: body.shopCategory ?? body.category ?? existing?.category ?? "General",
@@ -1454,6 +1455,8 @@ function upsertVendorApplication(state: MockRecord, user: MockRecord, body: Mock
     accountNumber: body.accountNumber ?? existing?.accountNumber ?? "",
     ifsc: body.ifsc ?? existing?.ifsc ?? "",
     upiId: body.upiId ?? existing?.upiId ?? "",
+    shopFrontPhoto: body.bannerUrl ?? existing?.shopFrontPhoto ?? "",
+    bannerUrl: body.bannerUrl ?? existing?.bannerUrl ?? "",
     status: existing?.status === "approved" ? "approved" : "pending",
     submittedAt: existing?.submittedAt ?? mockNow(),
     updatedAt: mockNow(),
@@ -1474,8 +1477,8 @@ function createStoreFromApplication(state: MockRecord, application: MockRecord) 
     city: application.city,
     state: application.state,
     pincode: application.pincode,
-    logoUrl: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=400&q=80",
-    bannerUrl: "",
+    logoUrl: application.logoUrl ?? "",
+    bannerUrl: application.shopFrontPhoto ?? application.bannerUrl ?? "",
     rating: "4.1",
     ratingCount: 0,
     estimatedDeliveryMins: 40,
@@ -2342,6 +2345,9 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
       makeMockError(403, "This account type cannot be created from the public application.", method, path);
     }
     const role = requestedRole;
+    if (role === "vendor" && (!body.avatarUrl || !body.bannerUrl)) {
+      makeMockError(400, "Seller photo and shop front photo are required", method, path);
+    }
     if (role === "vendor" || role === "delivery_partner") {
       const selectedZoneId = Number(body.selectedZoneId ?? body.zoneId);
       const lat = Number(role === "vendor" ? body.shopLatitude ?? body.lat : body.currentLatitude ?? body.lat);
@@ -3968,6 +3974,11 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
         deliveryEnabled: body.deliveryEnabled ?? store.deliveryEnabled ?? true,
         updatedAt: mockNow(),
       });
+      if (body.isActive !== undefined) {
+        const ownerId = Number(store.ownerId ?? store.userId ?? 0);
+        const owner = state.users.find((item: MockRecord) => Number(item.id) === ownerId && item.role === "vendor");
+        if (owner) owner.isActive = Boolean(body.isActive);
+      }
       assignZoneIds(state);
       saveMockState(state);
       return ok(store);

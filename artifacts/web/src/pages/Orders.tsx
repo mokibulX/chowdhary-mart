@@ -31,7 +31,7 @@ export default function Orders() {
 
   const params = filter !== "all" ? { status: filter } : {};
   const { data: orders, isLoading } = useListOrders(params, {
-    query: { enabled: !!user, queryKey: getListOrdersQueryKey(params) },
+    query: { enabled: !!user, queryKey: getListOrdersQueryKey(params), refetchInterval: 5000 },
   });
 
   if (!user) {

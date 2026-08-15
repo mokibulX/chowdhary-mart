@@ -841,6 +841,7 @@ router.get("/store-applications", async (req: AuthRequest, res) => {
       ownerName: owner.name,
       ownerEmail: owner.email,
       ownerPhone: owner.phone,
+      ownerPhoto: owner.avatarUrl,
       shopName: store.name,
       businessType: store.description,
       category: "Local store",
@@ -1449,6 +1450,11 @@ router.patch("/stores/:storeId", async (req: AuthRequest, res) => {
     if (req.body.isOpen !== undefined) patch.isOpen = Boolean(req.body.isOpen);
     if (req.body.isActive !== undefined) patch.isActive = Boolean(req.body.isActive);
     const [store] = await db.update(storesTable).set(patch).where(eq(storesTable.id, storeId)).returning();
+    if (req.body.isActive !== undefined) {
+      await db.update(usersTable)
+        .set({ isActive: Boolean(req.body.isActive), updatedAt: new Date() })
+        .where(and(eq(usersTable.id, existing.userId), eq(usersTable.role, "vendor")));
+    }
     res.json(store);
   } catch (err) {
     req.log.error(err);

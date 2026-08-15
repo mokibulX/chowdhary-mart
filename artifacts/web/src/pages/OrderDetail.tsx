@@ -30,7 +30,7 @@ export default function OrderDetail() {
   const [cancelReason, setCancelReason] = useState("");
 
   const { data: order, isLoading } = useGetOrder(id, {
-    query: { enabled: !!id && !!user, queryKey: getGetOrderQueryKey(id) },
+    query: { enabled: !!id && !!user, queryKey: getGetOrderQueryKey(id), refetchInterval: 4000 },
   });
   const cancelOrder = useCancelOrder();
 
@@ -92,6 +92,13 @@ export default function OrderDetail() {
               </Button>
             </Link>
           </div>
+          {tracking?.deliveryOtp && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-900">
+              <p className="text-sm font-semibold">Delivery OTP</p>
+              <p className="mt-1 text-2xl font-bold tracking-widest">{tracking.deliveryOtp}</p>
+              <p className="text-xs">Share this code only after the delivery partner reaches you with the order.</p>
+            </div>
+          )}
           <div className="relative">
             <div className="absolute left-3.5 top-0 bottom-0 w-0.5 bg-gray-100" />
             {TRACKING_STEPS.map((step, i) => {
