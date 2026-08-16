@@ -1379,20 +1379,20 @@ function requireDeliveryKyc(body: MockRecord, method: string, path: string) {
 
   if (!/^\d{10}$/.test(phone)) makeMockError(400, "Valid 10 digit mobile number required", method, path);
   if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(password)) makeMockError(400, "Password must be 8+ characters with uppercase, lowercase, number and special character", method, path);
-  if (!/^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$/.test(vehicleNumber)) makeMockError(400, "Valid vehicle number required", method, path);
+  if (licenceRequired && !/^[A-Z]{2}\s?\d{1,2}\s?[A-Z]{1,3}\s?\d{4}$/.test(vehicleNumber)) makeMockError(400, "Valid vehicle number required", method, path);
   if (licenceRequired && licenseNumber.length < 8) makeMockError(400, "Valid driving license number required", method, path);
-  if (!/^\d{12}$/.test(aadhaar)) makeMockError(400, "Valid 12 digit Aadhaar number required", method, path);
-  if (!/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) makeMockError(400, "Valid PAN number required", method, path);
+  if (!aadhaar && !pan) makeMockError(400, "Aadhaar or PAN number required", method, path);
+  if (aadhaar && !/^\d{12}$/.test(aadhaar)) makeMockError(400, "Valid 12 digit Aadhaar number required", method, path);
+  if (pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) makeMockError(400, "Valid PAN number required", method, path);
   if (!String(body.fullAddress ?? "").trim()) makeMockError(400, "Full address required for background verification", method, path);
   if (!/^\d{6}$/.test(pincode)) makeMockError(400, "Valid 6 digit pincode required", method, path);
-  if (!/^\d{10}$/.test(emergencyPhone)) makeMockError(400, "Valid emergency contact required", method, path);
+  if (emergencyPhone && !/^\d{10}$/.test(emergencyPhone)) makeMockError(400, "Valid emergency contact required", method, path);
   if (!profileSelfie.startsWith("data:image/") && !profileSelfie.startsWith("https://")) makeMockError(400, "Profile selfie photo required", method, path);
-  if (!liveSelfie.startsWith("data:image/")) makeMockError(400, "Live selfie capture required", method, path);
-  if (!livenessChallenge) makeMockError(400, "Live selfie liveness challenge required", method, path);
+  if (liveSelfie && !liveSelfie.startsWith("data:image/")) makeMockError(400, "Live selfie image is invalid", method, path);
+  if (liveSelfie && !livenessChallenge) makeMockError(400, "Live selfie liveness challenge required", method, path);
   const today = new Date(mockNow()).toISOString().slice(0, 10);
   if (licenceRequired && licenseExpiry && licenseExpiry < today) makeMockError(400, "Driving licence is expired", method, path);
   if (insuranceExpiry && insuranceExpiry < today) makeMockError(400, "Vehicle insurance is expired", method, path);
-  if (!body.backgroundConsent) makeMockError(400, "Background verification consent required", method, path);
   if (!body.termsAccepted) makeMockError(400, "Partner terms must be accepted", method, path);
   if (!upiId && !(String(body.bankAccountNumber ?? "").trim().length >= 9 && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc))) {
     makeMockError(400, "Add UPI ID or valid bank account with IFSC for payouts", method, path);

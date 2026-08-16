@@ -128,12 +128,12 @@ export default function VendorOrders() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Orders</h1>
+      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold sm:text-2xl">Orders</h1>
           <p className="text-sm text-muted-foreground">Order details, item snapshots, bill and packing slip printing.</p>
         </div>
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="flex max-w-full gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
           {["all", "pending", "confirmed", "packed", "picked_up", "on_the_way", "delivered", "cancelled"].map((f) => (
             <Button key={f} variant={filter === f ? "default" : "outline"} size="sm" onClick={() => setFilter(f)} className="whitespace-nowrap" data-testid={`filter-${f}`}>
               {f === "all" ? "All" : STATUS_LABEL[f]}
@@ -156,17 +156,17 @@ export default function VendorOrders() {
             const pickupOtp = order.tracking?.pickupOtp ?? order.liveTracking?.pickupOtp;
             return (
               <div key={order.id} className="rounded-xl border bg-white p-4" data-testid={`order-${order.id}`}>
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div>
+                <div className="mb-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                  <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-bold">#{order.orderNumber}</span>
+                      <span className="max-w-full break-all font-bold">#{order.orderNumber}</span>
                       <Badge className={`border-0 text-xs ${STATUS_COLORS[order.status] ?? "bg-gray-100 text-gray-700"}`}>{STATUS_LABEL[order.status] ?? order.status}</Badge>
                       <Badge variant="outline" className="text-xs capitalize">{order.paymentMethod} / {order.paymentStatus}</Badge>
                     </div>
                     <p className="mt-0.5 text-sm text-muted-foreground">{new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
                     <p className="text-xs text-muted-foreground">Invoice: {order.invoiceNumber ?? "Will generate on print"}</p>
                   </div>
-                  <span className="text-lg font-bold">Rs.{Number(order.total).toFixed(0)}</span>
+                  <span className="whitespace-nowrap text-base font-bold sm:text-lg">Rs.{Number(order.total).toFixed(0)}</span>
                 </div>
 
                 {order.addressSnapshot && (
@@ -188,7 +188,7 @@ export default function VendorOrders() {
                   </div>
                 )}
 
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   <Button size="sm" variant="outline" onClick={() => setSelectedOrder(order)} data-testid={`btn-view-${order.id}`}>
                     <Eye className="mr-2 h-4 w-4" />Details
                   </Button>

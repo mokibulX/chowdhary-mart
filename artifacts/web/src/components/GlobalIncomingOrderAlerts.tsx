@@ -150,7 +150,7 @@ export function GlobalIncomingOrderAlerts() {
 
   return (
     <div className="fixed inset-0 z-[100] flex h-[100dvh] items-stretch justify-center overflow-y-auto bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true">
-      <div className="relative flex min-h-0 w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-[32px]">
+      <div className="relative flex h-[100dvh] min-h-0 w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-[24px]">
         <div className="relative overflow-hidden bg-gray-950 px-4 pb-5 pt-5 text-white">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(249,115,22,.55),transparent_30%),radial-gradient(circle_at_80%_15%,rgba(34,197,94,.3),transparent_25%)]" />
           <div className="relative z-10 flex items-start justify-between gap-3">
@@ -186,7 +186,7 @@ export function GlobalIncomingOrderAlerts() {
           )}
         </div>
 
-        <div className="grid gap-2 border-t bg-white p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
+        <div className="sticky bottom-0 z-20 grid shrink-0 gap-2 border-t bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,.08)] sm:p-4">
           {rejecting ? (
             <div className="grid grid-cols-2 gap-2">
               <Button className="h-12 rounded-2xl" variant="outline" onClick={() => setRejecting(false)} disabled={busy}>Back</Button>

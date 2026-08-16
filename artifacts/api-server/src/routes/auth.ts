@@ -408,7 +408,8 @@ router.post("/register", async (req, res) => {
     });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
+    const message = err instanceof Error ? err.message : "Could not complete registration";
+    res.status(400).json({ error: message });
   }
 });
 
@@ -523,7 +524,9 @@ router.post("/delivery-otp/verify", async (req, res) => {
   try {
     const phone = String(req.body?.phone ?? "").replace(/\D/g, "");
     const otp = String(req.body?.otp ?? "");
-    const otpOk = await verifyOtp({ target: phone, channel: "sms", purpose: "delivery_register", otp });
+    // The final registration request consumes the OTP. This preliminary check must
+    // leave it usable, otherwise a successfully verified rider cannot submit.
+    const otpOk = await verifyOtp({ target: phone, channel: "sms", purpose: "delivery_register", otp, consume: false });
     if (!/^\d{10}$/.test(phone) || !otpOk) {
       res.status(400).json({ error: "Invalid mobile number or OTP" });
       return;

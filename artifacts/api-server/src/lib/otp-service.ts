@@ -168,7 +168,7 @@ export async function requestOtp(input: { target: string; channel: OtpChannel; p
   return { target, channel: input.channel, verificationMode: "REAL", expiresInSeconds: OTP_TTL_MINUTES * 60 };
 }
 
-export async function verifyOtp(input: { target: string; channel: OtpChannel; purpose: OtpPurpose; otp?: string }) {
+export async function verifyOtp(input: { target: string; channel: OtpChannel; purpose: OtpPurpose; otp?: string; consume?: boolean }) {
   const target = normalizeTarget(input.channel, input.target);
   const otp = String(input.otp ?? "").trim();
   if (!otp || !validTarget(input.channel, target)) return false;
@@ -191,7 +191,9 @@ export async function verifyOtp(input: { target: string; channel: OtpChannel; pu
   const expected = Buffer.from(record.codeHash);
   const actual = Buffer.from(sha(otp));
   const ok = expected.length === actual.length && timingSafeEqual(expected, actual);
-  if (ok) await db.update(otpCodesTable).set({ isUsed: true }).where(eq(otpCodesTable.id, record.id));
+  if (ok && input.consume !== false) {
+    await db.update(otpCodesTable).set({ isUsed: true }).where(eq(otpCodesTable.id, record.id));
+  }
   return ok;
 }
 

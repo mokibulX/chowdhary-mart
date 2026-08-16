@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { customFetch } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -105,6 +105,7 @@ type DeliveryForm = {
 type RegisterResponse = { token: string };
 
 const draftKey = "cm_delivery_partner_registration_draft";
+const draftStepKey = `${draftKey}_step`;
 const imageFields: Array<keyof DeliveryForm> = [
   "addressProofImage", "vehicleFrontImage", "numberPlateImage", "licenseFrontImage", "licenseBackImage",
   "identityFrontImage", "identityBackImage", "bankProofImage", "profileSelfie", "liveSelfie",
@@ -127,8 +128,39 @@ function restoreDraft() {
     return initialForm;
   }
 }
+
+function deliveryDraftStore(mode: IDBTransactionMode) {
+  return new Promise<IDBObjectStore>((resolve, reject) => {
+    const request = indexedDB.open("cm_delivery_drafts", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("drafts");
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result.transaction("drafts", mode).objectStore("drafts"));
+  });
+}
+
+async function loadFullDraft() {
+  if (!("indexedDB" in window)) return null;
+  const store = await deliveryDraftStore("readonly");
+  return new Promise<DeliveryForm | null>((resolve) => {
+    const request = store.get(draftKey);
+    request.onsuccess = () => resolve(request.result ? { ...initialForm, ...request.result } : null);
+    request.onerror = () => resolve(null);
+  });
+}
+
+async function saveFullDraft(form: DeliveryForm) {
+  if (!("indexedDB" in window)) return;
+  const store = await deliveryDraftStore("readwrite");
+  store.put(form, draftKey);
+}
+
+async function clearFullDraft() {
+  if (!("indexedDB" in window)) return;
+  const store = await deliveryDraftStore("readwrite");
+  store.delete(draftKey);
+}
 const challenges = ["Blink your eyes", "Turn your head left", "Smile clearly", "Look up once", "Move closer to the camera"];
-const stepTitles = ["Mobile", "OTP", "Personal", "Address", "Vehicle", "Licence", "Identity", "Bank", "Profile photo", "Live selfie", "Agreement", "Review", "Status"];
+const stepTitles = ["Mobile", "OTP", "Basic details", "Address", "Vehicle", "Licence", "Identity", "Payout", "Photo", "Live check", "Agreement", "Review"];
 const VEHICLE_TYPES = ["Bicycle", "Non-motorised delivery cycle", "Electric bicycle", "Motorbike", "Scooter"];
 const BANK_PREFIXES: Record<string, string> = {
   SBIN: "State Bank of India",
@@ -202,7 +234,7 @@ const initialForm: DeliveryForm = {
   selectedZoneId: "",
   addressProofType: "Aadhaar",
   addressProofImage: "",
-  vehicleType: "Bike",
+  vehicleType: "Bicycle",
   vehicleBrand: "",
   vehicleModel: "",
   vehicleNumber: "",
@@ -252,8 +284,12 @@ export default function DeliveryRegister() {
   const { toast } = useToast();
   const authToast = (options: Parameters<typeof toast>[0]) => toast({ duration: 2000, ...options });
   const [registering, setRegistering] = useState(false);
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(() => {
+    const saved = Number(localStorage.getItem(draftStepKey) ?? 0);
+    return Number.isInteger(saved) && saved >= 0 && saved < stepTitles.length ? saved : 0;
+  });
   const [form, setForm] = useState<DeliveryForm>(restoreDraft);
+  const [draftLoaded, setDraftLoaded] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpBusy, setOtpBusy] = useState(false);
@@ -264,12 +300,26 @@ export default function DeliveryRegister() {
   const [zoneBusy, setZoneBusy] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    void loadFullDraft().then((saved) => {
+      if (active && saved) setForm(saved);
+    }).finally(() => { if (active) setDraftLoaded(true); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!draftLoaded) return;
     try {
       localStorage.setItem(draftKey, JSON.stringify(registrationDraft(form)));
     } catch {
       localStorage.removeItem(draftKey);
     }
-  }, [form]);
+    void saveFullDraft(form).catch(() => undefined);
+  }, [draftLoaded, form]);
+
+  useEffect(() => {
+    localStorage.setItem(draftStepKey, String(step));
+  }, [step]);
 
   useEffect(() => {
     if (!form.lat || !form.lng) return;
@@ -386,27 +436,36 @@ export default function DeliveryRegister() {
       if (!/^[A-Za-z .]{2,}$/.test(form.name.trim())) return "Valid full name required.";
       if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(form.password)) return "Password needs uppercase, lowercase, number and special character.";
       if (form.password !== form.confirmPassword) return "Passwords do not match.";
-      return required(["dob", "emergencyName", "emergencyPhone"], "Date of birth and emergency contact required.");
+      if (form.emergencyPhone && !/^\d{10}$/.test(form.emergencyPhone)) return "Emergency phone must be 10 digits.";
+      return "";
     }
     if (targetStep === 3) {
-      const base = required(["fullAddress", "pincode", "lat", "lng", "selectedZoneId", "addressProofImage"], "Address, pincode, GPS, service zone and address proof required.");
+      const base = required(["fullAddress", "pincode", "lat", "lng", "selectedZoneId"], "Address, pincode, GPS and service zone required.");
       if (base) return base;
       const selected = zones.find((zone) => String(zone.id) === form.selectedZoneId);
       if (selected && !selected.insideServiceZone) return "Your current location is outside the selected service zone.";
     }
-    if (targetStep === 4) return required(["vehicleType", "vehicleNumber", "vehicleBrand", "vehicleFrontImage", "numberPlateImage"], "Vehicle details and photos required.");
+    if (targetStep === 4) {
+      const base = required(["vehicleType", "vehicleFrontImage"], "Select vehicle type and add one clear vehicle photo.");
+      if (base) return base;
+      if (licenceRequired && !form.vehicleNumber.trim()) return "Vehicle number is required for motor vehicles.";
+      return "";
+    }
     if (targetStep === 5) {
       if (!licenceRequired) return "";
       return required(["licenseNumber", "licenseName", "licenseExpiry", "licenseFrontImage", "licenseBackImage"], "Licence details and photos required.");
     }
-    if (targetStep === 6) return required(["aadhaarNumber", "panNumber", "identityFrontImage"], "Aadhaar, PAN and identity document photo required.");
+    if (targetStep === 6) {
+      if (!form.aadhaarNumber.trim() && !form.panNumber.trim()) return "Aadhaar or PAN number required.";
+      return required(["identityFrontImage"], "Add one clear identity document photo.");
+    }
     if (targetStep === 7) {
       const bankError = validateBankDetails(form);
       if (bankError) return bankError;
     }
     if (targetStep === 8 && !form.profileSelfie) return "Profile selfie required.";
-    if (targetStep === 9 && (!form.liveSelfie || !form.livenessConfirmed)) return "Live selfie and liveness confirmation required.";
-    if (targetStep === 10 && (!form.backgroundConsent || !form.termsAccepted || !form.privacyConsent)) return "All consent checkboxes are required.";
+    if (targetStep === 9 && (!form.liveSelfie || !form.livenessConfirmed)) return "Complete live face and eye verification.";
+    if (targetStep === 10 && !form.termsAccepted) return "Partner terms must be accepted.";
     return "";
   };
 
@@ -454,6 +513,8 @@ export default function DeliveryRegister() {
         }),
       });
       localStorage.removeItem(draftKey);
+      localStorage.removeItem(draftStepKey);
+      void clearFullDraft();
       login(res.token);
       authToast({ title: "Application submitted", description: "Admin review pending. Approval hole delivery panel active hobe." });
       setLocation("/delivery");
@@ -519,7 +580,7 @@ export default function DeliveryRegister() {
                 <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${((step + 1) / stepTitles.length) * 100}%` }} />
               </div>
               <div className="mt-4 rounded-2xl border bg-gray-50 p-3">
-                <div className="grid grid-cols-[repeat(13,minmax(0,1fr))] items-center gap-1">
+                <div className="grid grid-cols-[repeat(12,minmax(0,1fr))] items-center gap-1">
                   {stepTitles.map((title, index) => {
                     const disabled = index === 5 && !licenceRequired;
                     const active = index === step;
@@ -590,13 +651,13 @@ export default function DeliveryRegister() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Full name *" value={form.name} onChange={(value) => update("name", value.replace(/[^A-Za-z .]/g, ""))} />
                   <Field label="Guardian name" value={form.guardianName} onChange={(value) => update("guardianName", value.replace(/[^A-Za-z .]/g, ""))} />
-                  <Field label="Date of birth *" value={form.dob} onChange={(value) => update("dob", value)} type="date" />
+                  <Field label="Date of birth (optional)" value={form.dob} onChange={(value) => update("dob", value)} type="date" />
                   <Field label="Gender" value={form.gender} onChange={(value) => update("gender", value)} placeholder="Male / Female / Other" />
                   <Field label="Email (optional)" value={form.email} onChange={(value) => update("email", value)} type="email" />
                   <Field label="Alternate mobile" value={form.alternatePhone} onChange={(value) => update("alternatePhone", value.replace(/\D/g, "").slice(0, 10))} inputMode="tel" />
                   <Field label="Preferred language" value={form.preferredLanguage} onChange={(value) => update("preferredLanguage", value)} />
-                  <Field label="Emergency contact name *" value={form.emergencyName} onChange={(value) => update("emergencyName", value)} />
-                  <Field label="Emergency phone *" value={form.emergencyPhone} onChange={(value) => update("emergencyPhone", value.replace(/\D/g, "").slice(0, 10))} inputMode="tel" />
+                  <Field label="Emergency contact name (optional)" value={form.emergencyName} onChange={(value) => update("emergencyName", value)} />
+                  <Field label="Emergency phone (optional)" value={form.emergencyPhone} onChange={(value) => update("emergencyPhone", value.replace(/\D/g, "").slice(0, 10))} inputMode="tel" />
                   <PasswordField label="Password *" value={form.password} onChange={(value) => update("password", value)} visible={showPassword} setVisible={setShowPassword} />
                   <PasswordField label="Confirm password *" value={form.confirmPassword} onChange={(value) => update("confirmPassword", value)} visible={showConfirm} setVisible={setShowConfirm} />
                 </div>
@@ -661,7 +722,7 @@ export default function DeliveryRegister() {
                 </div>
                 <CheckRow checked={form.sameAddress} onChange={(value) => update("sameAddress", value)} label="Permanent address same as current address" />
                 {!form.sameAddress && <Textarea value={form.permanentAddress} onChange={(event) => update("permanentAddress", event.target.value)} placeholder="Permanent address" rows={3} />}
-                <ImageInput label="Address proof photo *" value={form.addressProofImage} onFile={(file) => setImage("addressProofImage", file)} />
+                <ImageInput label="Address proof photo (optional)" value={form.addressProofImage} onFile={(file) => setImage("addressProofImage", file)} />
               </Panel>
             )}
 
@@ -669,9 +730,9 @@ export default function DeliveryRegister() {
               <Panel title="Vehicle details">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Vehicle type" value={form.vehicleType} onChange={(value) => update("vehicleType", value)} />
-                  <Field label="Brand *" value={form.vehicleBrand} onChange={(value) => update("vehicleBrand", value)} />
+                  <Field label="Brand (optional)" value={form.vehicleBrand} onChange={(value) => update("vehicleBrand", value)} />
                   <Field label="Model" value={form.vehicleModel} onChange={(value) => update("vehicleModel", value)} />
-                  <Field label="Vehicle number *" value={form.vehicleNumber} onChange={(value) => update("vehicleNumber", value.toUpperCase())} placeholder="WB01AB1234" />
+                  <Field label={licenceRequired ? "Vehicle number *" : "Vehicle number (optional)"} value={form.vehicleNumber} onChange={(value) => update("vehicleNumber", value.toUpperCase())} placeholder="WB01AB1234" />
                   <Field label="Vehicle colour" value={form.vehicleColor} onChange={(value) => update("vehicleColor", value)} />
                   <Field label="Vehicle year" value={form.vehicleYear} onChange={(value) => update("vehicleYear", value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" />
                   <Field label="RC number" value={form.rcNumber} onChange={(value) => update("rcNumber", value.toUpperCase())} />
@@ -690,7 +751,7 @@ export default function DeliveryRegister() {
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ImageInput label="Vehicle front photo *" value={form.vehicleFrontImage} onFile={(file) => setImage("vehicleFrontImage", file)} />
-                  <ImageInput label="Number plate photo *" value={form.numberPlateImage} onFile={(file) => setImage("numberPlateImage", file)} />
+                  <ImageInput label="Number plate photo (optional for bicycle)" value={form.numberPlateImage} onFile={(file) => setImage("numberPlateImage", file)} />
                 </div>
               </Panel>
             )}
@@ -726,8 +787,8 @@ export default function DeliveryRegister() {
               <Panel title="Identity verification">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Identity type" value={form.identityType} onChange={(value) => update("identityType", value)} />
-                  <Field label="Aadhaar number *" value={form.aadhaarNumber} onChange={(value) => update("aadhaarNumber", value.replace(/\D/g, "").slice(0, 12))} inputMode="numeric" />
-                  <Field label="PAN number *" value={form.panNumber} onChange={(value) => update("panNumber", value.toUpperCase().slice(0, 10))} />
+                  <Field label="Aadhaar number (Aadhaar or PAN required)" value={form.aadhaarNumber} onChange={(value) => update("aadhaarNumber", value.replace(/\D/g, "").slice(0, 12))} inputMode="numeric" />
+                  <Field label="PAN number (Aadhaar or PAN required)" value={form.panNumber} onChange={(value) => update("panNumber", value.toUpperCase().slice(0, 10))} />
                   <Field label="Name on document" value={form.identityName} onChange={(value) => update("identityName", value)} />
                   <Field label="Document DOB" value={form.identityDob} onChange={(value) => update("identityDob", value)} type="date" />
                 </div>
@@ -741,6 +802,7 @@ export default function DeliveryRegister() {
 
             {step === 7 && (
               <Panel title="Bank and payout">
+                <p className="rounded-xl bg-green-50 p-3 text-sm text-green-800">A valid UPI ID is enough for basic registration. Bank fields are optional.</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Account holder" value={form.accountHolderName} onChange={(value) => update("accountHolderName", value)} />
                   <Field label="Bank name" value={form.bankName} onChange={(value) => update("bankName", value)} />
@@ -768,8 +830,10 @@ export default function DeliveryRegister() {
                   <p className="text-lg font-bold text-blue-950">{form.livenessChallenge}</p>
                   <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => update("livenessChallenge", challenges[Math.floor(Math.random() * challenges.length)])}>Change challenge</Button>
                 </div>
-                <ImageInput label="Capture live selfie with front camera *" value={form.liveSelfie} onFile={(file) => setImage("liveSelfie", file)} capture />
-                <CheckRow checked={form.livenessConfirmed} onChange={(value) => update("livenessConfirmed", value)} label="I completed the shown liveness action while taking this live selfie." />
+                <LiveFaceCapture
+                  value={form.liveSelfie}
+                  onCapture={(image) => setForm((current) => ({ ...current, liveSelfie: image, livenessConfirmed: true }))}
+                />
               </Panel>
             )}
 
@@ -794,20 +858,10 @@ export default function DeliveryRegister() {
                   <ReviewLine label="Vehicle" value={`${form.vehicleType} ${form.vehicleNumber}`.trim() || "Pending"} />
                   <ReviewLine label="Licence" value={licenceRequired ? (form.licenseNumber || "Pending") : "Not required for selected vehicle"} />
                   <ReviewLine label="Payout" value={form.upiId || (form.bankAccountNumber ? `Bank ending ${form.bankAccountNumber.slice(-4)}` : "Pending")} />
-                  <ReviewLine label="Selfie" value={form.profileSelfie && form.liveSelfie ? "Ready for admin review" : "Pending"} />
+                  <ReviewLine label="Profile photo" value={form.profileSelfie ? "Ready for admin review" : "Pending"} />
                 </div>
                 <div className="rounded-2xl border border-green-100 bg-green-50 p-4 text-sm text-green-800">
                   Sob thik thakle submit korun. Admin approve korle rider dashboard active hobe.
-                </div>
-              </Panel>
-            )}
-
-            {step === 12 && (
-              <Panel title="Submission status">
-                <div className="rounded-3xl bg-gray-950 p-5 text-white">
-                  <CheckCircle2 className="mb-3 h-10 w-10 text-green-300" />
-                  <h3 className="text-xl font-bold">Ready to submit</h3>
-                  <p className="mt-2 text-sm text-white/70">Submit korar pore status: Under review. Admin verification complete hole account activated hobe.</p>
                 </div>
               </Panel>
             )}
@@ -841,6 +895,121 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 
 function Feature({ icon, text }: { icon: React.ReactNode; text: string }) {
   return <div className="flex min-w-0 gap-3 rounded-xl bg-white/10 p-3">{icon}<span className="min-w-0">{text}</span></div>;
+}
+
+function LiveFaceCapture({ value, onCapture }: { value: string; onCapture: (image: string) => void }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const detectorRef = useRef<any>(null);
+  const [running, setRunning] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [message, setMessage] = useState("Start the front camera and keep your face inside the frame.");
+
+  const stop = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setRunning(false);
+    setChecking(false);
+  };
+
+  useEffect(() => stop, []);
+
+  useEffect(() => {
+    if (!running || !videoRef.current || !detectorRef.current) return;
+    let cancelled = false;
+    const timer = window.setInterval(async () => {
+      if (cancelled || checking || !videoRef.current || videoRef.current.readyState < 2) return;
+      setChecking(true);
+      try {
+        const faces = await detectorRef.current.detect(videoRef.current);
+        if (faces.length !== 1) {
+          setReady(false);
+          setMessage(faces.length > 1 ? "Only one person should be visible." : "No face found. Move into the frame.");
+          return;
+        }
+        const face = faces[0];
+        const box = face.boundingBox;
+        const video = videoRef.current;
+        const largeEnough = box.width > video.videoWidth * 0.24 && box.height > video.videoHeight * 0.3;
+        const landmarks = Array.isArray(face.landmarks) ? face.landmarks : [];
+        const eyeCount = landmarks.filter((item: any) => String(item.type ?? "").toLowerCase().includes("eye")).length;
+        if (!largeEnough) {
+          setReady(false);
+          setMessage("Move a little closer to the camera.");
+        } else if (eyeCount < 2) {
+          setReady(false);
+          setMessage("Keep both eyes open and look straight at the camera.");
+        } else {
+          setReady(true);
+          setMessage("Face and both eyes detected. You can capture now.");
+        }
+      } catch {
+        setReady(false);
+        setMessage("Face detection paused. Keep the camera steady and try again.");
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    }, 700);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [running, checking]);
+
+  const start = async () => {
+    try {
+      const FaceDetectorCtor = (window as any).FaceDetector;
+      if (!FaceDetectorCtor) {
+        setMessage("Live face detection needs the latest Chrome or Android browser.");
+        return;
+      }
+      detectorRef.current = new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 2 });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } }, audio: false });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setRunning(true);
+      setReady(false);
+      setMessage("Checking face and eye position...");
+    } catch {
+      setMessage("Camera permission is required for live selfie verification.");
+    }
+  };
+
+  const capture = () => {
+    const video = videoRef.current;
+    if (!video || !ready || !video.videoWidth) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    onCapture(canvas.toDataURL("image/jpeg", 0.76));
+    stop();
+    setMessage("Live face and eye verification completed.");
+  };
+
+  return (
+    <div className="space-y-3 rounded-2xl border bg-gray-50 p-3">
+      <div className="relative mx-auto aspect-[3/4] w-full max-w-sm overflow-hidden rounded-2xl bg-gray-950">
+        {value && !running ? <img src={value} alt="Verified live selfie" className="h-full w-full object-cover" /> : null}
+        <video ref={videoRef} playsInline muted className={`h-full w-full scale-x-[-1] object-cover ${running ? "block" : "hidden"}`} />
+        {running && <div className={`pointer-events-none absolute inset-[10%] rounded-[45%] border-2 ${ready ? "border-green-400 shadow-[0_0_0_999px_rgba(0,0,0,.24)]" : "border-white/80 shadow-[0_0_0_999px_rgba(0,0,0,.38)]"}`} />}
+        {!running && !value && <div className="flex h-full items-center justify-center text-center text-sm text-white/70"><Camera className="mr-2 h-5 w-5" /> Camera not started</div>}
+      </div>
+      <p className={`rounded-xl px-3 py-2 text-sm font-medium ${ready || value ? "bg-green-50 text-green-800" : "bg-blue-50 text-blue-800"}`}>{message}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {!running ? <Button type="button" variant="outline" onClick={start}><Camera className="mr-2 h-4 w-4" />{value ? "Retake" : "Start camera"}</Button> : <Button type="button" variant="outline" onClick={stop}>Cancel</Button>}
+        <Button type="button" onClick={capture} disabled={!running || !ready}><CheckCircle2 className="mr-2 h-4 w-4" />Capture verified</Button>
+      </div>
+    </div>
+  );
 }
 
 function Field({ label, value, onChange, type = "text", inputMode, placeholder, disabled }: {
