@@ -1,4 +1,5 @@
 ﻿import { useState } from "react";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
@@ -26,7 +27,10 @@ const schema = z.object({
   name: z.string().min(2, "Name required"),
   description: z.string().optional().or(z.literal("")),
   barcode: z.string().regex(/^\d{8,14}$/, "Enter a valid 8 to 14 digit barcode").optional().or(z.literal("")),
-  productDate: z.string().min(1, "Product date required"),
+  productDate: z.string().optional().or(z.literal("")),
+  mfgDate: z.string().optional().or(z.literal("")),
+  expiryDate: z.string().optional().or(z.literal("")),
+  expiryRequired: z.boolean(),
   categoryId: z.coerce.number().min(1, "Category required"),
   price: z.coerce.number().min(0.01, "Price required"),
   mrp: z.coerce.number().min(0.01, "MRP required"),
@@ -106,6 +110,30 @@ function normalizeSizes(value: string | string[] | undefined | null) {
   return Array.from(new Set(source.map((item) => item.trim()).filter(Boolean)));
 }
 
+function categoryRequiresExpiry(name = "") {
+  return /(food|grocery|beverage|drink|snack|chocolate|dairy|milk|cosmetic|beauty|medicine|supplement|pet food)/i.test(name);
+}
+
+function BarcodeResultCard({ product }: { product: any }) {
+  const specs = product.specifications && typeof product.specifications === "object" ? product.specifications : {};
+  const image = Array.isArray(product.images) ? product.images[0] : "";
+  const value = (item: unknown) => String(item ?? "").trim() || "Not available";
+  return (
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="h-28 w-28 shrink-0 overflow-hidden rounded-lg border bg-white">{image ? <img src={image} alt={product.name || "Scanned product"} className="h-full w-full object-contain" /> : <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">Image not available</div>}</div>
+        <div className="min-w-0 flex-1"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Barcode product found</p><h3 className="mt-1 text-lg font-bold break-words">{value(product.name)}</h3><p className="text-sm text-muted-foreground">{value(product.brand || specs.Brand)}</p><p className="mt-1 text-xs font-medium">Barcode: {value(product.barcode)}</p></div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"><InfoCell label="Category" value={product.category || specs.Category} /><InfoCell label="MRP" value={product.mrp ? `₹${product.mrp}` : undefined} /><InfoCell label="Pack size" value={product.quantity || specs.Quantity} /><InfoCell label="Manufacturer" value={specs.Manufacturer} /><InfoCell label="Origin" value={specs.Origin || specs.Countries} /><InfoCell label="Description" value={product.description} /></div>
+      <p className="mt-3 text-xs text-emerald-800">Review the imported information below. Missing values remain editable and are shown as Not available.</p>
+    </div>
+  );
+}
+
+function InfoCell({ label, value }: { label: string; value?: unknown }) {
+  return <div className="rounded-md border border-emerald-100 bg-white p-2"><p className="font-semibold text-muted-foreground">{label}</p><p className="mt-1 break-words font-medium">{String(value ?? "").trim() || "Not available"}</p></div>;
+}
+
 export default function VendorProducts() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -118,6 +146,7 @@ export default function VendorProducts() {
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [productStep, setProductStep] = useState(0);
   const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [barcodeProduct, setBarcodeProduct] = useState<any | null>(null);
   const [importedSpecifications, setImportedSpecifications] = useState<Record<string, unknown>>({});
 
   const { data: products, isLoading } = useListVendorProducts({
@@ -130,10 +159,11 @@ export default function VendorProducts() {
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema as any),
-    defaultValues: { isAvailable: true, isFeatured: false, stock: 10 },
+    defaultValues: { isAvailable: true, isFeatured: false, stock: 10, expiryRequired: false },
   });
   const isAvailable = watch("isAvailable");
   const isFeatured = watch("isFeatured");
+  const expiryRequired = watch("expiryRequired");
   const selectedCategoryId = watch("categoryId");
   const { data: libraryImages = [], isLoading: loadingLibrary } = useQuery({
     queryKey: ["/api/vendor/media-library", selectedCategoryId],
@@ -145,6 +175,10 @@ export default function VendorProducts() {
   const isFootwearProduct = watch("name")?.toLowerCase().includes("shoe") || watch("name")?.toLowerCase().includes("sandal") || watch("name")?.toLowerCase().includes("chappal");
   const activeSizeOptions = isFootwearProduct ? FOOTWEAR_SIZES : CLOTHING_SIZES;
 
+  useEffect(() => {
+    if (dialogOpen && !editId && selectedCategory?.name) setValue("expiryRequired", categoryRequiresExpiry(selectedCategory.name), { shouldDirty: false });
+  }, [dialogOpen, editId, selectedCategory?.name, setValue]);
+
   const openCreate = (asOffer = false) => {
     setEditId(null);
     setImageUrls([]);
@@ -153,11 +187,15 @@ export default function VendorProducts() {
     setSelectedColors([]);
     setProductStep(0);
     setBarcodeLoading(false);
+    setBarcodeProduct(null);
     setImportedSpecifications({});
     reset({
       categoryId: Number((categories as any[] | undefined)?.[0]?.id ?? 2),
       barcode: "",
       productDate: "",
+      mfgDate: "",
+      expiryDate: "",
+      expiryRequired: false,
       isAvailable: true,
       isFeatured: asOffer,
       stock: 10,
@@ -173,6 +211,7 @@ export default function VendorProducts() {
 
   const openEdit = (p: any) => {
     setEditId(p.id);
+    setBarcodeProduct(null);
     setProductStep(0);
     setImageUrls(Array.isArray(p.images) ? p.images : []);
     setColorImageUrls(p.colorImages && typeof p.colorImages === "object" ? p.colorImages : {});
@@ -182,6 +221,8 @@ export default function VendorProducts() {
     reset({
       name: p.name, description: p.description ?? "",
       barcode: p.sku ?? "", productDate: p.specifications?.ProductDate ?? "",
+      mfgDate: p.specifications?.MFGDate ?? "", expiryDate: p.specifications?.ExpiryDate ?? "",
+      expiryRequired: String(p.specifications?.ExpiryRequired ?? "false").toLowerCase() === "true",
       categoryId: p.categoryId, price: Number(p.price), mrp: Number(p.mrp),
       stock: p.stock, weight: p.weight ?? "", unit: p.unit ?? "",
       imageUrl: p.images?.[0] ?? "", sizes: normalizeSizes(p.sizes ?? p.specifications?.Sizes ?? p.specifications?.Size).join(", "),
@@ -196,16 +237,33 @@ export default function VendorProducts() {
   };
 
   const onSubmit = (data: FormData) => {
+    if (data.expiryRequired) {
+      if (!data.mfgDate || !data.expiryDate) {
+        toast({ title: "Expiry dates required", description: "Enter both manufacturing date and expiry date for this product.", variant: "destructive" });
+        setProductStep(0);
+        return;
+      }
+      if (data.expiryDate <= data.mfgDate) {
+        toast({ title: "Invalid expiry date", description: "Expiry date must be after the manufacturing date.", variant: "destructive" });
+        setProductStep(0);
+        return;
+      }
+      if (data.expiryDate < new Date().toISOString().slice(0, 10) && data.isAvailable) {
+        toast({ title: "Product already expired", description: "Expired products cannot be added as active inventory.", variant: "destructive" });
+        setProductStep(0);
+        return;
+      }
+    }
     const cleanImages = imageUrls.map(url => url.trim()).filter(Boolean);
     const duplicate = (products as any[] | undefined)?.some((product) => product.id !== editId && String(product.name).trim().toLowerCase() === data.name.trim().toLowerCase());
     if (duplicate) {
-      toast({ title: "Duplicate product title", description: "Ei product already apnar inventory-te ache. Existing product edit korun.", variant: "destructive" });
+      toast({ title: "Duplicate product title", description: "This product is already in your inventory. Edit the existing product instead.", variant: "destructive" });
       setProductStep(0);
       return;
     }
     const duplicateBarcode = data.barcode && (products as any[] | undefined)?.some((product) => product.id !== editId && String(product.sku ?? product.specifications?.Barcode ?? "") === data.barcode);
     if (duplicateBarcode) {
-      toast({ title: "Barcode already exists", description: "Ei barcode-er product inventory-te ache. Existing product edit korun.", variant: "destructive" });
+      toast({ title: "Barcode already exists", description: "A product with this barcode is already in your inventory. Edit the existing product instead.", variant: "destructive" });
       setProductStep(0);
       return;
     }
@@ -225,7 +283,9 @@ export default function VendorProducts() {
       Warranty: data.warranty || "Seller assured",
       Payment: data.paymentOptions || "Cash on Delivery, UPI",
       Delivery: data.deliveryNote || "40 minute local target",
-      ProductDate: data.productDate,
+      ...(data.productDate ? { ProductDate: data.productDate } : {}),
+      ExpiryRequired: String(data.expiryRequired),
+      ...(data.expiryRequired ? { MFGDate: data.mfgDate, ExpiryDate: data.expiryDate } : {}),
       ...(data.barcode ? { Barcode: data.barcode } : {}),
     };
     const payload = {
@@ -269,12 +329,13 @@ export default function VendorProducts() {
     const barcode = String(watch("barcode") ?? "").replace(/\D/g, "");
     setValue("barcode", barcode, { shouldDirty: true, shouldValidate: true });
     if (!/^\d{8,14}$/.test(barcode)) {
-      toast({ title: "Valid barcode required", description: "8 theke 14 digit barcode enter korun.", variant: "destructive" });
+      toast({ title: "Valid barcode required", description: "Enter an 8 to 14 digit barcode.", variant: "destructive" });
       return;
     }
     setBarcodeLoading(true);
     try {
       const found = await customFetch<any>(`/api/vendor/barcode/${barcode}`, { responseType: "json" });
+      setBarcodeProduct(found);
       setValue("name", found.name || "", { shouldDirty: true, shouldValidate: true });
       const imported = found.specifications && typeof found.specifications === "object" ? found.specifications : {};
       setImportedSpecifications(imported);
@@ -299,9 +360,11 @@ export default function VendorProducts() {
       }
       const images = Array.isArray(found.images) ? found.images.filter((url: unknown) => typeof url === "string" && /^https:\/\//i.test(url)) : [];
       if (images.length) setImageUrls(images);
+      setValue("expiryRequired", Boolean(found.expiryRequired), { shouldDirty: true });
+      if (found.specifications?.ExpiryDate) setValue("expiryDate", String(found.specifications.ExpiryDate), { shouldDirty: true });
       toast({ title: "Product details imported", description: `${images.length} company image(s) and available product details added. Review or edit everything before saving.` });
     } catch (err) {
-      toast({ title: "Barcode lookup failed", description: getFriendlyErrorMessage(err, "Product paoa jayni. Details manually add korte parben."), variant: "destructive" });
+      toast({ title: "Product not found", description: getFriendlyErrorMessage(err, "Product not found. Please add the product details manually."), variant: "destructive" });
     } finally {
       setBarcodeLoading(false);
     }
@@ -378,7 +441,7 @@ export default function VendorProducts() {
 
   const goNextStep = async () => {
     if (productStep === 0 && (!watch("name")?.trim() || !selectedCategoryId || !watch("price") || !watch("mrp"))) {
-      toast({ title: "Basic details required", description: "Name, category, price and MRP fill korun.", variant: "destructive" });
+      toast({ title: "Basic details required", description: "Enter the name, category, price and MRP.", variant: "destructive" });
       return;
     }
     setProductStep((step) => Math.min(PRODUCT_STEPS.length - 1, step + 1));
@@ -559,7 +622,7 @@ export default function VendorProducts() {
                     <ScanBarcode className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
                     <div>
                       <Label htmlFor="product-barcode" className="font-bold text-blue-950">Add product by barcode</Label>
-                      <p className="text-xs text-blue-700">Barcode dile available details, weight and images auto-fill hobe. Price and date apnake set korte hobe.</p>
+                      <p className="text-xs text-blue-700">A valid barcode imports available details, pack size and images. Review the result and set the price yourself.</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap justify-end gap-2">
@@ -582,6 +645,9 @@ export default function VendorProducts() {
                   </div>
                   {errors.barcode && <p className="mt-1 text-xs text-red-500">{errors.barcode.message}</p>}
                 </div>
+                {barcodeProduct && (
+                  <BarcodeResultCard product={barcodeProduct} />
+                )}
                 <div className="space-y-1">
                   <Label>Product Name *</Label>
                   <Input {...register("name")} data-testid="input-name" />
@@ -614,10 +680,13 @@ export default function VendorProducts() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="product-date">Product / stock date *</Label>
+                  <Label htmlFor="product-date">Product / stock date</Label>
                   <Input id="product-date" type="date" {...register("productDate")} data-testid="input-product-date" />
-                  <p className="text-xs text-muted-foreground">Seller-ke product-er actual stock/manufacture date select korte hobe.</p>
-                  {errors.productDate && <p className="text-xs text-red-500">{errors.productDate.message}</p>}
+                  <p className="text-xs text-muted-foreground">Optional stock reference date.</p>
+                </div>
+                <div className="rounded-lg border bg-gray-50 p-3">
+                  <div className="flex items-center justify-between gap-3"><div><Label>Expiry tracking</Label><p className="text-xs text-muted-foreground">Enable only when this product has a manufacturing and expiry date.</p></div><Switch checked={expiryRequired} onCheckedChange={(value) => setValue("expiryRequired", value, { shouldDirty: true })} /></div>
+                  {expiryRequired && <div className="mt-3 grid grid-cols-2 gap-3"><div className="space-y-1"><Label>Manufacturing date *</Label><Input type="date" {...register("mfgDate")} /></div><div className="space-y-1"><Label>Expiry date *</Label><Input type="date" {...register("expiryDate")} /></div></div>}
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">
@@ -640,7 +709,7 @@ export default function VendorProducts() {
               <section className="space-y-3">
                 <div className="rounded-lg border bg-blue-50 p-3">
                   <Label>Category-wise measurement</Label>
-                  <p className="mb-2 text-xs text-blue-700">Je item je bhabe hisab hoy, tar shortcut select korun.</p>
+                  <p className="mb-2 text-xs text-blue-700">Choose a shortcut that matches how this item is measured.</p>
                   <div className="flex flex-wrap gap-1.5">
                     {measurementOptions(selectedCategory?.name).map((option) => (
                       <button
@@ -660,7 +729,7 @@ export default function VendorProducts() {
                 <div className="space-y-2 rounded-lg border bg-gray-50 p-3">
                   <div>
                     <Label>Available clothing sizes</Label>
-                    <p className="text-xs text-muted-foreground">Fashion/kapor product hole size select korun. Custom size comma diye add korte parben.</p>
+                    <p className="text-xs text-muted-foreground">Select sizes for fashion products. You can also enter custom sizes separated by commas.</p>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {activeSizeOptions.map((size) => (
@@ -680,12 +749,12 @@ export default function VendorProducts() {
                     onBlur={(event) => setSelectedSizes(normalizeSizes([...selectedSizes, ...normalizeSizes(event.target.value)]))}
                     data-testid="input-sizes"
                   />
-                  {!isFashionCategory && <p className="text-xs text-muted-foreground">Non-fashion product hole eta optional.</p>}
+                  {!isFashionCategory && <p className="text-xs text-muted-foreground">Optional for non-fashion products.</p>}
                 </div>
                 <div className="space-y-2 rounded-lg border bg-gray-50 p-3">
                   <div>
                     <Label>Available colors</Label>
-                    <p className="text-xs text-muted-foreground">Je product-e color option ache, customer order korar age ekhane theke color select korbe.</p>
+                    <p className="text-xs text-muted-foreground">Add colors when customers need to choose a color before ordering.</p>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {PRODUCT_COLORS.map((color) => (
@@ -723,7 +792,7 @@ export default function VendorProducts() {
                           />
                         </div>
                       ))}
-                      <p className="text-[11px] text-muted-foreground">Customer color select korle ei color-er image detail, cart, order-e show hobe.</p>
+                      <p className="text-[11px] text-muted-foreground">The selected color image will appear in product details, cart and order views.</p>
                     </div>
                   )}
                 </div>
@@ -810,7 +879,7 @@ export default function VendorProducts() {
                 <div className="space-y-3 rounded-lg border bg-white p-3">
                   <div>
                     <Label>Return / warranty / payment policy</Label>
-                    <p className="text-xs text-muted-foreground">Ei details product detail page-e customer dekhte pabe.</p>
+                    <p className="text-xs text-muted-foreground">Customers will see these details on the product page.</p>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
@@ -888,7 +957,7 @@ export default function VendorProducts() {
             </div>
             <div className="rounded-lg border bg-blue-50 p-3">
               <Label>Category-wise measurement</Label>
-              <p className="mb-2 text-xs text-blue-700">Je item je bhabe hisab hoy, tar shortcut select korun.</p>
+              <p className="mb-2 text-xs text-blue-700">Choose a shortcut that matches how this item is measured.</p>
               <div className="flex flex-wrap gap-1.5">
                 {measurementOptions(selectedCategory?.name).map((option) => (
                   <button
@@ -908,7 +977,7 @@ export default function VendorProducts() {
             <div className="space-y-2 rounded-lg border bg-gray-50 p-3">
               <div>
                 <Label>Available clothing sizes</Label>
-                <p className="text-xs text-muted-foreground">Fashion/kapor product hole size select korun. Custom size comma diye add korte parben.</p>
+                <p className="text-xs text-muted-foreground">Select sizes for fashion products. You can also enter custom sizes separated by commas.</p>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {activeSizeOptions.map((size) => (
@@ -928,12 +997,12 @@ export default function VendorProducts() {
                 onBlur={(event) => setSelectedSizes(normalizeSizes([...selectedSizes, ...normalizeSizes(event.target.value)]))}
                 data-testid="input-sizes"
               />
-              {!isFashionCategory && <p className="text-xs text-muted-foreground">Non-fashion product hole eta optional.</p>}
+              {!isFashionCategory && <p className="text-xs text-muted-foreground">Optional for non-fashion products.</p>}
             </div>
             <div className="space-y-2 rounded-lg border bg-gray-50 p-3">
               <div>
                 <Label>Available colors</Label>
-                <p className="text-xs text-muted-foreground">Je product-e color option ache, customer order korar age ekhane theke color select korbe.</p>
+                <p className="text-xs text-muted-foreground">Add colors when customers need to choose a color before ordering.</p>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {PRODUCT_COLORS.map((color) => (
@@ -971,14 +1040,14 @@ export default function VendorProducts() {
                       />
                     </div>
                   ))}
-                  <p className="text-[11px] text-muted-foreground">Customer color select korle ei color-er image detail, cart, order-e show hobe.</p>
+                  <p className="text-[11px] text-muted-foreground">The selected color image will appear in product details, cart and order views.</p>
                 </div>
               )}
             </div>
             <div className="space-y-3 rounded-lg border bg-white p-3">
               <div>
                 <Label>Return / warranty / payment policy</Label>
-                <p className="text-xs text-muted-foreground">Ei details product detail page-e customer dekhte pabe.</p>
+                <p className="text-xs text-muted-foreground">Customers will see these details on the product page.</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">

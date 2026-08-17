@@ -4415,6 +4415,27 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     saveMockState(state);
     return ok(order);
   }
+  if (path === "/api/delivery/verification/start" && method === "POST") {
+    const user = requireUser();
+    requireApprovedDeliveryPartner(user, method, path);
+    const sessionId = `local-verification-${user.id}-${Date.now()}`;
+    user.verificationSessions = user.verificationSessions ?? {};
+    user.verificationSessions[sessionId] = { status: "pending", expiresAt: Date.now() + 180_000 };
+    saveMockState(state);
+    return ok({ sessionId, expiresInSeconds: 180, provider: "local_test" });
+  }
+  if (path === "/api/delivery/verification/complete" && method === "POST") {
+    const user = requireUser();
+    requireApprovedDeliveryPartner(user, method, path);
+    const sessionId = String(body.sessionId ?? "");
+    const session = user.verificationSessions?.[sessionId];
+    if (!session || session.status !== "pending" || Number(session.expiresAt) <= Date.now()) makeMockError(400, "Verification session expired. Please try again.", method, path);
+    if (!String(body.liveSelfie ?? "").startsWith("data:image/")) makeMockError(400, "Use the live front camera. Gallery images are not accepted.", method, path);
+    session.status = "verified";
+    session.verifiedAt = mockNow();
+    saveMockState(state);
+    return ok({ verificationId: sessionId, status: "verified", livenessPassed: true, faceMatchPassed: true, provider: "local_test" });
+  }
   if (path === "/api/delivery/toggle-online") {
     const user = requireUser();
     requireApprovedDeliveryPartner(user, method, path);
@@ -4423,29 +4444,10 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
       saveMockState(state);
       return ok({ message: "You are offline" });
     }
-    const today = new Date(mockNow()).toISOString().slice(0, 10);
-    const lastSelfieDay = user.lastActivationSelfieAt ? new Date(user.lastActivationSelfieAt).toISOString().slice(0, 10) : "";
-    const activationSelfie = String(body.activationSelfie ?? "").trim();
-    const livenessChallenge = String(body.livenessChallenge ?? "").trim();
-    if (lastSelfieDay !== today) {
-      if (!activationSelfie.startsWith("data:image/") || !livenessChallenge) {
-        makeMockError(400, "Live selfie verification required before going online today", method, path);
-      }
-      user.activationSelfieStorageKey = `private://delivery/activation/${user.id}/${Date.now()}`;
-      user.activationSelfie = activationSelfie;
-      user.lastActivationSelfieAt = mockNow();
-      user.activationSelfieStatus = "verified";
-      user.selfieVerifications = [{
-        id: Date.now(),
-        verificationType: "DAILY_ACTIVATION",
-        liveSelfieStorageKey: user.activationSelfieStorageKey,
-        livenessStatus: "completed",
-        faceMatchStatus: "verified",
-        verificationStatus: "verified",
-        capturedAt: mockNow(),
-      }, ...(user.selfieVerifications ?? [])];
-      state.verificationAuditLog = [{ id: Date.now(), userId: user.id, action: "daily_activation_selfie_verified", createdAt: mockNow() }, ...(state.verificationAuditLog ?? [])];
-    }
+    const verificationId = String(body.verificationId ?? "");
+    const session = user.verificationSessions?.[verificationId];
+    if (!session || session.status !== "verified" || Number(session.expiresAt) <= Date.now() || session.consumedAt) makeMockError(403, "Fresh live identity verification is required before going online.", method, path);
+    session.consumedAt = mockNow();
     user.isOnline = true;
     saveMockState(state);
     return ok({ message: "You are online" });

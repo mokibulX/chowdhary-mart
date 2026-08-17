@@ -10,7 +10,7 @@ import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import SellerRegister from "@/pages/SellerRegister";
-import DeliveryRegister from "@/pages/DeliveryRegister";
+import DeliveryRegister from "@/pages/DeliveryPartnerRegistration";
 import Search from "@/pages/Search";
 import Store from "@/pages/Store";
 import ProductDetail from "@/pages/ProductDetail";

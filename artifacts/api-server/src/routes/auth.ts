@@ -1,4 +1,6 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
+import { randomBytes } from "node:crypto";
+import { storePrivateDocument } from "./uploads";
 import { eq, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { deliveryPartnersTable, storesTable, usersTable, sellerZoneAssignmentsTable, riderZoneAssignmentsTable } from "@workspace/db";
@@ -71,6 +73,8 @@ function ensureDeliveryReviewColumns() {
     await db.execute(sql`alter table delivery_partners add column if not exists identity_front_image text`);
     await db.execute(sql`alter table delivery_partners add column if not exists identity_back_image text`);
     await db.execute(sql`alter table delivery_partners add column if not exists bank_proof_image text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists aadhaar_document text`);
+    await db.execute(sql`alter table delivery_partners add column if not exists pan_document text`);
   })();
   return deliveryReviewColumnsReady;
 }
@@ -99,6 +103,15 @@ function cleanText(value: unknown) {
 function cleanPhone(value: unknown) {
   const text = String(value ?? "").replace(/\D/g, "");
   return text ? text : undefined;
+}
+
+async function storeOptionalPrivateDocument(req: Request, value: unknown, folder: string, ownerUserId: number) {
+  const reference = cleanText(value);
+  if (!reference) return null;
+  if (!reference.startsWith("data:")) {
+    throw new Error("Document upload is invalid. Please select the document again.");
+  }
+  return (await storePrivateDocument(req, reference, folder, ownerUserId)).url;
 }
 
 async function lookupIfsc(ifsc: string) {
@@ -224,10 +237,6 @@ router.post("/register", async (req, res) => {
     const email = cleanText(req.body.email)?.toLowerCase();
     const phone = cleanPhone(req.body.phone);
 
-    if (!name || !password) {
-      res.status(400).json({ error: "Name and password are required" });
-      return;
-    }
     if (!email && !phone) {
       res.status(400).json({ error: "Email or phone is required" });
       return;
@@ -236,6 +245,10 @@ router.post("/register", async (req, res) => {
     const userRole = resolvePublicRole(role);
     if (!userRole || blockedPublicRoles.has(normalizeRole(role))) {
       res.status(403).json({ error: "This account type cannot be created from the public application." });
+      return;
+    }
+    if (!name || (userRole !== "delivery_partner" && !password)) {
+      res.status(400).json({ error: userRole === "delivery_partner" ? "Name is required" : "Name and password are required" });
       return;
     }
 
@@ -270,7 +283,7 @@ router.post("/register", async (req, res) => {
       }
     }
 
-    const passwordHash = await hashPassword(password);
+    const passwordHash = await hashPassword(password || randomBytes(32).toString("base64url"));
     const referralCode = generateReferralCode();
     const zoneValidation = userRole === "vendor"
       ? await validateZoneSelection("seller", req.body.selectedZoneId ?? req.body.zoneId, req.body.shopLatitude ?? req.body.lat, req.body.shopLongitude ?? req.body.lng)
@@ -287,7 +300,18 @@ router.post("/register", async (req, res) => {
     }
     if (userRole === "delivery_partner") {
       await ensureDeliveryReviewColumns();
-      await validateBankDetails(req.body ?? {});
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("A valid email is required for delivery partner registration.");
+      if (!/^\d{10}$/.test(phone ?? "")) throw new Error("A valid 10 digit mobile number is required.");
+      if (!/^[A-Za-z .]{2,}$/.test(String(name ?? "").trim())) throw new Error("Valid full name is required.");
+      const requiredDocuments = [
+        ["aadhaarDocument", req.body.aadhaarDocument ?? req.body.identityFrontImage, "Aadhaar document"],
+        ["panDocument", req.body.panDocument, "PAN document"],
+        ["profilePhoto", req.body.profilePhoto ?? req.body.profileSelfie ?? req.body.selfieUrl, "Profile photo"],
+        ["liveSelfie", req.body.liveSelfie, "Live selfie"],
+      ] as const;
+      for (const [, value, label] of requiredDocuments) {
+        if (!String(value ?? "").startsWith("data:")) throw new Error(`${label} is required.`);
+      }
     }
 
     const [user] = await db.transaction(async (tx) => {
@@ -354,6 +378,20 @@ router.post("/register", async (req, res) => {
           rating: "0.00",
         }).returning();
         const account = cleanPhone(req.body.bankAccountNumber);
+        const privateFolder = `delivery-documents`;
+        const [aadhaarDocument, panDocument, profilePhoto, liveSelfie, addressProof, vehicleFront, numberPlate, licenseFront, licenseBack, identityBack, bankProof] = await Promise.all([
+          storeOptionalPrivateDocument(req, req.body.aadhaarDocument ?? req.body.identityFrontImage, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.panDocument, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.profilePhoto ?? req.body.profileSelfie ?? req.body.selfieUrl, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.liveSelfie, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.addressProofImage, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.vehicleFrontImage, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.numberPlateImage, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.licenseFrontImage, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.licenseBackImage, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.identityBackImage, privateFolder, created.id),
+          storeOptionalPrivateDocument(req, req.body.bankProofImage, privateFolder, created.id),
+        ]);
         await tx.execute(sql`
           update delivery_partners set
             delivery_status = ${testMode.enabled && testMode.allowDemoApproval ? "approved" : "pending"},
@@ -368,22 +406,24 @@ router.post("/register", async (req, res) => {
             document_status = 'pending_review',
             selfie_verification_status = 'manual_review_required',
             face_match_status = 'manual_review_required',
-            profile_selfie = ${cleanText(req.body.profileSelfie ?? req.body.selfieUrl) ?? null},
-            live_selfie = ${cleanText(req.body.liveSelfie) ?? null},
+            profile_selfie = ${profilePhoto},
+            live_selfie = ${liveSelfie},
             aadhaar_last4 = ${cleanPhone(req.body.aadhaarNumber)?.slice(-4) ?? null},
             pan_number = ${cleanText(req.body.panNumber)?.toUpperCase() ?? null},
             emergency_phone = ${cleanPhone(req.body.emergencyPhone) ?? null},
             full_address = ${cleanText(req.body.fullAddress) ?? null},
             city = ${cleanText(req.body.city) ?? null},
             pincode = ${cleanText(req.body.pincode) ?? null},
-            address_proof_image = ${cleanText(req.body.addressProofImage) ?? null},
-            vehicle_front_image = ${cleanText(req.body.vehicleFrontImage) ?? null},
-            number_plate_image = ${cleanText(req.body.numberPlateImage) ?? null},
-            license_front_image = ${cleanText(req.body.licenseFrontImage) ?? null},
-            license_back_image = ${cleanText(req.body.licenseBackImage) ?? null},
-            identity_front_image = ${cleanText(req.body.identityFrontImage) ?? null},
-            identity_back_image = ${cleanText(req.body.identityBackImage) ?? null},
-            bank_proof_image = ${cleanText(req.body.bankProofImage) ?? null}
+            address_proof_image = ${addressProof},
+            vehicle_front_image = ${vehicleFront},
+            number_plate_image = ${numberPlate},
+            license_front_image = ${licenseFront},
+            license_back_image = ${licenseBack},
+            identity_front_image = ${aadhaarDocument},
+            identity_back_image = ${identityBack ?? panDocument},
+            bank_proof_image = ${bankProof}
+            ,aadhaar_document = ${aadhaarDocument}
+            ,pan_document = ${panDocument}
           where id = ${partner.id}
         `);
         if (zoneValidation?.ok) {

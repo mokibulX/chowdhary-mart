@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { customFetch, getGetMeQueryKey, getListDeliveryOrdersQueryKey, useListDeliveryOrders, useUpdateDeliveryLocation } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -9,10 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Bike, Camera, CheckCircle, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, Upload, X } from "lucide-react";
+import { ArrowLeft, Bike, Camera, CheckCircle, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, X } from "lucide-react";
 import { LiveDeliveryMap } from "@/components/LiveDeliveryMap";
-import { fileToDataUrl, getBrowserLocation, watchBrowserLocation } from "@/lib/live-location";
+import { getBrowserLocation, watchBrowserLocation } from "@/lib/live-location";
 import { WalletSummaryCard } from "@/components/WalletSummaryCard";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const NEXT_STATUS: Record<string, string> = {
   packed: "picked_up",
@@ -38,21 +39,33 @@ export default function DeliveryDashboard() {
   const [lastGpsAt, setLastGpsAt] = useState<string | null>(null);
   const [lastAccuracy, setLastAccuracy] = useState<number | undefined>();
   const [onlineBusy, setOnlineBusy] = useState(false);
-  const [activationSelfie, setActivationSelfie] = useState("");
-  const [activationChallenge, setActivationChallenge] = useState("Smile clearly");
+  const [clock, setClock] = useState(() => Date.now());
 
   const { data: orders, isLoading } = useListDeliveryOrders({
     query: { enabled: !!user, queryKey: getListDeliveryOrdersQueryKey(), refetchInterval: 5000 },
   });
+  const { data: dashboardSummary } = useQuery({
+    queryKey: ["/api/delivery/dashboard-summary"],
+    queryFn: () => customFetch<any>("/api/delivery/dashboard-summary", { responseType: "json" }),
+    enabled: !!user,
+    refetchInterval: 15000,
+  });
   const updateLocation = useUpdateDeliveryLocation();
 
   const refresh = () => qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
-  const userOnline = (user as any)?.isOnline === true;
+  const currentStatus = dashboardSummary?.currentStatus ?? ((user as any)?.isOnline ? "online" : "offline");
+  const userOnline = currentStatus !== "offline";
   const activeOrders = (orders ?? []).filter((order: any) => ["packed", "picked_up", "on_the_way"].includes(order.status));
   const waitingOrders = (orders ?? []).filter((order: any) => ["confirmed", "preparing"].includes(order.status));
   const currentOrder = activeOrders[0] ?? waitingOrders[0];
-  const visibleEarning = (orders ?? []).reduce((sum: number, order: any) => sum + Number(order.deliveryPartnerEarning ?? order.liveTracking?.payout?.delivery ?? 0), 0);
-  const visibleKm = (orders ?? []).reduce((sum: number, order: any) => sum + Number(order.deliveryDistanceKm ?? order.liveTracking?.payout?.distanceKm ?? 0), 0);
+  const currentSessionSeconds = dashboardSummary?.currentOnlineStartedAt
+    ? Math.max(0, Math.floor((clock - new Date(dashboardSummary.currentOnlineStartedAt).getTime()) / 1000))
+    : 0;
+  useEffect(() => {
+    if (!dashboardSummary?.currentOnlineStartedAt) return undefined;
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [dashboardSummary?.currentOnlineStartedAt]);
   useEffect(() => {
     if (!autoGps) return;
     setGpsError("");
@@ -105,41 +118,24 @@ export default function DeliveryDashboard() {
   const toggleOnline = async () => {
     setOnlineBusy(true);
     try {
-      const goingOnline = !(user as any)?.isOnline;
-      let location = null;
-      if (goingOnline) {
-        if (!activationSelfie) {
-          toast({ title: "Live selfie required", description: "Start duty-r age front camera selfie upload korun.", variant: "destructive" });
-          return;
-        }
-        location = await getPartnerLocation();
-      }
+      const goingOnline = !userOnline;
       await customFetch("/api/delivery/toggle-online", {
         method: "PATCH",
-        body: JSON.stringify(goingOnline ? { activationSelfie, livenessChallenge: activationChallenge, location } : {}),
+        body: JSON.stringify({ online: goingOnline }),
         responseType: "json",
       });
-      if (location) await customFetch("/api/delivery/location", { method: "PATCH", body: JSON.stringify(location), responseType: "json" });
-      setActivationSelfie("");
       if (!goingOnline) setAutoGps(false);
       await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
       await qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
-      toast({ title: goingOnline ? "You are online" : "You are offline", description: goingOnline ? "Daily live selfie and GPS verified." : undefined });
+      await qc.invalidateQueries({ queryKey: ["/api/delivery/dashboard-summary"] });
+      toast({ title: goingOnline ? "You are online" : "You are offline" });
     } catch (error) {
-      toast({ title: "Online check failed", description: (error as { data?: { error?: string } })?.data?.error ?? "Please complete GPS and selfie verification.", variant: "destructive" });
+      toast({ title: "Availability update failed", description: (error as { data?: { error?: string } })?.data?.error ?? "Please try again.", variant: "destructive" });
     } finally {
       setOnlineBusy(false);
     }
   };
 
-  const selectActivationSelfie = async (file?: File) => {
-    if (!file) return;
-    try {
-      setActivationSelfie(await fileToDataUrl(file));
-    } catch (error) {
-      toast({ title: "Selfie failed", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
-    }
-  };
 
   const acceptOrder = async (orderId: number) => {
     setBusyOrderId(orderId);
@@ -269,40 +265,46 @@ export default function DeliveryDashboard() {
             <div className="grid grid-cols-3 gap-2 text-center sm:gap-3">
               <Stat value={activeOrders.length} label="Active" />
               <Stat value={waitingOrders.length} label="Available" />
-              <Stat value={`Rs.${visibleEarning.toFixed(0)}`} label={`${visibleKm.toFixed(1)} km`} />
+              <Stat value={`₹${Number(dashboardSummary?.earningsToday ?? 0).toFixed(0)}`} label="Today" />
             </div>
           </div>
         </section>
 
         <WalletSummaryCard href="/delivery/wallet" title="Delivery partner wallet" tone="dark" />
 
-        {!userOnline && (
-          <section className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="font-bold text-blue-950">Daily live activation check</h2>
-                <p className="text-sm text-blue-700">Go Online korar age front-camera selfie and GPS verify hobe. Challenge: <b>{activationChallenge}</b></p>
-              </div>
-              <Button type="button" variant="outline" size="sm" onClick={() => setActivationChallenge(["Smile clearly", "Blink your eyes", "Look left", "Look up"][Math.floor(Math.random() * 4)])}>
-                Change challenge
-              </Button>
-            </div>
-            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-              {activationSelfie ? (
-                <img src={activationSelfie} alt="" className="h-20 w-20 rounded-lg object-cover" />
-              ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed bg-white text-blue-500"><Camera className="h-6 w-6" /></div>
-              )}
-              <label className="inline-flex cursor-pointer items-center rounded-md border bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50">
-                <Upload className="mr-2 h-4 w-4" /> Capture selfie
-                <input className="hidden" type="file" accept="image/*" capture="user" onChange={(event) => selectActivationSelfie(event.target.files?.[0])} />
-              </label>
-              <Button type="button" onClick={toggleOnline} disabled={onlineBusy}>
-                <Power className="mr-2 h-4 w-4" /> Verify and go online
-              </Button>
-            </div>
-          </section>
-        )}
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <SummaryCard label="Today's online time" value={formatDuration(dashboardSummary?.onlineSecondsToday ?? 0)} detail={userOnline ? `Current session ${formatDuration(currentSessionSeconds)}` : "Go online when ready"} />
+          <SummaryCard label="Today's orders" value={String(dashboardSummary?.ordersToday ?? 0)} detail={`${dashboardSummary?.ordersWeek ?? 0} this week`} />
+          <SummaryCard label="Today's earnings" value={`₹${Number(dashboardSummary?.earningsToday ?? 0).toFixed(0)}`} detail={`₹${Number(dashboardSummary?.earningsWeek ?? 0).toFixed(0)} this week`} />
+          <SummaryCard label="Current status" value={String(currentStatus).replace(/_/g, " ").toUpperCase()} detail={userOnline ? `Live ${formatDuration(currentSessionSeconds)}` : "Currently offline"} accent={userOnline} />
+        </section>
+
+        <section className="rounded-lg border bg-white p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div><h2 className="font-bold">Earnings and performance</h2><p className="text-sm text-muted-foreground">Real completed-order earnings and saved online sessions.</p></div>
+            <Button type="button" variant={userOnline ? "default" : "outline"} onClick={toggleOnline} disabled={onlineBusy}>
+              <Power className="mr-2 h-4 w-4" /> {onlineBusy ? "Updating..." : userOnline ? "Go offline" : "Go online"}
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            <MetricTile label="This month" value={`₹${Number(dashboardSummary?.earningsMonth ?? 0).toFixed(0)}`} sub={`${formatDuration(dashboardSummary?.onlineSecondsMonth ?? 0)} online`} />
+            <MetricTile label="Total earnings" value={`₹${Number(dashboardSummary?.totalEarnings ?? 0).toFixed(0)}`} sub={`${dashboardSummary?.totalCompletedOrders ?? 0} completed orders`} />
+            <MetricTile label="Orders this month" value={String(dashboardSummary?.ordersMonth ?? 0)} sub={`${dashboardSummary?.ordersToday ?? 0} completed today`} />
+          </div>
+          <div className="mt-5 h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dashboardSummary?.daily ?? []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={(value) => String(value).slice(5)} tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(value: number, name: string) => [name === "earnings" ? `₹${Number(value).toFixed(0)}` : name === "onlineHours" ? `${Number(value).toFixed(1)} h` : value, name]} />
+                <Bar dataKey="earnings" name="Earnings" fill="#ff6500" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="completedOrders" name="Orders" fill="#155eef" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="onlineHours" name="Online hours" fill="#00a86b" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
 
         <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="min-w-0 rounded-lg border bg-white p-3 sm:p-4">
@@ -474,4 +476,20 @@ function Stat({ value, label }: { value: number | string; label: string }) {
       <p className="text-xs text-white/60">{label}</p>
     </div>
   );
+}
+
+function formatDuration(seconds: number) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m ${secs}s`;
+}
+
+function SummaryCard({ label, value, detail, accent }: { label: string; value: string; detail: string; accent?: boolean }) {
+  return <div className={`rounded-lg border bg-white p-4 shadow-sm ${accent ? "border-emerald-300" : ""}`}><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-2 text-2xl font-bold ${accent ? "text-emerald-700" : ""}`}>{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>;
+}
+
+function MetricTile({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs font-semibold text-muted-foreground">{label}</p><p className="mt-1 text-xl font-bold">{value}</p><p className="mt-1 text-xs text-muted-foreground">{sub}</p></div>;
 }

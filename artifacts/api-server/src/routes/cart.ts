@@ -1,7 +1,9 @@
 import { Router } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { db, cartsTable, cartItemsTable, productsTable, storesTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
+import { calculateOrderPricing, ensurePricingSchema, getPricingSettings } from "../lib/pricing";
+import { validateCouponForUser } from "../lib/coupons";
 
 const router = Router();
 
@@ -19,6 +21,7 @@ async function buildCartResponse(userId: number) {
       discount: "0.00",
       total: "0.00",
       itemCount: 0,
+      pricingPending: true,
     };
   }
 
@@ -36,23 +39,51 @@ async function buildCartResponse(userId: number) {
     store = s;
   }
 
-  const subtotal = items.reduce((sum, item) => sum + Number(item.price) * item.qty, 0);
-  const deliveryFee = store
-    ? (subtotal >= Number(store.freeDeliveryAbove ?? 299) ? 0 : Number(store.deliveryFee ?? 49))
-    : 0;
-  const total = subtotal + deliveryFee;
+  const subtotal = items.reduce((sum, item) => sum + Number(item.product?.price ?? item.price) * item.qty, 0);
+  const total = subtotal;
 
   return {
     storeId: cart.storeId,
     store,
-    items,
+    items: items.map((item) => ({ ...item, price: item.product?.price ?? item.price })),
     subtotal: subtotal.toFixed(2),
-    deliveryFee: deliveryFee.toFixed(2),
+    deliveryFee: "0.00",
     discount: "0.00",
     total: total.toFixed(2),
     itemCount: items.reduce((sum, i) => sum + i.qty, 0),
+    pricingPending: true,
   };
 }
+
+router.get("/pricing", async (req: AuthRequest, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      res.status(400).json({ error: "A valid delivery location is required before delivery pricing can be calculated." });
+      return;
+    }
+    await ensurePricingSchema();
+    const [cart] = await db.select().from(cartsTable).where(eq(cartsTable.userId, req.user!.userId)).limit(1);
+    if (!cart?.storeId) { res.json({ pricingPending: false, sellerBaseAmount: 0, productSubtotal: 0, commissionAmount: 0, deliveryCharge: 0, discountAmount: 0, finalCustomerAmount: 0, currency: "INR" }); return; }
+    const [[store], items] = await Promise.all([
+      db.select().from(storesTable).where(eq(storesTable.id, cart.storeId)).limit(1),
+      db.select().from(cartItemsTable).where(eq(cartItemsTable.cartId, cart.id)),
+    ]);
+    if (!store) { res.status(404).json({ error: "Seller not found" }); return; }
+    const products = items.length ? await db.select().from(productsTable).where(inArray(productsTable.id, items.map((item) => item.productId))) : [];
+    const productMap = new Map(products.map((product) => [product.id, product]));
+    const subtotal = items.reduce((sum, item) => sum + Number(productMap.get(item.productId)?.price ?? 0) * item.qty, 0);
+    let discountAmount = 0;
+    const couponCode = String(req.query.couponCode ?? "").trim();
+    if (couponCode) discountAmount = (await validateCouponForUser(db, { code: couponCode, orderAmount: subtotal, userId: req.user!.userId })).discount;
+    const pricing = calculateOrderPricing({ subtotal, store, customerLat: lat, customerLng: lng, settings: await getPricingSettings(), discountAmount, eligibleItemCount: items.reduce((sum, item) => sum + item.qty, 0) });
+    res.json({ ...pricing, pricingPending: false, storeId: store.id });
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not calculate delivery pricing" });
+  }
+});
 
 // GET /api/cart
 router.get("/", async (req: AuthRequest, res) => {

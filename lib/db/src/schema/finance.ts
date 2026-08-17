@@ -1,4 +1,4 @@
-import { pgTable, serial, text, varchar, timestamp, integer, decimal, json, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, varchar, timestamp, integer, decimal, json, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { ordersTable } from "./orders";
 
@@ -169,3 +169,29 @@ export const financialAuditLogsTable = pgTable("financial_audit_logs", {
   newValue: json("new_value").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+export const platformSettingsTable = pgTable("platform_settings", {
+  id: serial("id").primaryKey(),
+  singletonKey: varchar("singleton_key", { length: 30 }).notNull().default("default"),
+  commissionPercentage: decimal("commission_percentage", { precision: 5, scale: 2 }).notNull().default("10"),
+  deliveryRatePerKm: decimal("delivery_rate_per_km", { precision: 10, scale: 2 }).notNull().default("8"),
+  deliveryMinCharge: decimal("delivery_min_charge", { precision: 10, scale: 2 }).notNull().default("0"),
+  maxDeliveryDistanceKm: decimal("max_delivery_distance_km", { precision: 10, scale: 2 }).notNull().default("5"),
+  freeDeliveryThreshold: decimal("free_delivery_threshold", { precision: 12, scale: 2 }).notNull().default("0"),
+  deliveryChargeEnabled: boolean("delivery_charge_enabled").notNull().default(true),
+  additionalItemDeliveryPercentage: decimal("additional_item_delivery_percentage", { precision: 5, scale: 2 }).notNull().default("50"),
+  firstItemDeliveryPercentage: decimal("first_item_delivery_percentage", { precision: 5, scale: 2 }).notNull().default("100"),
+  secondItemDeliveryPercentage: decimal("second_item_delivery_percentage", { precision: 5, scale: 2 }).notNull().default("50"),
+  thirdItemDeliveryPercentage: decimal("third_item_delivery_percentage", { precision: 5, scale: 2 }).notNull().default("50"),
+  freeDeliveryFromItem: integer("free_delivery_from_item").notNull().default(4),
+  settlementMode: varchar("settlement_mode", { length: 20 }).notNull().default("delay"),
+  settlementDelayHours: integer("settlement_delay_hours").notNull().default(24),
+  weeklyPayoutDay: integer("weekly_payout_day").notNull().default(1),
+  minimumWithdrawal: decimal("minimum_withdrawal", { precision: 10, scale: 2 }).notNull().default("100"),
+  payoutEnabled: boolean("payout_enabled").notNull().default(false),
+  selfieRequired: boolean("selfie_required").notNull().default(true),
+  updatedBy: integer("updated_by").references(() => usersTable.id),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  singletonIdx: uniqueIndex("platform_settings_singleton_idx").on(table.singletonKey),
+}));

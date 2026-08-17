@@ -181,12 +181,12 @@ export default function Cart() {
           <h3 className="font-semibold">Bill Summary</h3>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">Subtotal ({items.length} items)</span><span>₹{subtotal.toFixed(0)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Delivery fee</span><span className={deliveryFee === 0 ? "text-green-600 font-medium" : ""}>{deliveryFee === 0 ? "FREE" : `₹${deliveryFee.toFixed(0)}`}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Delivery + platform fee</span><span className="text-muted-foreground">Calculated at checkout</span></div>
             {couponDiscount > 0 && (
               <div className="flex justify-between text-green-600"><span>Coupon discount</span><span>-₹{couponDiscount.toFixed(0)}</span></div>
             )}
             <Separator />
-            <div className="flex justify-between font-bold text-base"><span>Total</span><span>₹{total.toFixed(0)}</span></div>
+            <div className="flex justify-between font-bold text-base"><span>Base subtotal</span><span>₹{subtotal.toFixed(0)}</span></div>
           </div>
           {sellerActive ? (
             <Link

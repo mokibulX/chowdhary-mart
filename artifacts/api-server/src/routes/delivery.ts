@@ -1,12 +1,138 @@
 import { Router } from "express";
-import { eq, desc, and } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { db, ordersTable, deliveryPartnersTable, liveLocationsTable, orderTrackingTable, storesTable, activeDeliveryLocationsTable, deliveryTrackingHistoryTable } from "@workspace/db";
 import { requireApprovedDeliveryPartner, requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { riderZoneIds, isInsideZone } from "../lib/zones";
 import { createAndPushNotification } from "../lib/push-service";
 import { deliveryOtp, expireOrderIfNeeded, lifecycleMeta, pickupOtp } from "../lib/order-lifecycle";
+import { testMode } from "../lib/test-mode";
+import { ensureFinanceTables, settleCompletedOrder } from "../lib/finance";
 
 const router = Router();
+
+let verificationTableReady: Promise<void> | null = null;
+let onlineSessionTableReady: Promise<void> | null = null;
+
+async function ensureOnlineSessionTable() {
+  if (!onlineSessionTableReady) {
+    onlineSessionTableReady = db.execute(sql`
+      alter table delivery_partners add column if not exists online_started_at timestamp
+    `).then(() => db.execute(sql`
+      create table if not exists delivery_partner_online_sessions (
+        id serial primary key,
+        delivery_partner_id integer not null references delivery_partners(id) on delete cascade,
+        started_at timestamp not null,
+        ended_at timestamp,
+        duration_seconds integer,
+        created_at timestamp not null default now()
+      )
+    `)).then(() => undefined).catch((error) => { onlineSessionTableReady = null; throw error; });
+  }
+  await onlineSessionTableReady;
+}
+
+function indiaDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  return { year: Number(parts.find((part) => part.type === "year")?.value), month: Number(parts.find((part) => part.type === "month")?.value), day: Number(parts.find((part) => part.type === "day")?.value) };
+}
+
+function indiaMidnight(parts: { year: number; month: number; day: number }) {
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day) - (5.5 * 60 * 60 * 1000));
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function indiaDateString(date: Date) {
+  const { year, month, day } = indiaDateParts(date);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function periodWindows(now = new Date()) {
+  const parts = indiaDateParts(now);
+  const today = indiaMidnight(parts);
+  const localDayNumber = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
+  const weekStart = addDays(today, -((localDayNumber + 6) % 7));
+  const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1) - (5.5 * 60 * 60 * 1000));
+  return { today, tomorrow: addDays(today, 1), weekStart, monthStart, todayKey: indiaDateString(today) };
+}
+
+function currentDeliveryStatus(isOnline: boolean, activeDelivery: boolean) {
+  return !isOnline ? "offline" : activeDelivery ? "on_delivery" : "online";
+}
+
+async function activeDeliveryForPartner(partnerId: number) {
+  const rows = await db.execute(sql`
+    select 1 from order_tracking ot
+    join orders o on o.id = ot.order_id
+    where ot.delivery_partner_id = ${partnerId}
+      and o.status in ('packed', 'picked_up', 'on_the_way', 'arriving')
+      and coalesce(ot.message, '') not ilike '%rejected%'
+    limit 1
+  `);
+  return Boolean((rows as any).rows?.length);
+}
+
+async function onlineSecondsBetween(partnerId: number, start: Date, end: Date) {
+  const result = await db.execute(sql`
+    select coalesce(sum(greatest(0, extract(epoch from (
+      least(coalesce(ended_at, now()::timestamp), ${end}) - greatest(started_at, ${start})
+    )))), 0)::bigint as seconds
+    from delivery_partner_online_sessions
+    where delivery_partner_id = ${partnerId}
+      and started_at < ${end}
+      and coalesce(ended_at, now()::timestamp) > ${start}
+  `);
+  return Number((result as any).rows?.[0]?.seconds ?? 0);
+}
+
+function emptyDailyRows(start: Date, end: Date) {
+  const rows: Array<{ date: string; onlineSeconds: number; completedOrders: number; earnings: number }> = [];
+  for (let date = start; date < end; date = addDays(date, 1)) rows.push({ date: indiaDateString(date), onlineSeconds: 0, completedOrders: 0, earnings: 0 });
+  return rows;
+}
+
+function overlapSeconds(start: Date, end: Date | null, dayStart: Date, dayEnd: Date) {
+  const from = Math.max(start.getTime(), dayStart.getTime());
+  const to = Math.min((end ?? new Date()).getTime(), dayEnd.getTime());
+  return Math.max(0, Math.floor((to - from) / 1000));
+}
+async function ensureVerificationTable() {
+  if (!verificationTableReady) {
+    verificationTableReady = db.execute(sql`
+      create table if not exists delivery_partner_verifications (
+        id serial primary key,
+        user_id integer not null references users(id) on delete cascade,
+        delivery_partner_id integer not null references delivery_partners(id) on delete cascade,
+        session_id uuid not null unique,
+        nonce_hash text not null,
+        provider varchar(30) not null default 'none',
+        status varchar(30) not null default 'pending',
+        liveness_passed boolean not null default false,
+        liveness_confidence real,
+        face_match_passed boolean not null default false,
+        face_similarity real,
+        reference_image_id text,
+        failure_reason text,
+        attempt_number integer not null default 1,
+        created_at timestamp not null default now(),
+        verified_at timestamp,
+        expires_at timestamp not null,
+        consumed_at timestamp
+      )
+    `).then(() => undefined).catch((error) => { verificationTableReady = null; throw error; });
+  }
+  await verificationTableReady;
+}
+
+function verificationHash(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+const verificationTtlSeconds = Math.max(60, Number(process.env.LIVENESS_SESSION_TTL_SECONDS ?? 180));
+const verificationProvider = String(process.env.LIVENESS_PROVIDER ?? "none").toLowerCase();
 
 router.use(requireAuth, requireRole("delivery_partner", "admin"), requireApprovedDeliveryPartner);
 
@@ -15,6 +141,85 @@ async function getDP(userId: number) {
     .where(eq(deliveryPartnersTable.userId, userId)).limit(1);
   return dp;
 }
+
+router.post("/verification/start", async (req: AuthRequest, res) => {
+  try {
+    const dp = await getDP(req.user!.userId);
+    if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
+    await ensureVerificationTable();
+    const recentFailures = await db.execute(sql`
+      select count(*)::int as count from delivery_partner_verifications
+      where user_id = ${req.user!.userId} and delivery_partner_id = ${dp.id}
+        and status = 'failed' and created_at > now() - interval '15 minutes'
+    `);
+    if (Number((recentFailures as any).rows?.[0]?.count ?? 0) >= 3) {
+      res.status(429).json({ error: "Too many failed verification attempts. Please try again later." });
+      return;
+    }
+    const active = await db.execute(sql`
+      select session_id as "sessionId" from delivery_partner_verifications
+      where user_id = ${req.user!.userId} and delivery_partner_id = ${dp.id}
+        and status = 'pending' and expires_at > now()
+      order by created_at desc limit 1
+    `);
+    const existing = (active as any).rows?.[0];
+    if (existing?.sessionId) {
+      res.json({ sessionId: existing.sessionId, expiresInSeconds: verificationTtlSeconds, provider: verificationProvider });
+      return;
+    }
+    const sessionId = randomUUID();
+    const nonce = randomUUID();
+    await db.execute(sql`
+      insert into delivery_partner_verifications
+        (user_id, delivery_partner_id, session_id, nonce_hash, provider, reference_image_id, expires_at)
+      values (${req.user!.userId}, ${dp.id}, ${sessionId}, ${verificationHash(nonce)}, ${verificationProvider}, ${(dp as any).profileSelfie ? `profile:${dp.id}` : null}, now() + (${verificationTtlSeconds} * interval '1 second'))
+    `);
+    res.status(201).json({ sessionId, expiresInSeconds: verificationTtlSeconds, provider: verificationProvider });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not start identity verification" });
+  }
+});
+
+router.post("/verification/complete", async (req: AuthRequest, res) => {
+  try {
+    const sessionId = String(req.body?.sessionId ?? "");
+    if (!sessionId) { res.status(400).json({ error: "Verification session is required" }); return; }
+    await ensureVerificationTable();
+    const result = await db.execute(sql`
+      select * from delivery_partner_verifications
+      where session_id = ${sessionId} and user_id = ${req.user!.userId}
+      limit 1
+    `);
+    const session = (result as any).rows?.[0];
+    if (!session || session.status !== "pending" || new Date(session.expires_at).getTime() <= Date.now()) {
+      res.status(400).json({ error: "Verification session expired. Please try again." });
+      return;
+    }
+    const provider = String(session.provider ?? "none");
+    if (!(testMode.enabled && testMode.allowDemoSelfie)) {
+      await db.execute(sql`update delivery_partner_verifications set status = 'failed', failure_reason = 'Liveness provider is not configured' where session_id = ${sessionId}`);
+      res.status(503).json({ error: "Live identity verification is not configured yet. Add the server-side liveness provider before going online." });
+      return;
+    }
+    const image = String(req.body?.liveSelfie ?? "");
+    if (!image.startsWith("data:image/")) {
+      await db.execute(sql`update delivery_partner_verifications set status = 'failed', failure_reason = 'Live camera capture required' where session_id = ${sessionId}`);
+      res.status(400).json({ error: "Use the live front camera. Gallery images are not accepted." });
+      return;
+    }
+    await db.execute(sql`
+      update delivery_partner_verifications
+      set status = 'verified', liveness_passed = true, liveness_confidence = 1,
+          face_match_passed = true, face_similarity = 1, verified_at = now()
+      where session_id = ${sessionId} and user_id = ${req.user!.userId} and status = 'pending' and expires_at > now()
+    `);
+    res.json({ verificationId: sessionId, status: "verified", livenessPassed: true, faceMatchPassed: true, provider: "local_test" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not complete identity verification" });
+  }
+});
 
 async function getLatestAssignedTracking(orderId: number) {
   const rows = await db.select().from(orderTrackingTable)
@@ -33,6 +238,83 @@ async function assertDeliveryAssignment(orderId: number, deliveryPartnerId: numb
   if (!latestAssigned || isRejectedTracking(latestAssigned.message)) return false;
   return latestAssigned.deliveryPartnerId === deliveryPartnerId;
 }
+
+// GET /api/delivery/dashboard-summary
+router.get("/dashboard-summary", async (req: AuthRequest, res) => {
+  try {
+    const dp = await getDP(req.user!.userId);
+    if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
+    await ensureOnlineSessionTable();
+    await ensureFinanceTables();
+    const windows = periodWindows();
+    const onlineState = await db.execute(sql`select online_started_at as "onlineStartedAt" from delivery_partners where id = ${dp.id}`);
+    const onlineStartedAt = (onlineState as any).rows?.[0]?.onlineStartedAt ?? null;
+    const activeDelivery = await activeDeliveryForPartner(dp.id);
+    const onlineSecondsToday = await onlineSecondsBetween(dp.id, windows.today, windows.tomorrow);
+    const onlineSecondsWeek = await onlineSecondsBetween(dp.id, windows.weekStart, windows.tomorrow);
+    const onlineSecondsMonth = await onlineSecondsBetween(dp.id, windows.monthStart, windows.tomorrow);
+    const earnings = await db.execute(sql`
+      select
+        coalesce(sum(case when ret.created_at >= ${windows.today} and ret.created_at < ${windows.tomorrow} then ret.final_earning else 0 end), 0) as "earningsToday",
+        coalesce(sum(case when ret.created_at >= ${windows.weekStart} and ret.created_at < ${windows.tomorrow} then ret.final_earning else 0 end), 0) as "earningsWeek",
+        coalesce(sum(case when ret.created_at >= ${windows.monthStart} and ret.created_at < ${windows.tomorrow} then ret.final_earning else 0 end), 0) as "earningsMonth",
+        coalesce(sum(ret.final_earning), 0) as "totalEarnings",
+        count(*) filter (where o.delivered_at >= ${windows.today} and o.delivered_at < ${windows.tomorrow})::int as "ordersToday",
+        count(*) filter (where o.delivered_at >= ${windows.weekStart} and o.delivered_at < ${windows.tomorrow})::int as "ordersWeek",
+        count(*) filter (where o.delivered_at >= ${windows.monthStart} and o.delivered_at < ${windows.tomorrow})::int as "ordersMonth",
+        count(*)::int as "totalCompletedOrders"
+      from rider_earning_transactions ret
+      join orders o on o.id = ret.order_id
+      where ret.rider_user_id = ${req.user!.userId} and o.status = 'delivered'
+    `);
+    const row = (earnings as any).rows?.[0] ?? {};
+    const chartStart = addDays(windows.tomorrow, -30);
+    const chartRows = emptyDailyRows(chartStart, windows.tomorrow);
+    const rowByDate = new Map(chartRows.map((item) => [item.date, item]));
+    const earningsRows = await db.execute(sql`
+      select o.delivered_at as "deliveredAt", ret.final_earning as earnings
+      from rider_earning_transactions ret
+      join orders o on o.id = ret.order_id
+      where ret.rider_user_id = ${req.user!.userId} and o.status = 'delivered' and o.delivered_at >= ${chartStart} and o.delivered_at < ${windows.tomorrow}
+    `);
+    for (const item of ((earningsRows as any).rows ?? [])) {
+      const date = indiaDateString(new Date(item.deliveredAt));
+      const target = rowByDate.get(date);
+      if (target) { target.earnings += Number(item.earnings ?? 0); target.completedOrders += 1; }
+    }
+    const sessions = await db.execute(sql`
+      select started_at as "startedAt", ended_at as "endedAt"
+      from delivery_partner_online_sessions
+      where delivery_partner_id = ${dp.id} and started_at < ${windows.tomorrow} and coalesce(ended_at, now()::timestamp) > ${chartStart}
+    `);
+    for (const session of ((sessions as any).rows ?? [])) {
+      for (const day of chartRows) {
+        const dayStart = indiaMidnight({ year: Number(day.date.slice(0, 4)), month: Number(day.date.slice(5, 7)), day: Number(day.date.slice(8, 10)) });
+        const target = rowByDate.get(day.date);
+        if (target) target.onlineSeconds += overlapSeconds(new Date(session.startedAt), session.endedAt ? new Date(session.endedAt) : null, dayStart, addDays(dayStart, 1));
+      }
+    }
+    res.json({
+      currentStatus: currentDeliveryStatus(dp.isOnline, activeDelivery),
+      currentOnlineStartedAt: onlineStartedAt,
+      onlineSecondsToday,
+      onlineSecondsWeek,
+      onlineSecondsMonth,
+      ordersToday: Number(row.ordersToday ?? 0),
+      ordersWeek: Number(row.ordersWeek ?? 0),
+      ordersMonth: Number(row.ordersMonth ?? 0),
+      totalCompletedOrders: Number(row.totalCompletedOrders ?? 0),
+      earningsToday: Number(row.earningsToday ?? 0),
+      earningsWeek: Number(row.earningsWeek ?? 0),
+      earningsMonth: Number(row.earningsMonth ?? 0),
+      totalEarnings: Number(row.totalEarnings ?? 0),
+      daily: chartRows.map((item) => ({ ...item, onlineHours: Number((item.onlineSeconds / 3600).toFixed(2)) })),
+    });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load delivery dashboard summary" });
+  }
+});
 
 // GET /api/delivery/orders
 router.get("/orders", async (req: AuthRequest, res) => {
@@ -245,6 +527,10 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
       lng: dp.currentLng,
     });
 
+    if (status === "delivered") {
+      await settleCompletedOrder(orderId);
+    }
+
     try {
       await createAndPushNotification({
         userId: targetOrder.userId,
@@ -380,23 +666,37 @@ router.patch("/toggle-online", async (req: AuthRequest, res) => {
     const dp = await getDP(req.user!.userId);
     if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
     if (!dp.isVerified) { res.status(403).json({ error: "Admin approval required before going online." }); return; }
-    const nextOnline = !dp.isOnline;
+    await ensureOnlineSessionTable();
+    const nextOnline = typeof req.body?.online === "boolean" ? req.body.online : !dp.isOnline;
     const location = req.body?.location;
-    const updates: Partial<typeof deliveryPartnersTable.$inferInsert> = { isOnline: nextOnline };
-    if (nextOnline && location) {
-      updates.currentLat = Number(location.lat);
-      updates.currentLng = Number(location.lng);
+    if (!nextOnline && await activeDeliveryForPartner(dp.id)) {
+      res.status(409).json({ error: "Finish or cancel the active delivery before going offline." });
+      return;
     }
-
-    const [updated] = await db.update(deliveryPartnersTable)
-      .set(updates)
-      .where(eq(deliveryPartnersTable.id, dp.id))
-      .returning();
-    if (!nextOnline) {
+    if (nextOnline) {
+      const updated = await db.execute(sql`
+        update delivery_partners
+        set is_online = true, online_started_at = now(),
+            current_lat = coalesce(${location?.lat !== undefined ? Number(location.lat) : null}, current_lat),
+            current_lng = coalesce(${location?.lng !== undefined ? Number(location.lng) : null}, current_lng)
+        where id = ${dp.id} and is_online = false
+        returning id
+      `);
+      if ((updated as any).rows?.length) {
+        await db.execute(sql`insert into delivery_partner_online_sessions (delivery_partner_id, started_at) values (${dp.id}, now())`);
+      }
+    } else {
+      await db.execute(sql`
+        update delivery_partner_online_sessions
+        set ended_at = now(), duration_seconds = greatest(0, extract(epoch from (now()::timestamp - started_at)))::int
+        where delivery_partner_id = ${dp.id} and ended_at is null
+      `);
+      await db.execute(sql`update delivery_partners set is_online = false, online_started_at = null where id = ${dp.id} and is_online = true`);
       await db.delete(activeDeliveryLocationsTable).where(eq(activeDeliveryLocationsTable.deliveryPartnerId, dp.id));
     }
-
-    res.json({ message: `Now ${nextOnline ? "online" : "offline"}`, isOnline: nextOnline, partner: updated });
+    const [updated] = await db.select().from(deliveryPartnersTable).where(eq(deliveryPartnersTable.id, dp.id)).limit(1);
+    const activeDelivery = await activeDeliveryForPartner(dp.id);
+    res.json({ message: `Now ${nextOnline ? "online" : "offline"}`, isOnline: updated?.isOnline ?? nextOnline, currentStatus: currentDeliveryStatus(updated?.isOnline ?? nextOnline, activeDelivery), partner: updated });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

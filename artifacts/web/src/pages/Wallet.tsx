@@ -28,6 +28,20 @@ export default function Wallet() {
   const [commissionPercent, setCommissionPercent] = useState("8");
   const [sellerCycle, setSellerCycle] = useState("weekly");
   const [deliveryCycle, setDeliveryCycle] = useState("weekly");
+  const [deliveryRate, setDeliveryRate] = useState("8");
+  const [deliveryMinCharge, setDeliveryMinCharge] = useState("0");
+  const [maxDeliveryDistanceKm, setMaxDeliveryDistanceKm] = useState("5");
+  const [freeDeliveryThreshold, setFreeDeliveryThreshold] = useState("0");
+  const [deliveryChargeEnabled, setDeliveryChargeEnabled] = useState(true);
+  const [additionalItemDeliveryPercentage, setAdditionalItemDeliveryPercentage] = useState("50");
+  const [firstItemDeliveryPercentage, setFirstItemDeliveryPercentage] = useState("100");
+  const [secondItemDeliveryPercentage, setSecondItemDeliveryPercentage] = useState("50");
+  const [thirdItemDeliveryPercentage, setThirdItemDeliveryPercentage] = useState("50");
+  const [freeDeliveryFromItem, setFreeDeliveryFromItem] = useState("4");
+  const [settlementMode, setSettlementMode] = useState("delay");
+  const [settlementDelayHours, setSettlementDelayHours] = useState("24");
+  const [minimumWithdrawal, setMinimumWithdrawal] = useState("100");
+  const [payoutEnabled, setPayoutEnabled] = useState(false);
   const [transferAmount, setTransferAmount] = useState("500");
   const [transferMethod, setTransferMethod] = useState<"upi" | "bank">("upi");
   const [transferUpi, setTransferUpi] = useState("");
@@ -58,6 +72,20 @@ export default function Wallet() {
       setCommissionPercent(String(settings.adminCommissionPercent ?? 8));
       setSellerCycle(settings.sellerPayoutCycle ?? "weekly");
       setDeliveryCycle(settings.deliveryPayoutCycle ?? "weekly");
+      setDeliveryRate(String(settings.deliveryRatePerKm ?? 8));
+      setDeliveryMinCharge(String(settings.deliveryMinCharge ?? 0));
+      setMaxDeliveryDistanceKm(String(settings.maxDeliveryDistanceKm ?? 5));
+      setFreeDeliveryThreshold(String(settings.freeDeliveryThreshold ?? 0));
+      setDeliveryChargeEnabled(settings.deliveryChargeEnabled !== false);
+      setAdditionalItemDeliveryPercentage(String(settings.additionalItemDeliveryPercentage ?? 50));
+      setFirstItemDeliveryPercentage(String(settings.firstItemDeliveryPercentage ?? 100));
+      setSecondItemDeliveryPercentage(String(settings.secondItemDeliveryPercentage ?? settings.additionalItemDeliveryPercentage ?? 50));
+      setThirdItemDeliveryPercentage(String(settings.thirdItemDeliveryPercentage ?? settings.additionalItemDeliveryPercentage ?? 50));
+      setFreeDeliveryFromItem(String(settings.freeDeliveryFromItem ?? 4));
+      setSettlementMode(String(settings.settlementMode ?? "delay"));
+      setSettlementDelayHours(String(settings.settlementDelayHours ?? 24));
+      setMinimumWithdrawal(String(settings.minimumWithdrawal ?? 100));
+      setPayoutEnabled(Boolean(settings.payoutEnabled));
       return settings;
     },
     enabled: user?.role === "admin",
@@ -102,6 +130,20 @@ export default function Wallet() {
         adminCommissionPercent: Number(commissionPercent),
         sellerPayoutCycle: sellerCycle,
         deliveryPayoutCycle: deliveryCycle,
+        deliveryRatePerKm: Number(deliveryRate),
+        deliveryMinCharge: Number(deliveryMinCharge),
+        maxDeliveryDistanceKm: Number(maxDeliveryDistanceKm),
+        freeDeliveryThreshold: Number(freeDeliveryThreshold),
+        deliveryChargeEnabled,
+        additionalItemDeliveryPercentage: Number(additionalItemDeliveryPercentage),
+        firstItemDeliveryPercentage: Number(firstItemDeliveryPercentage),
+        secondItemDeliveryPercentage: Number(secondItemDeliveryPercentage),
+        thirdItemDeliveryPercentage: Number(thirdItemDeliveryPercentage),
+        freeDeliveryFromItem: Number(freeDeliveryFromItem),
+        settlementMode,
+        settlementDelayHours: Number(settlementDelayHours),
+        minimumWithdrawal: Number(minimumWithdrawal),
+        payoutEnabled,
       }),
     });
     qc.invalidateQueries({ queryKey: ["/api/admin/payout-settings"] });
@@ -306,13 +348,55 @@ export default function Wallet() {
                 <option value="monthly">Monthly</option>
               </select>
             </div>
+            <div className="space-y-1">
+              <Label>Delivery rate / km (Rs.)</Label>
+              <Input type="number" min={0} value={deliveryRate} onChange={(event) => setDeliveryRate(event.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>Minimum delivery charge (Rs.)</Label>
+              <Input type="number" min={0} value={deliveryMinCharge} onChange={(event) => setDeliveryMinCharge(event.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>Maximum delivery distance (km)</Label>
+              <Input type="number" min={0} value={maxDeliveryDistanceKm} onChange={(event) => setMaxDeliveryDistanceKm(event.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>Free delivery above (Rs.)</Label>
+              <Input type="number" min={0} value={freeDeliveryThreshold} onChange={(event) => setFreeDeliveryThreshold(event.target.value)} placeholder="0 = disabled" />
+            </div>
+            <div className="space-y-1"><Label>1st product delivery (%)</Label><Input type="number" min={0} max={100} value={firstItemDeliveryPercentage} onChange={(event) => setFirstItemDeliveryPercentage(event.target.value)} /></div>
+            <div className="space-y-1"><Label>2nd product delivery (%)</Label><Input type="number" min={0} max={100} value={secondItemDeliveryPercentage} onChange={(event) => setSecondItemDeliveryPercentage(event.target.value)} /></div>
+            <div className="space-y-1"><Label>3rd product delivery (%)</Label><Input type="number" min={0} max={100} value={thirdItemDeliveryPercentage} onChange={(event) => setThirdItemDeliveryPercentage(event.target.value)} /></div>
+            <div className="space-y-1"><Label>Free delivery from item</Label><Input type="number" min={4} max={100} value={freeDeliveryFromItem} onChange={(event) => setFreeDeliveryFromItem(event.target.value)} /><p className="text-xs text-muted-foreground">Default: 4th product and above.</p></div>
+            <div className="space-y-1">
+              <Label>Settlement</Label>
+              <select className="h-10 w-full rounded-md border bg-white px-3 text-sm" value={settlementMode} onChange={(event) => setSettlementMode(event.target.value)}>
+                <option value="delay">After delay</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label>Delay hours</Label>
+              <Input type="number" min={0} value={settlementDelayHours} onChange={(event) => setSettlementDelayHours(event.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>Minimum withdrawal (Rs.)</Label>
+              <Input type="number" min={1} value={minimumWithdrawal} onChange={(event) => setMinimumWithdrawal(event.target.value)} />
+            </div>
+            <label className="flex items-center gap-2 pt-7 text-sm font-medium">
+              <input type="checkbox" checked={payoutEnabled} onChange={(event) => setPayoutEnabled(event.target.checked)} /> Enable payout requests
+            </label>
+            <label className="flex items-center gap-2 pt-7 text-sm font-medium">
+              <input type="checkbox" checked={deliveryChargeEnabled} onChange={(event) => setDeliveryChargeEnabled(event.target.checked)} /> Enable distance delivery charge
+            </label>
           </div>
           <Button onClick={savePayoutSettings}>
             <Save className="mr-2 h-4 w-4" /> Save payout policy
           </Button>
           {payoutSettings && (
             <p className="text-xs text-muted-foreground">
-              Current policy: {payoutSettings.adminCommissionPercent}% commission, seller {payoutSettings.sellerPayoutCycle}, delivery {payoutSettings.deliveryPayoutCycle}.
+              Current policy: {payoutSettings.adminCommissionPercent}% commission, Rs.{payoutSettings.deliveryRatePerKm}/km, settlement {payoutSettings.settlementMode}.
             </p>
           )}
         </section>
@@ -330,8 +414,8 @@ export default function Wallet() {
                     <p className="text-xs capitalize text-muted-foreground">{walletUser.role?.replace("_", " ")} | {walletUser.email || walletUser.phone || "No contact"}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold">Rs.{Number(walletUser.walletBalance ?? 0).toFixed(0)}</p>
-                    <p className="text-xs text-muted-foreground">{walletUser.transactionCount ?? 0} tx</p>
+                    <p className="font-bold">Rs.{Number(walletUser.availableBalance ?? walletUser.walletBalance ?? 0).toFixed(0)}</p>
+                    <p className="text-xs text-muted-foreground">Available · Pending Rs.{Number(walletUser.pendingBalance ?? 0).toFixed(0)} · {walletUser.transactionCount ?? 0} tx</p>
                   </div>
                 </div>
                 {walletUser.transactions?.[0] && (

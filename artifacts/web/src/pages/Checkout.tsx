@@ -49,6 +49,8 @@ export default function Checkout() {
   const [confirmedPickup, setConfirmedPickup] = useState<PickupLocation | null>(null);
   const [couponResult, setCouponResult] = useState<{ code: string; discount: number; description?: string } | null>(null);
   const [couponError, setCouponError] = useState("");
+  const [pricing, setPricing] = useState<any>(null);
+  const [pricingBusy, setPricingBusy] = useState(false);
 
   const { data: cart, isLoading: loadingCart } = useGetCart({ query: { enabled: !!user, queryKey: getGetCartQueryKey() } });
   const { data: addresses, isLoading: loadingAddresses } = useListAddresses({ query: { enabled: !!user, queryKey: getListAddressesQueryKey() } });
@@ -60,16 +62,22 @@ export default function Checkout() {
   const activeAddress = addresses?.find((address) => address.id === activeAddressId);
 
   const subtotal = Number(cart?.subtotal ?? 0);
-  const deliveryFee = Number(cart?.deliveryFee ?? 0);
-  const couponDiscount = couponResult ? Math.min(couponResult.discount, subtotal) : 0;
-  const total = Math.max(0, subtotal + deliveryFee - couponDiscount);
+  const deliveryFee = Number(pricing?.deliveryCharge ?? 0);
+  const fullDeliveryCharge = Number(pricing?.fullDeliveryCharge ?? deliveryFee);
+  const firstItemDeliveryCharge = Number(pricing?.firstItemDeliveryCharge ?? fullDeliveryCharge);
+  const eligibleItemCount = Number(pricing?.eligibleItemCount ?? cart?.itemCount ?? 1);
+  const secondItemDeliveryCharge = Number(pricing?.secondItemDeliveryCharge ?? (eligibleItemCount > 1 ? deliveryFee - firstItemDeliveryCharge : 0));
+  const thirdItemDeliveryCharge = Number(pricing?.thirdItemDeliveryCharge ?? 0);
+  const freeDeliveryItemCount = Number(pricing?.freeDeliveryItemCount ?? Math.max(0, eligibleItemCount - 3));
+  const couponDiscount = Number(pricing?.discountAmount ?? (couponResult ? Math.min(couponResult.discount, subtotal) : 0));
+  const total = pricing ? Number(pricing.finalCustomerAmount ?? 0) : subtotal;
   const sellerActive = !(cart as any)?.store || (cart as any).store?.isOpen !== false;
   const storePoint = (cart as any)?.store;
   const activeAddressPhoto = activeAddress ? ((activeAddress as any).photoUrl as string | undefined) : "";
   const visibleDeliveryPhoto = deliveryPhoto || activeAddressPhoto || "";
   const orderDeliveryPhoto = visibleDeliveryPhoto || DEFAULT_DELIVERY_PHOTO;
   const couponReady = !couponCode || !!couponResult;
-  const canPlaceOrder = couponReady && !couponError && !!confirmedPickup && confirmedPickup.available && sellerActive && !!cart?.items?.length;
+  const canPlaceOrder = couponReady && !couponError && !!pricing && !!confirmedPickup && confirmedPickup.available && sellerActive && !!cart?.items?.length;
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +99,20 @@ export default function Checkout() {
       });
     return () => { cancelled = true; };
   }, [couponCode, subtotal, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPricing(null);
+    if (!confirmedPickup || !confirmedPickup.available || !subtotal) return;
+    setPricingBusy(true);
+    const query = new URLSearchParams({ lat: String(confirmedPickup.lat), lng: String(confirmedPickup.lng) });
+    if (couponResult?.code) query.set("couponCode", couponResult.code);
+    customFetch<any>(`/api/cart/pricing?${query.toString()}`, { responseType: "json" })
+      .then((quote) => { if (!cancelled) setPricing(quote); })
+      .catch((error) => { if (!cancelled) toast({ title: "Pricing unavailable", description: getFriendlyErrorMessage(error, "Could not calculate delivery charge."), variant: "destructive" }); })
+      .finally(() => { if (!cancelled) setPricingBusy(false); });
+    return () => { cancelled = true; };
+  }, [confirmedPickup, couponResult?.code, subtotal, toast]);
 
   if (!user) {
     return (
@@ -367,18 +389,18 @@ export default function Checkout() {
               <Button
                 type="button"
                 className="self-end bg-[#0757ee] hover:bg-[#0647c7]"
-                disabled={paymentBusy || onlinePaid}
+                disabled={paymentBusy || onlinePaid || !confirmedPickup || !pricing}
                 onClick={async () => {
                   setPaymentBusy(true);
                   try {
                     if (testMode.enabled) {
-                      const verified = await customFetch<any>("/api/payments/demo/complete", { method: "POST", responseType: "json" });
+                      const verified = await customFetch<any>("/api/payments/demo/complete", { method: "POST", body: JSON.stringify({ latitude: confirmedPickup?.lat, longitude: confirmedPickup?.lng, couponCode: couponResult?.code }), responseType: "json" });
                       setOnlinePaid(true);
                       setProviderPaymentId(verified.providerPaymentId);
                       toast({ title: "Demo payment complete", description: "No real money was charged." });
                       return;
                     }
-                    const paymentOrder = await customFetch<any>("/api/payments/razorpay/order", { method: "POST", responseType: "json" });
+                    const paymentOrder = await customFetch<any>("/api/payments/razorpay/order", { method: "POST", body: JSON.stringify({ latitude: confirmedPickup?.lat, longitude: confirmedPickup?.lng, couponCode: couponResult?.code }), responseType: "json" });
                     await openRazorpayCheckout({
                       order: paymentOrder,
                       user,
@@ -426,11 +448,21 @@ export default function Checkout() {
         )}
         <div className="space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Subtotal ({cart?.itemCount} items)</span><span>Rs.{subtotal.toFixed(0)}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Delivery fee</span><span className={deliveryFee === 0 ? "text-green-600" : ""}>{deliveryFee === 0 ? "FREE" : `Rs.${deliveryFee.toFixed(0)}`}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Platform fee</span><span>Rs.{Number(pricing?.commissionAmount ?? 0).toFixed(2)}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Delivery fee</span><span className={deliveryFee === 0 ? "text-green-600" : ""}>{!confirmedPickup ? "Calculated after location" : pricingBusy ? "Calculating..." : deliveryFee === 0 ? "FREE" : `Rs.${deliveryFee.toFixed(2)}`}</span></div>
+          {confirmedPickup && pricing && eligibleItemCount > 1 && (
+            <div className="rounded-lg border border-green-100 bg-green-50 p-3 text-xs text-green-900">
+              <div className="flex justify-between"><span>First item delivery</span><span>Rs.{firstItemDeliveryCharge.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>2nd item</span><span>{eligibleItemCount >= 2 ? `Rs.${secondItemDeliveryCharge.toFixed(2)}` : "-"}</span></div>
+              <div className="flex justify-between"><span>3rd item</span><span>{eligibleItemCount >= 3 ? `Rs.${thirdItemDeliveryCharge.toFixed(2)}` : "-"}</span></div>
+              {freeDeliveryItemCount > 0 && <div className="flex justify-between font-semibold"><span>Free delivery ({freeDeliveryItemCount} items)</span><span>FREE</span></div>}
+              <p className="mt-1">Free delivery is applied from the 4th eligible product in this shipment.</p>
+            </div>
+          )}
           {couponResult && <div className="flex justify-between text-green-600"><span>Coupon ({couponResult.code})</span><span>-Rs.{couponDiscount.toFixed(0)}</span></div>}
           {couponError && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{couponError}</div>}
           <Separator />
-          <div className="flex justify-between text-base font-bold"><span>Total</span><span>Rs.{total.toFixed(0)}</span></div>
+          <div className="flex justify-between text-base font-bold"><span>Total</span><span>Rs.{total.toFixed(2)}</span></div>
         </div>
         <Button
           className="w-full"

@@ -148,6 +148,8 @@ export default function OrderDetail() {
       <div className="bg-white border rounded-xl p-4 space-y-2 text-sm">
         <h2 className="font-semibold mb-2">Bill Summary</h2>
         <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>₹{Number(order.subtotal).toFixed(0)}</span></div>
+        {Number((order as any).platformFee ?? (order as any).commissionAmount ?? 0) > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Platform fee</span><span>₹{Number((order as any).platformFee ?? (order as any).commissionAmount).toFixed(2)}</span></div>}
+        {(order as any).calculatedDistanceKm != null && <div className="flex justify-between text-xs text-muted-foreground"><span>Delivery distance</span><span>{Number((order as any).calculatedDistanceKm).toFixed(2)} km</span></div>}
         <div className="flex justify-between"><span className="text-muted-foreground">Delivery fee</span><span className={Number(order.deliveryFee) === 0 ? "text-green-600" : ""}>{Number(order.deliveryFee) === 0 ? "FREE" : `₹${Number(order.deliveryFee).toFixed(0)}`}</span></div>
         {order.couponCode && <div className="flex justify-between text-green-600"><span>Coupon ({order.couponCode})</span><span>-₹{Number(order.couponDiscount).toFixed(0)}</span></div>}
         {order.walletUsed && Number(order.walletUsed) > 0 && <div className="flex justify-between text-green-600"><span>Wallet</span><span>-₹{Number(order.walletUsed).toFixed(0)}</span></div>}

@@ -4,6 +4,7 @@ import {
   db, ordersTable, orderItemsTable, orderTrackingTable,
   cartItemsTable, cartsTable, productsTable, storesTable,
   addressesTable, usersTable, couponUsesTable, couponsTable,
+  paymentsTable,
   walletTransactionsTable, reviewsTable, deliveryPartnersTable,
   outboxEventsTable, inventoryLedgerTable
 } from "@workspace/db";
@@ -14,6 +15,7 @@ import { beginIdempotency, getIdempotencyKey, requestHash, saveIdempotencyRespon
 import { validateCouponForUser } from "../lib/coupons";
 import { createAndPushNotification } from "../lib/push-service";
 import { deliveryOtp } from "../lib/order-lifecycle";
+import { calculateOrderPricing, ensurePricingSchema, getPricingSettings } from "../lib/pricing";
 
 const router = Router();
 
@@ -39,8 +41,8 @@ function distanceKm(aLat?: number | null, aLng?: number | null, bLat?: number | 
 async function assignNearestPartner(store: typeof storesTable.$inferSelect) {
   const partners = await db.select().from(deliveryPartnersTable);
   if (!partners.length) return null;
-  const available = partners.filter(partner => partner.isOnline || partner.isVerified);
-  const pool = available.length ? available : partners;
+  const available = partners.filter(partner => partner.isOnline && partner.isVerified);
+  const pool = available;
   return pool.sort((a, b) =>
     distanceKm(a.currentLat, a.currentLng, store.lat, store.lng) -
     distanceKm(b.currentLat, b.currentLng, store.lat, store.lng)
@@ -78,6 +80,7 @@ router.get("/", async (req: AuthRequest, res) => {
 // POST /api/orders — place order from cart
 router.post("/", async (req: AuthRequest, res) => {
   try {
+    await ensurePricingSchema();
     const userId = req.user!.userId;
     const idempotencyKey = getIdempotencyKey(req.headers);
     if (!idempotencyKey) {
@@ -98,7 +101,7 @@ router.post("/", async (req: AuthRequest, res) => {
       res.status(replay.state === "conflict" ? 409 : 425).json({ error: replay.message });
       return;
     }
-    const { addressId, paymentMethod, couponCode, useWallet, notes, pickupLatitude, pickupLongitude, pickupAddress } = req.body as {
+    const { addressId, paymentMethod, couponCode, useWallet, notes, pickupLatitude, pickupLongitude, pickupAddress, providerPaymentId } = req.body as {
       addressId: number;
       paymentMethod: "cod" | "online" | "wallet" | "upi";
       couponCode?: string;
@@ -107,6 +110,7 @@ router.post("/", async (req: AuthRequest, res) => {
       pickupLatitude?: number;
       pickupLongitude?: number;
       pickupAddress?: string;
+      providerPaymentId?: string;
     };
 
     const result = await db.transaction(async (tx) => {
@@ -130,16 +134,20 @@ router.post("/", async (req: AuthRequest, res) => {
     if (!store) return { status: 400, body: { error: "Store not found" } };
     if (!address) return { status: 400, body: { error: "Address not found" } };
     if (!store.isActive || !store.isOpen || store.holidayMode) return { status: 400, body: { error: "This seller is not active right now." } };
+    const pricingSettings = await getPricingSettings();
     const selectedLat = Number(pickupLatitude ?? address.lat);
     const selectedLng = Number(pickupLongitude ?? address.lng);
     const selectedAddress = String(pickupAddress ?? "").trim();
     if (!Number.isFinite(selectedLat) || !Number.isFinite(selectedLng) || !selectedAddress) {
       return { status: 400, body: { error: "Please confirm your exact delivery location on the map before placing the order." } };
     }
-    const serviceRadiusKm = Math.max(0.1, safeNum(store.radiusKm, 5));
+    const configuredMaxDistance = safeNum(pricingSettings.maxDeliveryDistanceKm, 0);
+    const serviceRadiusKm = configuredMaxDistance > 0
+      ? Math.min(Math.max(0.1, safeNum(store.radiusKm, configuredMaxDistance)), configuredMaxDistance)
+      : Math.max(0.1, safeNum(store.radiusKm, 5));
     const shopDistanceKm = distanceKm(store.lat, store.lng, selectedLat, selectedLng);
     if (shopDistanceKm > serviceRadiusKm) {
-      return { status: 400, body: { error: "Sorry! We currently deliver only within a 5 KM service area." } };
+      return { status: 400, body: { error: `Sorry! We currently deliver only within ${serviceRadiusKm.toFixed(0)} KM of this seller.` } };
     }
     const customerZones = await getEligibleRegistrationZones("seller", selectedLat, selectedLng);
     const customerZone = customerZones.find((zone) => zone.insideServiceZone && zone.acceptingOrders);
@@ -157,20 +165,19 @@ router.post("/", async (req: AuthRequest, res) => {
     const orderItemsData = cartItems.map(item => {
       const product = productMap.get(item.productId);
       if (!product) throw new Error(`Product ${item.productId} disappeared during checkout`);
-      const lineTotal = safeNum(item.price) * item.qty;
+      const unitPrice = safeNum(product.price);
+      const lineTotal = unitPrice * item.qty;
       subtotal += lineTotal;
       return {
         productId: item.productId,
         name: product.name,
         imageUrl: Array.isArray(product.images) ? (product.images as string[])[0] : null,
-        price: item.price,
+        price: unitPrice.toFixed(2),
         mrp: product.mrp,
         qty: item.qty,
         total: lineTotal.toFixed(2),
       };
     });
-
-    const deliveryFee = subtotal >= safeNum(store.freeDeliveryAbove, 299) ? 0 : safeNum(store.deliveryFee, 49);
 
     // Coupon
     let couponDiscount = 0;
@@ -181,6 +188,17 @@ router.post("/", async (req: AuthRequest, res) => {
       couponDiscount = validated.discount;
     }
 
+    const pricing = calculateOrderPricing({
+      subtotal,
+      store,
+      customerLat: selectedLat,
+      customerLng: selectedLng,
+      settings: pricingSettings,
+      discountAmount: couponDiscount,
+      eligibleItemCount: cartItems.reduce((sum, item) => sum + item.qty, 0),
+    });
+    const deliveryFee = pricing.deliveryCharge;
+
     // Wallet
     const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
     let walletUsed = 0;
@@ -189,7 +207,14 @@ router.post("/", async (req: AuthRequest, res) => {
       walletUsed = Math.max(0, walletUsed);
     }
 
-    const total = Math.max(0, subtotal + deliveryFee - couponDiscount - walletUsed);
+    const total = Math.max(0, pricing.finalCustomerAmount - walletUsed);
+    if (paymentMethod === "online") {
+      if (!providerPaymentId) return { status: 400, body: { error: "Verified online payment is required." } };
+      const [payment] = await tx.select().from(paymentsTable).where(and(eq(paymentsTable.providerPaymentId, String(providerPaymentId)), eq(paymentsTable.customerId, userId))).limit(1);
+      if (!payment || payment.paymentStatus !== "paid" || Math.abs(Number(payment.amount) - pricing.finalCustomerAmount) > 0.01) {
+        return { status: 400, body: { error: "Payment amount no longer matches the current order total. Please retry payment." } };
+      }
+    }
     const loyaltyEarned = Math.floor(total / 10); // 1 point per ₹10
 
     // Create order
@@ -214,6 +239,20 @@ router.post("/", async (req: AuthRequest, res) => {
       paymentStatus: "pending",
       subtotal: subtotal.toFixed(2),
       deliveryFee: deliveryFee.toFixed(2),
+      platformFee: pricing.commissionAmount.toFixed(2),
+      commissionPercentage: pricing.commissionPercentage.toFixed(2),
+      commissionAmount: pricing.commissionAmount.toFixed(2),
+      calculatedDistanceKm: pricing.calculatedDistanceKm?.toFixed(2) ?? null,
+      deliveryRatePerKm: pricing.deliveryRatePerKm.toFixed(2),
+      deliveryFullCharge: pricing.fullDeliveryCharge.toFixed(2),
+      deliveryFirstItemCharge: pricing.firstItemDeliveryCharge.toFixed(2),
+      deliveryAdditionalItemPercentage: pricing.additionalItemDeliveryPercentage.toFixed(2),
+      deliveryAdditionalItemCharge: pricing.additionalItemDeliveryCharge.toFixed(2),
+      deliveryEligibleItemCount: pricing.eligibleItemCount,
+      deliverySecondItemCharge: pricing.secondItemDeliveryCharge.toFixed(2),
+      deliveryThirdItemCharge: pricing.thirdItemDeliveryCharge.toFixed(2),
+      deliveryFreeItemCount: pricing.freeDeliveryItemCount,
+      finalCustomerAmount: pricing.finalCustomerAmount.toFixed(2),
       discount: "0.00",
       couponCode: couponCode ?? null,
       couponDiscount: couponDiscount.toFixed(2),

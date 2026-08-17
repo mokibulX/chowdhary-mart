@@ -1,7 +1,9 @@
 import { Router } from "express";
-import { eq, desc } from "drizzle-orm";
-import { db, walletTransactionsTable, usersTable, withdrawalRequestsTable } from "@workspace/db";
+import { eq, desc, and, sql } from "drizzle-orm";
+import { db, walletTransactionsTable, walletLedgerEntriesTable, usersTable, withdrawalRequestsTable, walletsTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
+import { ensureFinanceTables, ensureWallet, getFinanceSettings, getWalletSnapshot, releaseMaturedWallets } from "../lib/finance";
+import { testMode } from "../lib/test-mode";
 
 const router = Router();
 
@@ -10,15 +12,18 @@ router.use(requireAuth);
 // GET /api/wallet
 router.get("/", async (req: AuthRequest, res) => {
   try {
+    const snapshot = await getWalletSnapshot(req.user!.userId);
     const [user] = await db.select({
-      walletBalance: usersTable.walletBalance,
       loyaltyPoints: usersTable.loyaltyPoints,
     }).from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
 
     res.json({
-      balance: user?.walletBalance ?? "0.00",
+      balance: snapshot.availableBalance,
+      availableBalance: snapshot.availableBalance,
+      pendingBalance: snapshot.pendingBalance,
+      heldBalance: snapshot.heldBalance,
       loyaltyPoints: user?.loyaltyPoints ?? 0,
-      pendingCashback: "0.00",
+      pendingCashback: snapshot.pendingBalance,
     });
   } catch (err) {
     req.log.error(err);
@@ -29,10 +34,23 @@ router.get("/", async (req: AuthRequest, res) => {
 // GET /api/wallet/transactions
 router.get("/transactions", async (req: AuthRequest, res) => {
   try {
+    await releaseMaturedWallets();
     const limit = Math.min(Number(req.query.limit) || 20, 50);
     const offset = Number(req.query.offset) || 0;
 
-    const txns = await db.select().from(walletTransactionsTable)
+    const [wallet] = await db.select().from(walletsTable).where(and(eq(walletsTable.ownerUserId, req.user!.userId), eq(walletsTable.walletType, "earnings"))).limit(1);
+    const ledger = wallet ? await db.select().from(walletLedgerEntriesTable).where(eq(walletLedgerEntriesTable.walletId, wallet.id)).orderBy(desc(walletLedgerEntriesTable.createdAt)).limit(limit).offset(offset) : [];
+    const txns = ledger.length ? ledger.map((entry) => ({
+      id: entry.id,
+      type: entry.direction === "credit" ? "credit" : "debit",
+      amount: entry.amount,
+      balance: entry.closingBalance,
+      description: entry.transactionType,
+      referenceId: entry.referenceId,
+      referenceType: entry.referenceType,
+      status: entry.status,
+      createdAt: entry.createdAt,
+    })) : await db.select().from(walletTransactionsTable)
       .where(eq(walletTransactionsTable.userId, req.user!.userId))
       .orderBy(desc(walletTransactionsTable.createdAt))
       .limit(limit)
@@ -64,17 +82,18 @@ router.get("/withdrawals", async (req: AuthRequest, res) => {
 
 router.post("/withdrawals", async (req: AuthRequest, res) => {
   try {
+    await ensureFinanceTables();
+    const settings = await getFinanceSettings();
     const amount = Number(req.body?.amount ?? 0);
-    if (!amount || amount < 1) {
-      res.status(400).json({ error: "Enter a valid withdrawal amount" });
+    if (!amount || amount < Number(settings.minimumWithdrawal)) {
+      res.status(400).json({ error: `Minimum withdrawal is Rs.${Number(settings.minimumWithdrawal).toFixed(0)}` });
       return;
     }
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.userId)).limit(1);
-    const balance = Number(user?.walletBalance ?? 0);
-    if (amount > balance) {
-      res.status(400).json({ error: "Insufficient wallet balance" });
+    if (req.user!.role !== "admin" && !settings.payoutEnabled) {
+      res.status(409).json({ error: "Payouts are temporarily disabled by admin." });
       return;
     }
+    await releaseMaturedWallets();
 
     const method = String(req.body?.method ?? "upi").toLowerCase() === "bank" ? "bank" : "upi";
     if (method === "upi" && !/^[\w.-]+@[\w.-]+$/.test(String(req.body?.upiId ?? "").trim())) {
@@ -87,23 +106,27 @@ router.post("/withdrawals", async (req: AuthRequest, res) => {
     }
 
     const isAdmin = req.user!.role === "admin";
+    const idempotencyKey = String(req.headers["idempotency-key"] ?? "").trim();
+    if (!idempotencyKey) {
+      res.status(400).json({ error: "Idempotency-Key header is required for payout requests." });
+      return;
+    }
+    const [duplicate] = await db.select().from(withdrawalRequestsTable).where(eq(withdrawalRequestsTable.idempotencyKey, idempotencyKey)).limit(1);
+    if (duplicate) {
+      res.status(200).json({ ...duplicate, requestedAt: duplicate.createdAt, status: String(duplicate.status).toLowerCase(), duplicate: true });
+      return;
+    }
     const [request] = await db.transaction(async (tx) => {
-      let status = "pending";
-      if (isAdmin) {
-        const closing = balance - amount;
-        await tx.update(usersTable).set({ walletBalance: closing.toFixed(2) }).where(eq(usersTable.id, req.user!.userId));
-        await tx.insert(walletTransactionsTable).values({
-          userId: req.user!.userId,
-          type: "debit",
-          amount: amount.toFixed(2),
-          balance: closing.toFixed(2),
-          description: `Admin transfer to ${method === "bank" ? "bank account" : "UPI"}`,
-          referenceId: `ADM-WD-${Date.now()}`,
-          referenceType: "wallet_withdrawal",
-        });
-        status = "transferred";
-      }
+      const role = req.user!.role;
+      const wallet = await ensureWallet(tx, req.user!.userId, role);
+      const [reserved] = await tx.update(walletsTable).set({
+        availableBalance: sql`${walletsTable.availableBalance} - ${amount.toFixed(2)}`,
+        heldBalance: sql`${walletsTable.heldBalance} + ${amount.toFixed(2)}`,
+        updatedAt: new Date(),
+      }).where(and(eq(walletsTable.id, wallet.id), sql`${walletsTable.availableBalance} >= ${amount.toFixed(2)}`)).returning();
+      if (!reserved) throw new Error("Insufficient available wallet balance");
       return tx.insert(withdrawalRequestsTable).values({
+        walletId: wallet.id,
         userId: req.user!.userId,
         amount: amount.toFixed(2),
         method,
@@ -111,9 +134,9 @@ router.post("/withdrawals", async (req: AuthRequest, res) => {
         bankAccountMasked: method === "bank" ? `****${String(req.body?.accountNumber ?? "").slice(-4)}` : null,
         ifsc: method === "bank" ? String(req.body?.ifsc ?? "").trim().toUpperCase() : null,
         payoutMode: isAdmin ? "SELF" : "ADMIN_APPROVAL",
-        status,
-        idempotencyKey: `withdrawal-${req.user!.userId}-${Date.now()}`,
-        adminNote: isAdmin ? "Admin self-transfer completed" : null,
+        status: isAdmin ? "REQUESTED" : "REQUESTED",
+        idempotencyKey,
+        adminNote: null,
       }).returning();
     });
     res.status(201).json({ ...request, requestedAt: request.createdAt, status: String(request.status).toLowerCase() });
@@ -127,8 +150,8 @@ router.post("/withdrawals", async (req: AuthRequest, res) => {
 // POST /api/wallet/topup
 router.post("/topup", async (req: AuthRequest, res) => {
   try {
-    if (!["customer", "admin"].includes(req.user!.role)) {
-      res.status(403).json({ error: "Seller and delivery wallet balance is controlled by admin settlements." });
+    if (!testMode.enabled || !testMode.allowDemoPayment || !["customer", "admin"].includes(req.user!.role)) {
+      res.status(409).json({ error: "Wallet top-up requires a verified Razorpay payment. Demo top-up is disabled." });
       return;
     }
     const amount = Number(req.body?.amount ?? 0);

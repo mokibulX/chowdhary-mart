@@ -897,91 +897,125 @@ function Feature({ icon, text }: { icon: React.ReactNode; text: string }) {
   return <div className="flex min-w-0 gap-3 rounded-xl bg-white/10 p-3">{icon}<span className="min-w-0">{text}</span></div>;
 }
 
-function LiveFaceCapture({ value, onCapture }: { value: string; onCapture: (image: string) => void }) {
+export function LiveFaceCapture({ value, onCapture }: { value: string; onCapture: (image: string) => void }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<any>(null);
+  const checkingRef = useRef(false);
   const [running, setRunning] = useState(false);
-  const [checking, setChecking] = useState(false);
   const [ready, setReady] = useState(false);
-  const [message, setMessage] = useState("Start the front camera and keep your face inside the frame.");
+  const [captured, setCaptured] = useState("");
+  const [attempted, setAttempted] = useState(false);
+  const [message, setMessage] = useState("Keep your face inside the circle.");
 
   const stop = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
     setRunning(false);
-    setChecking(false);
+    checkingRef.current = false;
   };
 
-  useEffect(() => stop, []);
+  useEffect(() => () => stop(), []);
 
   useEffect(() => {
-    if (!running || !videoRef.current || !detectorRef.current) return;
+    if (!running) return;
     let cancelled = false;
     const timer = window.setInterval(async () => {
-      if (cancelled || checking || !videoRef.current || videoRef.current.readyState < 2) return;
-      setChecking(true);
+      if (cancelled || checkingRef.current || !videoRef.current || videoRef.current.readyState < 2) return;
+      const video = videoRef.current;
+      if (!video.videoWidth || !video.videoHeight) return;
+      if (!detectorRef.current) {
+        setReady(true);
+        setMessage("Camera ready. Keep your face inside the circle.");
+        return;
+      }
+      checkingRef.current = true;
       try {
-        const faces = await detectorRef.current.detect(videoRef.current);
+        const faces = await detectorRef.current.detect(video);
         if (faces.length !== 1) {
           setReady(false);
-          setMessage(faces.length > 1 ? "Only one person should be visible." : "No face found. Move into the frame.");
+          setMessage(faces.length > 1 ? "Only one face should be visible." : "Please position your face inside the circle.");
           return;
         }
         const face = faces[0];
         const box = face.boundingBox;
-        const video = videoRef.current;
-        const largeEnough = box.width > video.videoWidth * 0.24 && box.height > video.videoHeight * 0.3;
-        const landmarks = Array.isArray(face.landmarks) ? face.landmarks : [];
-        const eyeCount = landmarks.filter((item: any) => String(item.type ?? "").toLowerCase().includes("eye")).length;
+        const faceCenterX = (box.x + box.width / 2) / video.videoWidth;
+        const faceCenterY = (box.y + box.height / 2) / video.videoHeight;
+        const largeEnough = box.width > video.videoWidth * 0.18 && box.height > video.videoHeight * 0.22;
+        const centered = faceCenterX > 0.25 && faceCenterX < 0.75 && faceCenterY > 0.2 && faceCenterY < 0.8;
         if (!largeEnough) {
           setReady(false);
           setMessage("Move a little closer to the camera.");
-        } else if (eyeCount < 2) {
+        } else if (!centered) {
           setReady(false);
-          setMessage("Keep both eyes open and look straight at the camera.");
+          setMessage("Keep your face centered inside the circle.");
         } else {
           setReady(true);
-          setMessage("Face and both eyes detected. You can capture now.");
+          setMessage("Face detected. You can capture now.");
         }
       } catch {
         setReady(false);
-        setMessage("Face detection paused. Keep the camera steady and try again.");
+        setMessage("Please position your face inside the circle.");
       } finally {
-        if (!cancelled) setChecking(false);
+        checkingRef.current = false;
       }
     }, 700);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [running, checking]);
+  }, [running]);
 
   const start = async () => {
+    setAttempted(true);
+    stop();
+    setCaptured("");
+    setReady(false);
+    setMessage("Requesting camera permission...");
     try {
-      const FaceDetectorCtor = (window as any).FaceDetector;
-      if (!FaceDetectorCtor) {
-        setMessage("Live face detection needs the latest Chrome or Android browser.");
+      if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+        setMessage("Camera access needs HTTPS. Open cMart using a secure browser address.");
         return;
       }
-      detectorRef.current = new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 2 });
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } }, audio: false });
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setMessage("Camera access is not supported in this browser.");
+        return;
+      }
+      const FaceDetectorCtor = (window as any).FaceDetector;
+      detectorRef.current = FaceDetectorCtor ? new FaceDetectorCtor({ fastMode: true, maxDetectedFaces: 2 }) : null;
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "user" }, width: { ideal: 720 }, height: { ideal: 720 } }, audio: false });
+      } catch (error) {
+        if ((error as DOMException)?.name !== "OverconstrainedError") throw error;
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
       setRunning(true);
-      setReady(false);
-      setMessage("Checking face and eye position...");
-    } catch {
-      setMessage("Camera permission is required for live selfie verification.");
+      setMessage(detectorRef.current ? "Keep your face inside the circle." : "Camera ready. Keep your face inside the circle.");
+    } catch (error) {
+      stop();
+      const name = (error as DOMException)?.name;
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        setMessage("Camera permission is required to take a live selfie. Please allow camera access in your browser settings and try again.");
+      } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        setMessage("No camera was detected on this device.");
+      } else if (name === "NotReadableError" || name === "TrackStartError") {
+        setMessage("Your camera may be in use by another application. Close other camera apps and try again.");
+      } else {
+        setMessage("Could not start the camera. Check your browser camera permission and try again.");
+      }
     }
   };
 
   const capture = () => {
     const video = videoRef.current;
-    if (!video || !ready || !video.videoWidth) return;
+    if (!video || !ready || !video.videoWidth || !video.videoHeight) return;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -990,23 +1024,40 @@ function LiveFaceCapture({ value, onCapture }: { value: string; onCapture: (imag
     context.translate(canvas.width, 0);
     context.scale(-1, 1);
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    onCapture(canvas.toDataURL("image/jpeg", 0.76));
+    setCaptured(canvas.toDataURL("image/jpeg", 0.9));
     stop();
-    setMessage("Live face and eye verification completed.");
+    setMessage("Review your selfie, then use it or retake it.");
   };
 
+  const useSelfie = () => {
+    if (!captured) return;
+    onCapture(captured);
+    setMessage("Live selfie ready.");
+  };
+
+  const preview = captured || value;
+
   return (
-    <div className="space-y-3 rounded-2xl border bg-gray-50 p-3">
-      <div className="relative mx-auto aspect-[3/4] w-full max-w-sm overflow-hidden rounded-2xl bg-gray-950">
-        {value && !running ? <img src={value} alt="Verified live selfie" className="h-full w-full object-cover" /> : null}
+    <div className="space-y-4 rounded-2xl border bg-gray-50 p-4">
+      <div className="relative mx-auto aspect-square w-full max-w-sm overflow-hidden rounded-full border-4 border-white bg-gray-950 shadow-[0_0_0_4px_rgba(249,115,22,.35),0_18px_45px_rgba(15,23,42,.2)]">
+        {preview && !running ? <img src={preview} alt="Live selfie preview" className="h-full w-full object-cover" /> : null}
         <video ref={videoRef} playsInline muted className={`h-full w-full scale-x-[-1] object-cover ${running ? "block" : "hidden"}`} />
-        {running && <div className={`pointer-events-none absolute inset-[10%] rounded-[45%] border-2 ${ready ? "border-green-400 shadow-[0_0_0_999px_rgba(0,0,0,.24)]" : "border-white/80 shadow-[0_0_0_999px_rgba(0,0,0,.38)]"}`} />}
-        {!running && !value && <div className="flex h-full items-center justify-center text-center text-sm text-white/70"><Camera className="mr-2 h-5 w-5" /> Camera not started</div>}
+        {running && <div className={`pointer-events-none absolute inset-0 rounded-full border-4 ${ready ? "border-emerald-400" : "border-white/90"}`} />}
+        {!running && !preview && <div className="flex h-full items-center justify-center px-10 text-center text-sm text-white/70"><Camera className="mr-2 h-5 w-5" />Camera not started</div>}
       </div>
-      <p className={`rounded-xl px-3 py-2 text-sm font-medium ${ready || value ? "bg-green-50 text-green-800" : "bg-blue-50 text-blue-800"}`}>{message}</p>
-      <div className="grid grid-cols-2 gap-2">
-        {!running ? <Button type="button" variant="outline" onClick={start}><Camera className="mr-2 h-4 w-4" />{value ? "Retake" : "Start camera"}</Button> : <Button type="button" variant="outline" onClick={stop}>Cancel</Button>}
-        <Button type="button" onClick={capture} disabled={!running || !ready}><CheckCircle2 className="mr-2 h-4 w-4" />Capture verified</Button>
+      <p className="text-center text-sm font-semibold text-slate-700">Keep your face inside the circle</p>
+      <p className={`rounded-xl px-3 py-2 text-center text-sm font-medium ${ready || preview ? "bg-green-50 text-green-800" : "bg-blue-50 text-blue-800"}`}>{message}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {running ? (
+          <Button type="button" onClick={capture} disabled={!ready} className="h-12 sm:col-span-2"><Camera className="mr-2 h-4 w-4" />Capture Selfie</Button>
+        ) : captured ? (
+          <>
+            <Button type="button" variant="outline" onClick={start} className="h-12">Retake</Button>
+            <Button type="button" onClick={useSelfie} className="h-12"><CheckCircle2 className="mr-2 h-4 w-4" />Use Selfie</Button>
+          </>
+        ) : (
+          <Button type="button" onClick={start} className="h-12 sm:col-span-2"><Camera className="mr-2 h-4 w-4" />{attempted ? "Try Again" : value ? "Retake Selfie" : "Start Camera"}</Button>
+        )}
       </div>
     </div>
   );

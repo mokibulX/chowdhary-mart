@@ -13,6 +13,8 @@ import {
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 import { createRazorpayOrder, getRazorpayConfig, verifyRazorpayPaymentSignature } from "../lib/razorpay";
 import { assertTestModeFeature, testMode } from "../lib/test-mode";
+import { calculateOrderPricing, ensurePricingSchema, getPricingSettings } from "../lib/pricing";
+import { validateCouponForUser } from "../lib/coupons";
 
 const router = Router();
 
@@ -21,7 +23,8 @@ function safeNum(value: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function verifiedCartTotal(userId: number) {
+async function verifiedCartTotal(userId: number, input: { latitude?: unknown; longitude?: unknown; couponCode?: string } = {}) {
+  await ensurePricingSchema();
   const [cart] = await db.select().from(cartsTable).where(eq(cartsTable.userId, userId)).limit(1);
   if (!cart?.storeId) throw Object.assign(new Error("Cart is empty"), { status: 400 });
   const [store] = await db.select().from(storesTable).where(eq(storesTable.id, cart.storeId)).limit(1);
@@ -38,8 +41,17 @@ async function verifiedCartTotal(userId: number) {
     }
     subtotal += safeNum(product.price) * item.qty;
   }
-  const deliveryFee = subtotal >= safeNum(store.freeDeliveryAbove) ? 0 : safeNum(store.deliveryFee);
-  return { cart, store, items, subtotal, deliveryFee, total: subtotal + deliveryFee };
+  const coupon = input.couponCode ? await validateCouponForUser(db, { code: input.couponCode, orderAmount: subtotal, userId }) : null;
+  const pricing = calculateOrderPricing({
+    subtotal,
+    store,
+    customerLat: input.latitude,
+    customerLng: input.longitude,
+    settings: await getPricingSettings(),
+    discountAmount: coupon?.discount ?? 0,
+    eligibleItemCount: items.reduce((sum, item) => sum + item.qty, 0),
+  });
+  return { cart, store, items, subtotal, ...pricing, couponDiscount: coupon?.discount ?? 0 };
 }
 
 router.use(requireAuth);
@@ -47,21 +59,34 @@ router.use(requireAuth);
 router.post("/demo/complete", async (req: AuthRequest, res) => {
   try {
     assertTestModeFeature(testMode.allowDemoPayment, "Demo payment");
-    const verified = await verifiedCartTotal(req.user!.userId);
+    const verified = await verifiedCartTotal(req.user!.userId, req.body ?? {});
     const providerOrderId = `DEMO_ORDER_${req.user!.userId}_${Date.now()}`;
     const providerPaymentId = `DEMO_PAY_${Date.now()}`;
 
     const [paymentOrder] = await db.insert(paymentOrdersTable).values({
       customerId: req.user!.userId,
       providerOrderId,
-      amount: verified.total.toFixed(2),
+      amount: verified.finalCustomerAmount.toFixed(2),
       currency: "INR",
       status: "paid_test",
       cartSnapshot: {
         itemCount: verified.items.length,
         storeId: verified.store.id,
         subtotal: verified.subtotal,
-        deliveryFee: verified.deliveryFee,
+        deliveryFee: verified.deliveryCharge,
+        fullDeliveryCharge: verified.fullDeliveryCharge,
+        firstItemDeliveryCharge: verified.firstItemDeliveryCharge,
+        additionalItemDeliveryPercentage: verified.additionalItemDeliveryPercentage,
+        additionalItemDeliveryCharge: verified.additionalItemDeliveryCharge,
+        eligibleItemCount: verified.eligibleItemCount,
+        secondItemDeliveryCharge: verified.secondItemDeliveryCharge,
+        thirdItemDeliveryCharge: verified.thirdItemDeliveryCharge,
+        freeDeliveryItemCount: verified.freeDeliveryItemCount,
+        platformFee: verified.commissionAmount,
+        commissionPercentage: verified.commissionPercentage,
+        calculatedDistanceKm: verified.calculatedDistanceKm,
+        deliveryRatePerKm: verified.deliveryRatePerKm,
+        finalCustomerAmount: verified.finalCustomerAmount,
         isDemo: true,
         paymentMode: "DEMO",
         realMoney: false,
@@ -102,18 +127,18 @@ router.post("/demo/complete", async (req: AuthRequest, res) => {
 router.post("/razorpay/order", async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.userId;
-    const verified = await verifiedCartTotal(userId);
-    const amountPaise = Math.round(verified.total * 100);
+    const verified = await verifiedCartTotal(userId, req.body ?? {});
+    const amountPaise = Math.round(verified.finalCustomerAmount * 100);
     const receipt = `CM-${userId}-${Date.now()}`;
     const razorpayOrder = await createRazorpayOrder(amountPaise, receipt, { userId: String(userId), storeId: String(verified.store.id) });
     const providerOrderId = String(razorpayOrder.id);
     const [paymentOrder] = await db.insert(paymentOrdersTable).values({
       customerId: userId,
       providerOrderId,
-      amount: verified.total.toFixed(2),
+      amount: verified.finalCustomerAmount.toFixed(2),
       currency: String(razorpayOrder.currency ?? getRazorpayConfig().currency),
       status: String(razorpayOrder.status ?? "created"),
-      cartSnapshot: { itemCount: verified.items.length, storeId: verified.store.id, subtotal: verified.subtotal, deliveryFee: verified.deliveryFee },
+      cartSnapshot: { itemCount: verified.items.length, eligibleItemCount: verified.eligibleItemCount, storeId: verified.store.id, subtotal: verified.subtotal, deliveryFee: verified.deliveryCharge, fullDeliveryCharge: verified.fullDeliveryCharge, firstItemDeliveryCharge: verified.firstItemDeliveryCharge, secondItemDeliveryCharge: verified.secondItemDeliveryCharge, thirdItemDeliveryCharge: verified.thirdItemDeliveryCharge, freeDeliveryItemCount: verified.freeDeliveryItemCount, additionalItemDeliveryPercentage: verified.additionalItemDeliveryPercentage, additionalItemDeliveryCharge: verified.additionalItemDeliveryCharge, platformFee: verified.commissionAmount, commissionPercentage: verified.commissionPercentage, calculatedDistanceKm: verified.calculatedDistanceKm, deliveryRatePerKm: verified.deliveryRatePerKm, finalCustomerAmount: verified.finalCustomerAmount },
     }).returning();
     res.status(201).json({
       id: paymentOrder.id,

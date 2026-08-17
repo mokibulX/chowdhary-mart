@@ -76,6 +76,7 @@ export default function ProductDetail() {
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewBody, setReviewBody] = useState("");
   const [showAllReviews, setShowAllReviews] = useState(false);
+  const [showFullDetails, setShowFullDetails] = useState(false);
   const [deliveryLocation, setDeliveryLocation] = useState<DeliveryLocation>(() => getSavedDeliveryLocation());
   const [locatingGps, setLocatingGps] = useState(false);
   const [selectedSize, setSelectedSize] = useState("");
@@ -161,6 +162,7 @@ export default function ProductDetail() {
     setSelectedImg(0);
     setSelectedSize("");
     setSelectedColor("");
+    setShowFullDetails(false);
   }, [(product as any)?.id]);
 
   useEffect(() => {
@@ -217,6 +219,10 @@ export default function ProductDetail() {
   const available = (product as any).isAvailable !== false && (product as any).isAvailable !== 0;
   const sellerActive = !(product as any).store || (product as any).store?.isOpen !== false;
   const specs = (product as any).specifications && typeof (product as any).specifications === "object" ? Object.entries((product as any).specifications) : [];
+  const expirySpec = (product as any).specifications?.ExpiryRequired ?? (product as any).specifications?.expiry_required;
+  const expiryRequired = String(expirySpec ?? "").toLowerCase() === "true" || Boolean((product as any).specifications?.MFGDate || (product as any).specifications?.ExpiryDate);
+  const mfgDate = (product as any).specifications?.MFGDate;
+  const expiryDate = (product as any).specifications?.ExpiryDate;
   const similarProducts = (similar?.items ?? []).filter((item: any) => item.id !== id);
   const relatedProducts = (() => {
     const items = relatedQuery.data?.pages.flatMap((page) => page.items ?? []) ?? [];
@@ -381,7 +387,7 @@ export default function ProductDetail() {
       return;
     }
     if (!eligibleOrder) {
-      toast({ title: "Delivered order required", description: "Product delivery complete hole tarpor verified review submit kora jabe.", variant: "destructive" });
+      toast({ title: "Delivered order required", description: "You can submit a verified review after this product is delivered.", variant: "destructive" });
       return;
     }
     createReview.mutate(
@@ -483,8 +489,24 @@ export default function ProductDetail() {
             )}
             <span className="text-3xl font-bold">Rs.{Number(product.price).toFixed(0)}</span>
           </div>
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+            <p className="font-semibold">Customer price breakdown</p>
+            <p className="mt-1">Product price: Rs.{Number(product.price).toFixed(2)} · Platform fee and distance-based delivery are calculated after you select your delivery location.</p>
+          </div>
 
-          {product.description && <p className="text-sm leading-relaxed text-muted-foreground">{product.description}</p>}
+          {product.description && <p className={`text-sm leading-relaxed text-muted-foreground ${showFullDetails ? "" : "line-clamp-3"}`}>{product.description}</p>}
+          {((product.description && product.description.length > 180) || specs.length > 0) && (
+            <Button type="button" variant="outline" size="sm" onClick={() => setShowFullDetails((value) => !value)}>
+              {showFullDetails ? "See Less" : "See More"}
+            </Button>
+          )}
+
+          {expiryRequired && (mfgDate || expiryDate) && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+              <p className="font-semibold">Product dates</p>
+              <div className="mt-1 grid grid-cols-2 gap-2"><span>MFG: {mfgDate || "Not available"}</span><span>Expiry: {expiryDate || "Not available"}</span></div>
+            </div>
+          )}
 
           {!sellerActive && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
@@ -648,7 +670,7 @@ export default function ProductDetail() {
         </Button>
       </div>
 
-      {specs.length > 0 && (
+      {showFullDetails && specs.length > 0 && (
         <section className="rounded-lg border bg-white p-4">
           <h2 className="mb-3 text-xl font-bold">Specifications</h2>
           <div className="divide-y rounded-lg border">

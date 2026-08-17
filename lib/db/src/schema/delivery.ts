@@ -101,6 +101,15 @@ export const deliveryEarningsTable = pgTable("delivery_earnings", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const deliveryPartnerOnlineSessionsTable = pgTable("delivery_partner_online_sessions", {
+  id: serial("id").primaryKey(),
+  deliveryPartnerId: integer("delivery_partner_id").notNull().references(() => deliveryPartnersTable.id, { onDelete: "cascade" }),
+  startedAt: timestamp("started_at").notNull(),
+  endedAt: timestamp("ended_at"),
+  durationSeconds: integer("duration_seconds"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export type DeliveryPartner = typeof deliveryPartnersTable.$inferSelect;
 export type LiveLocation = typeof liveLocationsTable.$inferSelect;
 export type OrderTracking = typeof orderTrackingTable.$inferSelect;

@@ -126,10 +126,10 @@ export function fileToDataUrl(file: File): Promise<string> {
 
     const extension = file.name.split(".").pop()?.toLowerCase();
     const inferredMime: Record<string, string> = {
-      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", pdf: "application/pdf",
       gif: "image/gif", heic: "image/heic", heif: "image/heif",
     };
-    const readableFile = file.type.startsWith("image/")
+    const readableFile = file.type.startsWith("image/") || file.type === "application/pdf"
       ? file
       : new Blob([file], { type: inferredMime[extension ?? ""] ?? "image/jpeg" });
     let settled = false;

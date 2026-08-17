@@ -73,6 +73,27 @@ function textValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function categoryRequiresExpiry(value: string) {
+  return /(food|grocery|beverage|drink|snack|chocolate|dairy|milk|cosmetic|beauty|medicine|supplement|pet food)/i.test(value);
+}
+
+async function prepareProductSpecifications(categoryId: unknown, input: unknown, isAvailable: unknown) {
+  const source = input && typeof input === "object" ? { ...(input as Record<string, unknown>) } : {};
+  const [category] = categoryId ? await db.select({ name: categoriesTable.name }).from(categoriesTable).where(eq(categoriesTable.id, Number(categoryId))).limit(1) : [];
+  const required = categoryRequiresExpiry(String(category?.name ?? "")) || String(source.ExpiryRequired ?? "false").toLowerCase() === "true";
+  const mfgDate = textValue(source.MFGDate);
+  const expiryDate = textValue(source.ExpiryDate);
+  if (required && (!mfgDate || !expiryDate)) throw new Error("This product requires a manufacturing date and expiry date.");
+  if (required && expiryDate <= mfgDate) throw new Error("Expiry date must be after the manufacturing date.");
+  if (required && isAvailable !== false && expiryDate < new Date().toISOString().slice(0, 10)) throw new Error("Expired products cannot be active inventory.");
+  source.ExpiryRequired = String(required);
+  if (!required) {
+    delete source.MFGDate;
+    delete source.ExpiryDate;
+  }
+  return source as Record<string, string>;
+}
+
 // GET /api/vendor/barcode/:barcode
 router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
   const barcode = String(req.params.barcode ?? "").replace(/\D/g, "");
@@ -86,7 +107,7 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       "categories", "categories_tags", "labels", "origins", "manufacturing_places", "countries", "stores",
       "packaging", "serving_size", "ingredients_text", "allergens", "nutriments", "nutrition_grades",
       "nova_group", "ecoscore_grade", "image_url", "image_front_url", "image_ingredients_url",
-      "image_nutrition_url", "image_packaging_url",
+      "image_nutrition_url", "image_packaging_url", "expiration_date",
     ].join(",");
     const providers = ["world.openfoodfacts.org", "world.openbeautyfacts.org", "world.openproductsfacts.org"];
     let product: Record<string, unknown> | undefined;
@@ -109,7 +130,7 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       }
     }
     if (!product) {
-      res.status(404).json({ error: "No product details found for this barcode" });
+      res.status(404).json({ error: "Product not found. Please add the product details manually." });
       return;
     }
     const name = textValue(product.product_name) || textValue(product.product_name_en) || textValue(product.generic_name) || textValue(product.generic_name_en);
@@ -143,6 +164,8 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       Nutrition: Object.keys(nutrition).length ? nutrition : undefined,
       Source: source,
       Barcode: barcode,
+      ExpiryRequired: String(Boolean(textValue(product.expiration_date)) || categoryRequiresExpiry(`${textValue(product.categories)} ${textValue(product.product_name)}`)),
+      ...(textValue(product.expiration_date) ? { ExpiryDate: textValue(product.expiration_date) } : {}),
     }).filter(([, value]) => value !== "" && value !== undefined));
     res.json({
       barcode,
@@ -154,6 +177,7 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       categoryTags: Array.isArray(product.categories_tags) ? product.categories_tags.map(textValue).filter(Boolean) : [],
       images: imageUrls,
       specifications,
+      expiryRequired: Boolean(textValue(product.expiration_date)) || categoryRequiresExpiry(`${textValue(product.categories)} ${textValue(product.product_name)}`),
       source,
     });
   } catch (err) {
@@ -267,7 +291,9 @@ router.get("/orders", async (req: AuthRequest, res) => {
     res.json(enriched);
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
+    const message = err instanceof Error ? err.message : "Internal server error";
+    const isValidationError = /requires|expiry date|expired products/i.test(message);
+    res.status(isValidationError ? 400 : 500).json({ error: isValidationError ? message : "Internal server error" });
   }
 });
 
@@ -327,7 +353,9 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     res.json({ ...order, store });
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
+    const message = err instanceof Error ? err.message : "Internal server error";
+    const isValidationError = /requires|expiry date|expired products/i.test(message);
+    res.status(isValidationError ? 400 : 500).json({ error: isValidationError ? message : "Internal server error" });
   }
 });
 
@@ -393,6 +421,7 @@ router.post("/products", async (req: AuthRequest, res) => {
 
     const { name, description, categoryId, brandId, price, mrp, images, weight, unit, sku, specifications, stock, isAvailable, isFeatured } = req.body;
     const productImages = cleanProductImages(images);
+    const preparedSpecifications = await prepareProductSpecifications(categoryId, specifications, isAvailable ?? true);
     const discountPercent = mrp && price ? (((Number(mrp) - Number(price)) / Number(mrp)) * 100).toFixed(2) : "0";
 
     const [product] = await db.insert(productsTable).values({
@@ -409,7 +438,7 @@ router.post("/products", async (req: AuthRequest, res) => {
       weight,
       unit,
       sku: textValue(sku) || null,
-      specifications: specifications && typeof specifications === "object" ? specifications : {},
+      specifications: preparedSpecifications,
       stock: stock ?? 0,
       isAvailable: isAvailable ?? true,
       isFeatured: isFeatured ?? false,
@@ -438,9 +467,10 @@ router.patch("/products/:productId", async (req: AuthRequest, res) => {
     const [existing] = await db.select().from(productsTable).where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id))).limit(1);
     if (!existing || (store.zoneId && existing.zoneId && existing.zoneId !== store.zoneId)) { res.status(404).json({ error: "Product not found in your zone" }); return; }
     const nextImages = images === undefined ? existing.images : cleanProductImages(images);
+    const preparedSpecifications = await prepareProductSpecifications(categoryId, specifications, isAvailable);
 
     const [product] = await db.update(productsTable)
-      .set({ name, description, categoryId, price, mrp, weight, unit, sku: textValue(sku) || null, specifications, stock, isAvailable, isFeatured, images: nextImages, discountPercent, updatedAt: new Date() })
+      .set({ name, description, categoryId, price, mrp, weight, unit, sku: textValue(sku) || null, specifications: preparedSpecifications, stock, isAvailable, isFeatured, images: nextImages, discountPercent, updatedAt: new Date() })
       .where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id)))
       .returning();
 
@@ -501,6 +531,7 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
       totalProducts: Number(products[0]?.count ?? 0),
       weekRevenue: sum(weekOrders).toFixed(2),
       monthRevenue: sum(monthOrders).toFixed(2),
+      store,
       recentOrders,
     });
   } catch (err) {

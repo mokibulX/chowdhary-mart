@@ -6,12 +6,15 @@ import {
   homepageSectionsTable, homepageSectionProductsTable, walletTransactionsTable,
   serviceZonesTable, sellerZoneAssignmentsTable, riderZoneAssignmentsTable, zoneChangeRequestsTable,
   mediaLibraryTable, withdrawalRequestsTable,
+  platformSettingsTable, walletsTable, walletLedgerEntriesTable,
 } from "@workspace/db";
 import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { generateReferralCode, hashPassword } from "../lib/auth";
 import { HOMEPAGE_PERMISSIONS, getHomepageSections, slugify } from "../lib/homepage";
 import { assertTestModeFeature, testMode } from "../lib/test-mode";
 import { auditZone, validCoordinate } from "../lib/zones";
+import { ensureFinanceTables, ensureWallet, getFinanceSettings, settleCompletedOrder } from "../lib/finance";
+import { ensurePricingSchema } from "../lib/pricing";
 
 const router = Router();
 
@@ -701,12 +704,16 @@ router.get("/wallets", async (req: AuthRequest, res) => {
       .orderBy(desc(usersTable.createdAt));
 
     const ids = users.map((user) => user.id);
+    await ensureFinanceTables();
+    const earningsWallets = ids.length ? await db.select().from(walletsTable).where(and(inArray(walletsTable.ownerUserId, ids), eq(walletsTable.walletType, "earnings"))) : [];
+    const walletMap = new Map(earningsWallets.map((wallet) => [wallet.ownerUserId, wallet]));
     const txns = ids.length
       ? await db.select().from(walletTransactionsTable).where(inArray(walletTransactionsTable.userId, ids)).orderBy(desc(walletTransactionsTable.createdAt)).limit(300)
       : [];
     res.json(users.map((user) => {
       const transactions = txns.filter((txn) => txn.userId === user.id);
-      return { ...user, transactions: transactions.slice(0, 5), transactionCount: transactions.length };
+      const wallet = walletMap.get(user.id);
+      return { ...user, availableBalance: wallet?.availableBalance ?? user.walletBalance, pendingBalance: wallet?.pendingBalance ?? "0.00", heldBalance: wallet?.heldBalance ?? "0.00", transactions: transactions.slice(0, 5), transactionCount: transactions.length };
     }));
   } catch (err) {
     req.log.error(err);
@@ -731,15 +738,32 @@ router.post("/wallet-adjustments", async (req: AuthRequest, res) => {
     const next = direction === "credit" ? current + amount : current - amount;
     if (next < 0) { res.status(400).json({ error: "Wallet balance cannot go below zero" }); return; }
 
+    const referenceId = `ADMIN-ADJ-${req.user!.userId}-${Date.now()}`;
     const [txn] = await db.transaction(async (tx) => {
+      const wallet = await ensureWallet(tx, userId, String(target.role));
       await tx.update(usersTable).set({ walletBalance: next.toFixed(2), updatedAt: new Date() }).where(eq(usersTable.id, userId));
+      await tx.update(walletsTable).set({
+        availableBalance: next.toFixed(2),
+        updatedAt: new Date(),
+      }).where(eq(walletsTable.id, wallet.id));
+      await tx.insert(walletLedgerEntriesTable).values({
+        walletId: wallet.id,
+        transactionType: "MANUAL_ADJUSTMENT",
+        direction,
+        amount: amount.toFixed(2),
+        openingBalance: current.toFixed(2),
+        closingBalance: next.toFixed(2),
+        referenceType: "admin_adjustment",
+        referenceId,
+        idempotencyKey: referenceId,
+      });
       return tx.insert(walletTransactionsTable).values({
         userId,
         type: direction,
         amount: amount.toFixed(2),
         balance: next.toFixed(2),
         description: `Admin ${direction === "credit" ? "added" : "deducted"} Rs.${amount.toFixed(0)}: ${reason}`,
-        referenceId: `ADMIN-ADJ-${Date.now()}`,
+        referenceId,
         referenceType: "admin_adjustment",
       }).returning();
     });
@@ -752,15 +776,73 @@ router.post("/wallet-adjustments", async (req: AuthRequest, res) => {
 });
 
 // GET/PATCH /api/admin/payout-settings
-router.get("/payout-settings", (_req, res) => {
-  res.json(payoutSettings);
+router.get("/payout-settings", async (_req, res) => {
+  try {
+    await ensurePricingSchema();
+    const settings = await getFinanceSettings();
+    res.json({ ...settings, adminCommissionPercent: settings.commissionPercentage, deliveryRatePerKm: settings.deliveryRatePerKm });
+  } catch (err) {
+    res.status(500).json({ error: "Could not load finance settings" });
+  }
 });
 
-router.patch("/payout-settings", (req, res) => {
-  payoutSettings.adminCommissionPercent = Math.max(0, Math.min(40, Number(req.body.adminCommissionPercent ?? payoutSettings.adminCommissionPercent)));
-  payoutSettings.sellerPayoutCycle = String(req.body.sellerPayoutCycle ?? payoutSettings.sellerPayoutCycle);
-  payoutSettings.deliveryPayoutCycle = String(req.body.deliveryPayoutCycle ?? payoutSettings.deliveryPayoutCycle);
-  res.json(payoutSettings);
+router.patch("/payout-settings", async (req: AuthRequest, res) => {
+  try {
+    await ensurePricingSchema();
+    const current = await getFinanceSettings();
+    const commissionPercentage = Math.max(0, Math.min(40, Number(req.body.commissionPercentage ?? req.body.adminCommissionPercent ?? current.commissionPercentage)));
+    const deliveryRatePerKm = Math.max(0, Math.min(1000, Number(req.body.deliveryRatePerKm ?? current.deliveryRatePerKm)));
+    const settlementMode = ["delay", "daily", "weekly"].includes(String(req.body.settlementMode ?? current.settlementMode)) ? String(req.body.settlementMode ?? current.settlementMode) : current.settlementMode;
+    const settlementDelayHours = Math.max(0, Math.min(720, Number(req.body.settlementDelayHours ?? current.settlementDelayHours)));
+    const weeklyPayoutDay = Math.max(0, Math.min(6, Number(req.body.weeklyPayoutDay ?? current.weeklyPayoutDay)));
+    const minimumWithdrawal = Math.max(1, Number(req.body.minimumWithdrawal ?? current.minimumWithdrawal));
+    const [settings] = await db.insert(platformSettingsTable).values({
+      singletonKey: "default",
+      commissionPercentage: commissionPercentage.toFixed(2),
+      deliveryRatePerKm: deliveryRatePerKm.toFixed(2),
+      deliveryMinCharge: Math.max(0, Number(req.body.deliveryMinCharge ?? current.deliveryMinCharge ?? 0)).toFixed(2),
+      maxDeliveryDistanceKm: Math.max(0, Number(req.body.maxDeliveryDistanceKm ?? current.maxDeliveryDistanceKm ?? 5)).toFixed(2),
+      freeDeliveryThreshold: Math.max(0, Number(req.body.freeDeliveryThreshold ?? current.freeDeliveryThreshold ?? 0)).toFixed(2),
+      deliveryChargeEnabled: req.body.deliveryChargeEnabled === undefined ? current.deliveryChargeEnabled : Boolean(req.body.deliveryChargeEnabled),
+      additionalItemDeliveryPercentage: Math.max(0, Math.min(100, Number(req.body.additionalItemDeliveryPercentage ?? current.additionalItemDeliveryPercentage ?? 50))).toFixed(2),
+      firstItemDeliveryPercentage: Math.max(0, Math.min(100, Number(req.body.firstItemDeliveryPercentage ?? current.firstItemDeliveryPercentage ?? 100))).toFixed(2),
+      secondItemDeliveryPercentage: Math.max(0, Math.min(100, Number(req.body.secondItemDeliveryPercentage ?? current.secondItemDeliveryPercentage ?? 50))).toFixed(2),
+      thirdItemDeliveryPercentage: Math.max(0, Math.min(100, Number(req.body.thirdItemDeliveryPercentage ?? current.thirdItemDeliveryPercentage ?? 50))).toFixed(2),
+      freeDeliveryFromItem: Math.max(4, Math.min(100, Math.floor(Number(req.body.freeDeliveryFromItem ?? current.freeDeliveryFromItem ?? 4)))),
+      settlementMode,
+      settlementDelayHours,
+      weeklyPayoutDay,
+      minimumWithdrawal: minimumWithdrawal.toFixed(2),
+      payoutEnabled: req.body.payoutEnabled === undefined ? current.payoutEnabled : Boolean(req.body.payoutEnabled),
+      selfieRequired: req.body.selfieRequired === undefined ? current.selfieRequired : Boolean(req.body.selfieRequired),
+      updatedBy: req.user!.userId,
+      updatedAt: new Date(),
+    }).onConflictDoUpdate({ target: platformSettingsTable.singletonKey, set: {
+      commissionPercentage: commissionPercentage.toFixed(2),
+      deliveryRatePerKm: deliveryRatePerKm.toFixed(2),
+      deliveryMinCharge: Math.max(0, Number(req.body.deliveryMinCharge ?? current.deliveryMinCharge ?? 0)).toFixed(2),
+      maxDeliveryDistanceKm: Math.max(0, Number(req.body.maxDeliveryDistanceKm ?? current.maxDeliveryDistanceKm ?? 5)).toFixed(2),
+      freeDeliveryThreshold: Math.max(0, Number(req.body.freeDeliveryThreshold ?? current.freeDeliveryThreshold ?? 0)).toFixed(2),
+      deliveryChargeEnabled: req.body.deliveryChargeEnabled === undefined ? current.deliveryChargeEnabled : Boolean(req.body.deliveryChargeEnabled),
+      additionalItemDeliveryPercentage: Math.max(0, Math.min(100, Number(req.body.additionalItemDeliveryPercentage ?? current.additionalItemDeliveryPercentage ?? 50))).toFixed(2),
+      firstItemDeliveryPercentage: Math.max(0, Math.min(100, Number(req.body.firstItemDeliveryPercentage ?? current.firstItemDeliveryPercentage ?? 100))).toFixed(2),
+      secondItemDeliveryPercentage: Math.max(0, Math.min(100, Number(req.body.secondItemDeliveryPercentage ?? current.secondItemDeliveryPercentage ?? 50))).toFixed(2),
+      thirdItemDeliveryPercentage: Math.max(0, Math.min(100, Number(req.body.thirdItemDeliveryPercentage ?? current.thirdItemDeliveryPercentage ?? 50))).toFixed(2),
+      freeDeliveryFromItem: Math.max(4, Math.min(100, Math.floor(Number(req.body.freeDeliveryFromItem ?? current.freeDeliveryFromItem ?? 4)))),
+      settlementMode,
+      settlementDelayHours,
+      weeklyPayoutDay,
+      minimumWithdrawal: minimumWithdrawal.toFixed(2),
+      payoutEnabled: req.body.payoutEnabled === undefined ? current.payoutEnabled : Boolean(req.body.payoutEnabled),
+      selfieRequired: req.body.selfieRequired === undefined ? current.selfieRequired : Boolean(req.body.selfieRequired),
+      updatedBy: req.user!.userId,
+      updatedAt: new Date(),
+    }}).returning();
+    res.json({ ...settings, adminCommissionPercent: settings.commissionPercentage, deliveryRatePerKm: settings.deliveryRatePerKm });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not save finance settings" });
+  }
 });
 
 // GET /api/admin/wallet-withdrawals
@@ -792,36 +874,24 @@ router.post("/wallet-withdrawals/:id/:action", async (req: AuthRequest, res) => 
     if (String(request.status).toLowerCase() !== "pending") { res.status(400).json({ error: "Transfer request already reviewed" }); return; }
 
     if (action === "reject") {
-      const [updated] = await db.update(withdrawalRequestsTable)
-        .set({ status: "rejected", adminNote: String(req.body.reason ?? "Rejected by admin"), updatedAt: new Date() })
-        .where(eq(withdrawalRequestsTable.id, id))
-        .returning();
+      const [updated] = await db.transaction(async (tx) => {
+        const [wallet] = request.walletId ? await tx.select().from(walletsTable).where(eq(walletsTable.id, request.walletId)).limit(1) : [];
+        if (wallet) {
+          await tx.update(walletsTable).set({
+            availableBalance: sql`${walletsTable.availableBalance} + ${request.amount}`,
+            heldBalance: sql`greatest(0, ${walletsTable.heldBalance} - ${request.amount})`,
+            updatedAt: new Date(),
+          }).where(eq(walletsTable.id, wallet.id));
+        }
+        return tx.update(withdrawalRequestsTable)
+          .set({ status: "rejected", adminNote: String(req.body.reason ?? "Rejected by admin"), updatedAt: new Date() })
+          .where(eq(withdrawalRequestsTable.id, id))
+          .returning();
+      });
       res.json({ ...updated, status: String(updated.status).toLowerCase(), requestedAt: updated.createdAt });
       return;
     }
-
-    const [updated] = await db.transaction(async (tx) => {
-      const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, request.userId)).limit(1);
-      const balance = Number(user?.walletBalance ?? 0);
-      const amount = Number(request.amount);
-      if (amount > balance) throw new Error("Insufficient wallet balance");
-      const closing = balance - amount;
-      await tx.update(usersTable).set({ walletBalance: closing.toFixed(2), updatedAt: new Date() }).where(eq(usersTable.id, request.userId));
-      await tx.insert(walletTransactionsTable).values({
-        userId: request.userId,
-        type: "debit",
-        amount: amount.toFixed(2),
-        balance: closing.toFixed(2),
-        description: `Admin approved transfer to ${request.method === "bank" ? "bank account" : "UPI"}`,
-        referenceId: `WDR-${request.id}`,
-        referenceType: "wallet_withdrawal",
-      });
-      return tx.update(withdrawalRequestsTable)
-        .set({ status: "transferred", adminNote: `Approved by admin ${req.user?.userId}`, updatedAt: new Date() })
-        .where(eq(withdrawalRequestsTable.id, id))
-        .returning();
-    });
-    res.json({ ...updated, status: String(updated.status).toLowerCase(), requestedAt: updated.createdAt });
+    res.status(409).json({ error: "Payout provider is not configured. Approval cannot mark a real transfer as successful." });
   } catch (err) {
     req.log.error(err);
     res.status(400).json({ error: err instanceof Error ? err.message : "Could not review transfer request" });
@@ -924,6 +994,8 @@ router.get("/delivery-applications", async (req: AuthRequest, res) => {
         dp.live_selfie as "liveSelfie",
         dp.aadhaar_last4 as "aadhaarLast4",
         dp.pan_number as "panNumber",
+        dp.aadhaar_document as "aadhaarDocument",
+        dp.pan_document as "panDocument",
         dp.emergency_phone as "emergencyPhone",
         dp.full_address as "fullAddress",
         dp.city,
@@ -1236,6 +1308,7 @@ router.patch("/orders/:orderId", async (req: AuthRequest, res) => {
       res.status(404).json({ error: "Order not found" });
       return;
     }
+    if (status === "delivered") await settleCompletedOrder(orderId);
     res.json(order);
   } catch (err) {
     req.log.error(err);
