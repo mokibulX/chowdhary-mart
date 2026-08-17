@@ -27,6 +27,7 @@ import {
 import { getFriendlyErrorMessage } from "@/lib/error-message";
 import { IndiaStateDistrictSelects, IndiaStateSelect } from "@/components/IndiaLocationSelects";
 import { DateTextInput } from "@/components/DateTextInput";
+import { DEFAULT_LOCATION } from "@/lib/default-location";
 
 type DeliveryForm = {
   countryCode: string;
@@ -225,12 +226,12 @@ const initialForm: DeliveryForm = {
   street: "",
   area: "",
   landmark: "",
-  city: "Kolkata",
-  district: "North 24 Parganas",
-  state: "West Bengal",
-  pincode: "",
-  lat: "",
-  lng: "",
+  city: DEFAULT_LOCATION.city,
+  district: DEFAULT_LOCATION.district,
+  state: DEFAULT_LOCATION.state,
+  pincode: DEFAULT_LOCATION.pincode,
+  lat: String(DEFAULT_LOCATION.lat),
+  lng: String(DEFAULT_LOCATION.lng),
   selectedZoneId: "",
   addressProofType: "Aadhaar",
   addressProofImage: "",
@@ -251,7 +252,7 @@ const initialForm: DeliveryForm = {
   licenseIssueDate: "",
   licenseExpiry: "",
   licenseClass: "MCWG",
-  licenseState: "West Bengal",
+  licenseState: DEFAULT_LOCATION.state,
   licenseFrontImage: "",
   licenseBackImage: "",
   identityType: "Aadhaar card",

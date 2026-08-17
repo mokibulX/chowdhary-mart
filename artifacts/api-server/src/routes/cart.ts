@@ -4,6 +4,7 @@ import { db, cartsTable, cartItemsTable, productsTable, storesTable } from "@wor
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 import { calculateOrderPricing, ensurePricingSchema, getPricingSettings } from "../lib/pricing";
 import { validateCouponForUser } from "../lib/coupons";
+import { DEFAULT_LOCATION } from "../lib/default-location";
 
 const router = Router();
 
@@ -57,12 +58,10 @@ async function buildCartResponse(userId: number) {
 
 router.get("/pricing", async (req: AuthRequest, res) => {
   try {
-    const lat = Number(req.query.lat);
-    const lng = Number(req.query.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      res.status(400).json({ error: "A valid delivery location is required before delivery pricing can be calculated." });
-      return;
-    }
+    const requestedLat = Number(req.query.lat);
+    const requestedLng = Number(req.query.lng);
+    const lat = Number.isFinite(requestedLat) ? requestedLat : DEFAULT_LOCATION.lat;
+    const lng = Number.isFinite(requestedLng) ? requestedLng : DEFAULT_LOCATION.lng;
     await ensurePricingSchema();
     const [cart] = await db.select().from(cartsTable).where(eq(cartsTable.userId, req.user!.userId)).limit(1);
     if (!cart?.storeId) { res.json({ pricingPending: false, sellerBaseAmount: 0, productSubtotal: 0, commissionAmount: 0, deliveryCharge: 0, discountAmount: 0, finalCustomerAmount: 0, currency: "INR" }); return; }

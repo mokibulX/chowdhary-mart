@@ -1,4 +1,5 @@
 export type DeliveryLocation = {
+  country?: string;
   pincode: string;
   city: string;
   district?: string;
@@ -15,15 +16,17 @@ export type DeliveryLocation = {
 export const DELIVERY_LOCATION_STORAGE_KEY = "ekart_delivery_location";
 
 export const UNSAVED_DELIVERY_LOCATION: DeliveryLocation = {
-  pincode: "",
-  city: "Select location",
-  state: "",
-  area: "Use live GPS",
-  lat: 22.6076,
-  lng: 88.4695,
+  country: DEFAULT_LOCATION.country,
+  pincode: DEFAULT_LOCATION.pincode,
+  city: DEFAULT_LOCATION.city,
+  state: DEFAULT_LOCATION.state,
+  area: DEFAULT_LOCATION.area,
+  lat: DEFAULT_LOCATION.lat,
+  lng: DEFAULT_LOCATION.lng,
 };
 
 export const PINCODE_LOCATIONS: DeliveryLocation[] = [
+  { pincode: DEFAULT_LOCATION.pincode, city: DEFAULT_LOCATION.city, district: DEFAULT_LOCATION.district, state: DEFAULT_LOCATION.state, area: DEFAULT_LOCATION.area, lat: DEFAULT_LOCATION.lat, lng: DEFAULT_LOCATION.lng },
   { pincode: "700001", city: "Kolkata", state: "West Bengal", area: "B. B. D. Bagh", lat: 22.5726, lng: 88.3639 },
   { pincode: "700156", city: "Kolkata", state: "West Bengal", area: "New Town", lat: 22.6076, lng: 88.4695 },
   { pincode: "110001", city: "New Delhi", state: "Delhi", area: "Connaught Place", lat: 28.6139, lng: 77.209 },
@@ -74,3 +77,4 @@ export function saveDeliveryLocation(location: DeliveryLocation) {
   window.localStorage.setItem(DELIVERY_LOCATION_STORAGE_KEY, JSON.stringify(location));
   window.dispatchEvent(new CustomEvent("delivery-location-change", { detail: location }));
 }
+import { DEFAULT_LOCATION } from "./default-location";

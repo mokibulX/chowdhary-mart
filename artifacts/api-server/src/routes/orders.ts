@@ -16,6 +16,7 @@ import { validateCouponForUser } from "../lib/coupons";
 import { createAndPushNotification } from "../lib/push-service";
 import { deliveryOtp } from "../lib/order-lifecycle";
 import { calculateOrderPricing, ensurePricingSchema, getPricingSettings } from "../lib/pricing";
+import { DEFAULT_LOCATION } from "../lib/default-location";
 
 const router = Router();
 
@@ -135,9 +136,9 @@ router.post("/", async (req: AuthRequest, res) => {
     if (!address) return { status: 400, body: { error: "Address not found" } };
     if (!store.isActive || !store.isOpen || store.holidayMode) return { status: 400, body: { error: "This seller is not active right now." } };
     const pricingSettings = await getPricingSettings();
-    const selectedLat = Number(pickupLatitude ?? address.lat);
-    const selectedLng = Number(pickupLongitude ?? address.lng);
-    const selectedAddress = String(pickupAddress ?? "").trim();
+    const selectedLat = Number(pickupLatitude ?? address.lat ?? DEFAULT_LOCATION.lat);
+    const selectedLng = Number(pickupLongitude ?? address.lng ?? DEFAULT_LOCATION.lng);
+    const selectedAddress = String(pickupAddress ?? address.line1 ?? `${DEFAULT_LOCATION.city}, ${DEFAULT_LOCATION.state}, ${DEFAULT_LOCATION.country}`).trim();
     if (!Number.isFinite(selectedLat) || !Number.isFinite(selectedLng) || !selectedAddress) {
       return { status: 400, body: { error: "Please confirm your exact delivery location on the map before placing the order." } };
     }

@@ -10,6 +10,7 @@ export type AuthTokenGetter = () => Promise<string | null> | string | null;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
+const DEFAULT_LOCATION = { city: "Hatsingimari", state: "Assam", pincode: "783135", lat: 25.70986, lng: 89.90078 };
 
 // ---------------------------------------------------------------------------
 // Module-level configuration
@@ -333,8 +334,8 @@ function chappalStore() {
     ownerId: 5,
     name: "Chowdhary Footwear Hub",
     address: "New Market Footwear Lane",
-    city: "Kolkata",
-    state: "West Bengal",
+    city: DEFAULT_LOCATION.city,
+    state: DEFAULT_LOCATION.state,
     pincode: "700087",
     logoUrl: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=400&q=80",
     bannerUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80",
@@ -351,7 +352,7 @@ function chappalStore() {
     category: "Fashion",
     lat: 22.5618,
     lng: 88.3514,
-    pickupAddress: "Chowdhary Footwear Hub, New Market Footwear Lane, Kolkata",
+    pickupAddress: "Chowdhary Footwear Hub, Hatsingimari, Assam",
     createdAt: mockNow(),
   };
 }
@@ -438,10 +439,10 @@ function ensureChappalDemoData(state: MockRecord) {
       gstNumber: "",
       panNumber: "ABCDE1234F",
       address: "New Market Footwear Lane",
-      city: "Kolkata",
-      state: "West Bengal",
+      city: DEFAULT_LOCATION.city,
+      state: DEFAULT_LOCATION.state,
       pincode: "700087",
-      pickupAddress: "Chowdhary Footwear Hub, New Market Footwear Lane, Kolkata",
+      pickupAddress: "Chowdhary Footwear Hub, Hatsingimari, Assam",
       upiId: "chappal@upi",
       status: "approved",
       submittedAt: mockNow(),
@@ -462,7 +463,7 @@ function ensureChappalDemoOrder(state: MockRecord) {
   const customerAddresses = state.addresses["1"] ?? [];
   let address = customerAddresses[0];
   if (!address) {
-    address = { id: state.nextIds.address++, userId: 1, name: customer.name, phone: customer.phone, label: "Home", line1: "Current delivery location", line2: "Demo live GPS point", city: "Kolkata", state: "West Bengal", pincode: "700156", isDefault: true };
+    address = { id: state.nextIds.address++, userId: 1, name: customer.name, phone: customer.phone, label: "Home", line1: "Current delivery location", line2: "Demo live GPS point", city: DEFAULT_LOCATION.city, state: DEFAULT_LOCATION.state, pincode: DEFAULT_LOCATION.pincode, isDefault: true };
     customerAddresses.push(address);
     state.addresses["1"] = customerAddresses;
   }
@@ -563,9 +564,9 @@ function alomStore() {
     ownerId: 6,
     name: "Alom Grocery",
     address: "Alom Para Vegetable Market",
-    city: "Kolkata",
-    state: "West Bengal",
-    pincode: "700156",
+    city: DEFAULT_LOCATION.city,
+    state: DEFAULT_LOCATION.state,
+    pincode: DEFAULT_LOCATION.pincode,
     logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=500&q=85",
     bannerUrl: "https://images.unsplash.com/photo-1518843875459-f738682238a6?auto=format&fit=crop&w=1200&q=85",
     rating: "4.7",
@@ -579,9 +580,9 @@ function alomStore() {
     approvalStatus: "approved",
     businessType: "Grocery and vegetables",
     category: "Grocery",
-    lat: 22.5726,
-    lng: 88.3639,
-    pickupAddress: "Alom Grocery, Alom Para Vegetable Market, Kolkata",
+    lat: DEFAULT_LOCATION.lat,
+    lng: DEFAULT_LOCATION.lng,
+    pickupAddress: "Alom Grocery, Hatsingimari, Assam",
     createdAt: mockNow(),
   };
 }
@@ -666,10 +667,10 @@ function ensureAlomDemoData(state: MockRecord) {
       gstNumber: "",
       panNumber: "ALOMG1234F",
       address: "Alom Para Vegetable Market",
-      city: "Kolkata",
-      state: "West Bengal",
-      pincode: "700156",
-      pickupAddress: "Alom Grocery, Alom Para Vegetable Market, Kolkata",
+      city: DEFAULT_LOCATION.city,
+      state: DEFAULT_LOCATION.state,
+      pincode: DEFAULT_LOCATION.pincode,
+      pickupAddress: "Alom Grocery, Hatsingimari, Assam",
       upiId: "alomgrocery@upi",
       status: "approved",
       submittedAt: mockNow(),
@@ -695,9 +696,9 @@ function ensureAlomDemoOrder(state: MockRecord) {
     label: "Alom demo 4km location",
     line1: "Customer live GPS point",
     line2: "Approx 4 km from Alom Grocery",
-    city: "Kolkata",
-    state: "West Bengal",
-    pincode: "700156",
+    city: DEFAULT_LOCATION.city,
+    state: DEFAULT_LOCATION.state,
+    pincode: DEFAULT_LOCATION.pincode,
     lat: Number(store.lat) + 0.036,
     lng: Number(store.lng),
     locationAccuracy: 12,
@@ -940,9 +941,9 @@ function ensureOfficialDemoAccounts(state: MockRecord) {
         label: "Demo Home",
         line1: "Action Area I, New Town",
         line2: "Near community market",
-        city: "Kolkata",
-        state: "West Bengal",
-        pincode: "700156",
+        city: DEFAULT_LOCATION.city,
+        state: DEFAULT_LOCATION.state,
+        pincode: DEFAULT_LOCATION.pincode,
         lat: 22.6006,
         lng: 88.3949,
         isDefault: true,
@@ -965,9 +966,9 @@ function ensureOfficialDemoAccounts(state: MockRecord) {
       ownerId: seller.id,
       name: "Demo Grocery Store",
       address: "New Town Demo Market",
-      city: "Kolkata",
-      state: "West Bengal",
-      pincode: "700156",
+      city: DEFAULT_LOCATION.city,
+      state: DEFAULT_LOCATION.state,
+      pincode: DEFAULT_LOCATION.pincode,
       lat: 22.5996,
       lng: 88.3912,
       logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80",
@@ -1123,7 +1124,7 @@ function initialMockState() {
     carts: {} as Record<string, MockRecord[]>,
     wishlist: {} as Record<string, number[]>,
     addresses: {
-      "1": [{ id: 1, userId: 1, name: "Demo Customer", phone: "9876543210", label: "Home", line1: "Action Area I, New Town", line2: "Near community market", city: "Kolkata", state: "West Bengal", pincode: "700156", isDefault: true }],
+      "1": [{ id: 1, userId: 1, name: "Demo Customer", phone: "9876543210", label: "Home", line1: "Hatsingimari town", line2: "Near community market", city: DEFAULT_LOCATION.city, state: DEFAULT_LOCATION.state, pincode: DEFAULT_LOCATION.pincode, isDefault: true }],
     } as Record<string, MockRecord[]>,
     orders: [] as MockRecord[],
     returns: [] as MockRecord[],
@@ -1491,8 +1492,8 @@ function createStoreFromApplication(state: MockRecord, application: MockRecord) 
     gstNumber: application.gstNumber,
     businessType: application.businessType,
     category: application.category,
-    lat: 22.5726,
-    lng: 88.3639,
+    lat: DEFAULT_LOCATION.lat,
+    lng: DEFAULT_LOCATION.lng,
     pickupAddress: application.pickupAddress ?? application.address,
     createdAt: mockNow(),
   };
@@ -1682,9 +1683,9 @@ function approvedVendorStore(state: MockRecord, user: MockRecord, method: string
       businessType: "Local retail store",
       category: "General",
       shopAddress: "Local pickup address",
-      city: "Kolkata",
-      state: "West Bengal",
-      pincode: "700156",
+      city: DEFAULT_LOCATION.city,
+      state: DEFAULT_LOCATION.state,
+      pincode: DEFAULT_LOCATION.pincode,
       upiId: user.upiId ?? "",
     });
     application.status = "approved";
@@ -1692,9 +1693,11 @@ function approvedVendorStore(state: MockRecord, user: MockRecord, method: string
   }
   if (store) {
     store.address = store.address ?? store.pickupAddress ?? "Local pickup address";
-    store.city = store.city ?? "Kolkata";
-    store.lat = Number(store.lat ?? 22.5726);
-    store.lng = Number(store.lng ?? 88.3639);
+    store.city = store.city ?? DEFAULT_LOCATION.city;
+    store.state = store.state ?? DEFAULT_LOCATION.state;
+    store.pincode = store.pincode ?? DEFAULT_LOCATION.pincode;
+    store.lat = Number(store.lat ?? DEFAULT_LOCATION.lat);
+    store.lng = Number(store.lng ?? DEFAULT_LOCATION.lng);
   }
   if (!store || user.vendorStatus === "pending") {
     const application = state.storeApplications?.find((item: MockRecord) => item.userId === user.id && item.status === "pending");
@@ -2015,11 +2018,11 @@ function defaultServiceZones() {
     {
       id: 1,
       zoneCode: "KOL-NT-5K",
-      zoneName: "Kolkata New Town 5 km",
+      zoneName: "Hatsingimari 5 km",
       cityId: 1,
       stateId: 19,
-      centreLatitude: 22.6076,
-      centreLongitude: 88.4695,
+      centreLatitude: DEFAULT_LOCATION.lat,
+      centreLongitude: DEFAULT_LOCATION.lng,
       radiusMeters: 5000,
       boundaryGeometry: null,
       status: "active",
@@ -2034,11 +2037,11 @@ function defaultServiceZones() {
     {
       id: 2,
       zoneCode: "KOL-CEN-5K",
-      zoneName: "Kolkata Central 5 km",
+      zoneName: "Hatsingimari Central 5 km",
       cityId: 1,
       stateId: 19,
-      centreLatitude: 22.5726,
-      centreLongitude: 88.3639,
+      centreLatitude: DEFAULT_LOCATION.lat,
+      centreLongitude: DEFAULT_LOCATION.lng,
       radiusMeters: 5000,
       boundaryGeometry: null,
       status: "active",
@@ -2119,8 +2122,8 @@ function assignZoneIds(state: MockRecord) {
 }
 
 function mockOrderLocations(order: MockRecord) {
-  const storeLat = Number(order.store?.lat ?? 22.5726);
-  const storeLng = Number(order.store?.lng ?? 88.3639);
+  const storeLat = Number(order.store?.lat ?? DEFAULT_LOCATION.lat);
+  const storeLng = Number(order.store?.lng ?? DEFAULT_LOCATION.lng);
   const customerLat = Number(order.address?.lat ?? order.addressSnapshot?.lat ?? storeLat + 0.026);
   const customerLng = Number(order.address?.lng ?? order.addressSnapshot?.lng ?? storeLng + 0.031);
   const partnerLocation = order.tracking?.partnerLocation ?? order.tracking?.deliveryPartner?.location ?? { lat: storeLat + 0.006, lng: storeLng + 0.004 };
@@ -3096,11 +3099,11 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
           phone: user.phone || "9999999999",
           line1: "Current delivery location",
           line2: "",
-          city: cart.store.city ?? "Kolkata",
-          state: cart.store.state ?? "West Bengal",
-          pincode: cart.store.pincode ?? "700156",
-          lat: Number(cart.store.lat ?? 22.5726) + 0.01,
-          lng: Number(cart.store.lng ?? 88.3639) + 0.01,
+          city: cart.store.city ?? DEFAULT_LOCATION.city,
+          state: cart.store.state ?? DEFAULT_LOCATION.state,
+          pincode: cart.store.pincode ?? DEFAULT_LOCATION.pincode,
+          lat: Number(cart.store.lat ?? DEFAULT_LOCATION.lat) + 0.01,
+          lng: Number(cart.store.lng ?? DEFAULT_LOCATION.lng) + 0.01,
           isDefault: true,
           createdAt: mockNow(),
         };
@@ -3210,7 +3213,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
           pickupOtp,
           deliveryOtp,
           deliveryPartner: null,
-          partnerLocation: { lat: Number(cart.store?.lat ?? 22.5726) + 0.006, lng: Number(cart.store?.lng ?? 88.3639) + 0.004 },
+          partnerLocation: { lat: Number(cart.store?.lat ?? DEFAULT_LOCATION.lat) + 0.006, lng: Number(cart.store?.lng ?? DEFAULT_LOCATION.lng) + 0.004 },
           timeline: [
             { status: "pending", message: "Waiting for seller acceptance", updatedAt: mockNow() },
             { status: "pending", message: "Order placed", updatedAt: mockNow() },
@@ -3555,13 +3558,13 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
         freeDeliveryAbove: String(body.freeDeliveryAbove ?? store.freeDeliveryAbove ?? "0.00"),
         minOrderValue: String(body.minOrderValue ?? store.minOrderValue ?? "0.00"),
         estimatedDeliveryMins: Number(body.estimatedDeliveryMins ?? store.estimatedDeliveryMins ?? 40),
-        lat: Number(body.lat ?? store.lat ?? 22.5726),
-        lng: Number(body.lng ?? store.lng ?? 88.3639),
+        lat: Number(body.lat ?? store.lat ?? DEFAULT_LOCATION.lat),
+        lng: Number(body.lng ?? store.lng ?? DEFAULT_LOCATION.lng),
         pickupAddress: body.pickupAddress ?? store.pickupAddress ?? store.address ?? "",
         address: body.pickupAddress ?? store.address ?? "Local pickup address",
-        city: body.city ?? store.city ?? "Kolkata",
-        state: body.state ?? store.state ?? "West Bengal",
-        pincode: body.pincode ?? store.pincode ?? "700156",
+        city: body.city ?? store.city ?? DEFAULT_LOCATION.city,
+        state: body.state ?? store.state ?? DEFAULT_LOCATION.state,
+        pincode: body.pincode ?? store.pincode ?? DEFAULT_LOCATION.pincode,
         isOpen: body.isOpen !== undefined ? !!body.isOpen : store.isOpen !== false,
         updatedAt: mockNow(),
       });
@@ -3733,7 +3736,7 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
         vehicleType: "bike",
         vehicleNumber: "WB 20 LC 1024",
         rating: "4.8",
-        location: { lat: 22.5726, lng: 88.3639 },
+        location: { lat: DEFAULT_LOCATION.lat, lng: DEFAULT_LOCATION.lng },
       };
     }
     if (order.status !== "confirmed") order.tracking.timeline.unshift({ status: order.status, message: `Order ${order.status}`, updatedAt: mockNow() });
@@ -3775,8 +3778,8 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
         zoneName: body.zoneName ?? "New Service Zone",
         cityId: Number(body.cityId ?? 1),
         stateId: Number(body.stateId ?? 19),
-        centreLatitude: Number(body.centreLatitude ?? body.lat ?? 22.6076),
-        centreLongitude: Number(body.centreLongitude ?? body.lng ?? 88.4695),
+        centreLatitude: Number(body.centreLatitude ?? body.lat ?? DEFAULT_LOCATION.lat),
+        centreLongitude: Number(body.centreLongitude ?? body.lng ?? DEFAULT_LOCATION.lng),
         radiusMeters: Number(body.radiusMeters ?? 5000),
         boundaryGeometry: body.boundaryGeometry ?? null,
         status: body.status ?? "active",
@@ -3931,9 +3934,9 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
         isOpen: body.isOpen ?? true,
         isVerified: body.isVerified ?? false,
         approvalStatus: body.approvalStatus ?? "approved",
-        lat: Number(body.lat ?? 22.5726),
-        lng: Number(body.lng ?? 88.3639),
-        zoneId: Number(body.zoneId ?? resolveServiceZone(state, Number(body.lat ?? 22.5726), Number(body.lng ?? 88.3639))?.id ?? 1),
+        lat: Number(body.lat ?? DEFAULT_LOCATION.lat),
+        lng: Number(body.lng ?? DEFAULT_LOCATION.lng),
+        zoneId: Number(body.zoneId ?? resolveServiceZone(state, Number(body.lat ?? DEFAULT_LOCATION.lat), Number(body.lng ?? DEFAULT_LOCATION.lng))?.id ?? 1),
         serviceRadiusMeters: Number(body.serviceRadiusMeters ?? 5000),
         deliveryEnabled: body.deliveryEnabled ?? true,
         createdAt: mockNow(),

@@ -24,6 +24,7 @@ import { getFirstFormError, getFriendlyErrorMessage } from "@/lib/error-message"
 import { IndiaStateSelect } from "@/components/IndiaLocationSelects";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 import { useI18n } from "@/lib/i18n";
+import { DEFAULT_LOCATION } from "@/lib/default-location";
 
 const schema = z.object({
   label: z.string().optional().or(z.literal("")),
@@ -64,7 +65,7 @@ export default function Addresses() {
 
   const { register, handleSubmit, setValue, reset, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema as any),
-    defaultValues: { label: "home", state: "West Bengal", isDefault: false },
+    defaultValues: { label: "home", city: DEFAULT_LOCATION.city, district: DEFAULT_LOCATION.district, state: DEFAULT_LOCATION.state, pincode: DEFAULT_LOCATION.pincode, lat: DEFAULT_LOCATION.lat, lng: DEFAULT_LOCATION.lng, isDefault: false },
   });
   const pincodeValue = watch("pincode");
   const stateValue = watch("state");
@@ -74,7 +75,7 @@ export default function Addresses() {
   const fillFromPincode = (value = pincodeValue) => {
     const found = lookupPincode(value ?? "");
     if (!found) {
-      toast({ title: "Pincode not serviceable", description: "Demo pincode: 700156, 110001, 400001, 560001", variant: "destructive" });
+      toast({ title: "Pincode not serviceable", description: "Try 783135 or another supported delivery pincode.", variant: "destructive" });
       return;
     }
     setValue("city", found.city, { shouldValidate: true });

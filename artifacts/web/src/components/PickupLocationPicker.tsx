@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Crosshair, Expand, Loader2, MapPin, Minus, Navigation, Plus, Search, X } from "lucide-react";
 import { customFetch } from "@workspace/api-client-react";
 import { resolveRuntimeApiUrl } from "@/lib/mobile-runtime";
+import { DEFAULT_LOCATION } from "@/lib/default-location";
 
 declare global {
   interface Window {
@@ -229,9 +230,7 @@ export function PickupLocationPicker({
   const [fullscreen, setFullscreen] = useState(false);
   const storePoint = pointFrom(store);
   const active = mode === "inline" || open;
-  const defaultDeliveryPoint = storePoint
-    ? { lat: Number((storePoint.lat + 0.0016).toFixed(7)), lng: Number((storePoint.lng + 0.0015).toFixed(7)) }
-    : { lat: 22.6092, lng: 88.471 };
+  const defaultDeliveryPoint = { lat: DEFAULT_LOCATION.lat, lng: DEFAULT_LOCATION.lng };
 
   const buildLocation = async (point: { lat: number; lng: number }) => {
     setBusy(true);

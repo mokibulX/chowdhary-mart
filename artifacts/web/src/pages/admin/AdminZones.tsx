@@ -10,19 +10,20 @@ import { LocateFixed, MapPin, Navigation, Plus, Save, ShieldCheck, Trash2 } from
 import { IndiaStateSelect } from "@/components/IndiaLocationSelects";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 import { getCurrentIndianLocation } from "@/lib/live-location";
+import { DEFAULT_LOCATION } from "@/lib/default-location";
 
 const QUERY_KEY = ["/api/admin/service-zones"];
 
-const DEFAULT_FORM = {
+const DEFAULT_FORM: Record<string, string> = {
   zoneCode: "",
   zoneName: "",
-  centreLatitude: "22.6076",
-  centreLongitude: "88.4695",
+  centreLatitude: String(DEFAULT_LOCATION.lat),
+  centreLongitude: String(DEFAULT_LOCATION.lng),
   radiusMeters: "5000",
   defaultDeliveryTime: "40",
   minimumOrderAmount: "99",
-  city: "Kolkata",
-  state: "West Bengal",
+  city: DEFAULT_LOCATION.city,
+  state: DEFAULT_LOCATION.state,
 };
 
 export default function AdminZones() {
@@ -74,7 +75,7 @@ export default function AdminZones() {
         <div className="grid gap-3 md:grid-cols-4">
           <Field label="Code" value={form.zoneCode} onChange={(value) => setForm({ ...form, zoneCode: value })} placeholder="KOL-AREA-5K" />
           <Field label="Name" value={form.zoneName} onChange={(value) => setForm({ ...form, zoneName: value })} placeholder="Zone name" />
-          <Field label="City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} placeholder="Kolkata" />
+          <Field label="City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} placeholder={DEFAULT_LOCATION.city} />
           <IndiaStateSelect label="State" value={form.state} onChange={(value) => setForm({ ...form, state: value })} />
           <Field label="Latitude" value={form.centreLatitude} onChange={(value) => setForm({ ...form, centreLatitude: value })} />
           <Field label="Longitude" value={form.centreLongitude} onChange={(value) => setForm({ ...form, centreLongitude: value })} />

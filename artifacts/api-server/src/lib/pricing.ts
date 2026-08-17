@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { ensureFinanceTables, getFinanceSettings } from "./finance";
+import { DEFAULT_LOCATION } from "./default-location";
 
 export type PricingSettings = {
   commissionPercentage: string | number;
@@ -129,7 +130,7 @@ export function calculateOrderPricing(input: {
   const productSubtotal = roundMoney(input.subtotal);
   const commissionPercentage = amount(input.settings.commissionPercentage);
   const commissionAmount = roundMoney(productSubtotal * commissionPercentage / 100);
-  const distance = distanceKm(input.store.lat, input.store.lng, input.customerLat, input.customerLng);
+  const distance = distanceKm(input.store.lat, input.store.lng, input.customerLat ?? DEFAULT_LOCATION.lat, input.customerLng ?? DEFAULT_LOCATION.lng);
   const configuredMax = amount(input.settings.maxDeliveryDistanceKm);
   const storeRadius = amount(input.store.radiusKm) || configuredMax || 5;
   const maxDistance = configuredMax > 0 ? Math.min(configuredMax, storeRadius || configuredMax) : storeRadius;

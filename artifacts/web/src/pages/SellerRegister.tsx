@@ -15,6 +15,7 @@ import { fileToDataUrl, getCurrentIndianLocation } from "@/lib/live-location";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 import { getFriendlyErrorMessage } from "@/lib/error-message";
 import { IndiaStateDistrictSelects } from "@/components/IndiaLocationSelects";
+import { DEFAULT_LOCATION } from "@/lib/default-location";
 
 type SellerForm = {
   name: string;
@@ -49,15 +50,15 @@ const initialForm: SellerForm = {
   businessType: "Retail shop",
   shopCategory: "Grocery, Fashion, Electronics",
   shopAddress: "",
-  city: "Kolkata",
-  district: "North 24 Parganas",
-  state: "West Bengal",
-  pincode: "",
+  city: DEFAULT_LOCATION.city,
+  district: DEFAULT_LOCATION.district,
+  state: DEFAULT_LOCATION.state,
+  pincode: DEFAULT_LOCATION.pincode,
   gstNumber: "",
   panNumber: "",
   upiId: "",
-  lat: "",
-  lng: "",
+  lat: String(DEFAULT_LOCATION.lat),
+  lng: String(DEFAULT_LOCATION.lng),
   selectedZoneId: "",
   ownerPhoto: "",
   shopFrontPhoto: "",

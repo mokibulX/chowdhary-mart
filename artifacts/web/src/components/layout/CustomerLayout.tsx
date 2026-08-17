@@ -668,7 +668,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
                       window.setTimeout(() => applyPincode(next), 0);
                     }
                   }}
-                  placeholder="700156"
+                  placeholder="783135"
                 />
                 <Button type="button" onClick={() => applyPincode()} className="px-3">
                   <LocateFixed className="h-4 w-4" />

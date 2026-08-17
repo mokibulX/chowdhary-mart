@@ -15,6 +15,7 @@ import { assertTestModeFeature, testMode } from "../lib/test-mode";
 import { auditZone, validCoordinate } from "../lib/zones";
 import { ensureFinanceTables, ensureWallet, getFinanceSettings, settleCompletedOrder } from "../lib/finance";
 import { ensurePricingSchema } from "../lib/pricing";
+import { DEFAULT_LOCATION } from "../lib/default-location";
 
 const router = Router();
 
@@ -323,11 +324,11 @@ router.post("/test-controls/seed", async (req: AuthRequest, res) => {
           description: "Demo quick-commerce grocery store. Location must be adjusted with real GPS before live testing.",
           logoUrl: "/app-logo.png",
           bannerUrl: "/app-logo.png",
-          lat: 22.6076,
-          lng: 88.4695,
+          lat: DEFAULT_LOCATION.lat,
+          lng: DEFAULT_LOCATION.lng,
           address: "Demo shop address - replace with live GPS in seller panel",
-          city: "Kolkata",
-          pincode: "700156",
+          city: DEFAULT_LOCATION.city,
+          pincode: DEFAULT_LOCATION.pincode,
           phone: "9876500002",
           radiusKm: 5,
           deliveryFee: "40",
