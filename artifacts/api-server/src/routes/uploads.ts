@@ -98,6 +98,27 @@ async function uploadSupabase(storagePath: string, mime: string, buffer: Buffer)
   return `${supabaseUrl}/storage/v1/object/public/${bucket}/${storagePath}`;
 }
 
+// Used by trusted server-side imports (for example barcode image imports).
+// It keeps imported media on the same storage backend as normal uploads.
+export async function storePublicImage(req: AuthRequest, buffer: Buffer, mime: string, folder: string, ownerUserId: number) {
+  if (!ALLOWED_MIME.has(mime)) throw new Error("Only JPG, PNG, WEBP or GIF images are allowed.");
+  if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) throw new Error("Image file is empty or too large.");
+  const ext = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+  const storagePath = `${safeFolder(folder)}/${ownerUserId}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.${ext}`;
+  const config = getStorageConfig();
+  const provider = String(config.provider || "local").toLowerCase();
+  if (provider === "supabase") {
+    try {
+      return { imageUrl: await uploadSupabase(storagePath, mime, buffer), storagePath, provider: "supabase" };
+    } catch (error) {
+      if (String(readEnv("STORAGE_FALLBACK_TO_LOCAL") ?? "true").toLowerCase() === "false") throw error;
+      req.log.warn({ err: error }, "Imported image upload failed; using local storage fallback");
+    }
+  }
+  if (provider !== "local" && provider !== "supabase") throw new Error(`Storage provider '${provider}' is not enabled yet.`);
+  return { imageUrl: await uploadLocal(req, storagePath, buffer), storagePath, provider: "local" };
+}
+
 router.post("/image", async (req: AuthRequest, res) => {
   try {
     const { mime, buffer, ext } = parseDataUrl(req.body?.dataUrl);

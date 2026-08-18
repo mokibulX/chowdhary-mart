@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { customFetch } from "@workspace/api-client-react";
+import { customFetch, getGetAdminDashboardQueryKey } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,6 +42,7 @@ export default function AdminApprovals() {
       customFetch(`/api/admin/delivery-partners/${id}/${status}`, { method: "POST" }),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: DELIVERY_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() });
       toast({ title: variables.status === "approve" ? "Delivery partner approved" : "Delivery partner rejected" });
     },
     onError: () => toast({ title: "Action failed", variant: "destructive" }),

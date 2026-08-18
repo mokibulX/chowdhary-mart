@@ -829,6 +829,7 @@ function RelatedProductCard({
 }) {
   const discount = product.discountPercent ? Number(product.discountPercent) : 0;
   const image = Array.isArray(product.images) ? product.images.find(Boolean) : "";
+  const [imageFailed, setImageFailed] = useState(false);
   const available = product.isAvailable !== false && Number(product.stock ?? 0) > 0;
   const unit = [product.weight, product.unit].filter(Boolean).join(" ");
   const brand = product.brandName ?? product.brand?.name ?? product.specifications?.Brand ?? product.category?.name ?? "";
@@ -838,9 +839,9 @@ function RelatedProductCard({
       onMouseEnter={onPrefetch}
       onTouchStart={onPrefetch}
     >
-      <Link href={`/product/${product.id}`} className="relative block h-[112px] w-[112px] flex-shrink-0 bg-gray-50 sm:h-auto sm:w-full sm:aspect-square">
-        {image ? (
-          <img src={image} alt={product.name} loading="lazy" className="h-full w-full object-contain p-3 transition-transform duration-300 group-hover:scale-105 sm:p-4" />
+      <Link href={`/product/${product.id}`} className="relative block h-[112px] w-[112px] flex-shrink-0 bg-gray-50/70 sm:h-auto sm:w-full sm:aspect-square">
+        {image && !imageFailed ? (
+          <img src={image} alt={product.name} loading="lazy" onError={() => setImageFailed(true)} className="h-full w-full object-contain p-3 transition-transform duration-300 group-hover:scale-105 sm:p-4" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-gray-300"><ShoppingCart className="h-10 w-10 opacity-30" /></div>
         )}

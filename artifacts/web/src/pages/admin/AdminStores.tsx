@@ -1,4 +1,4 @@
-import { customFetch, getListAdminStoresQueryKey, useListAdminStores } from "@workspace/api-client-react";
+import { customFetch, getGetAdminDashboardQueryKey, getListAdminStoresQueryKey, useListAdminStores } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +27,7 @@ export default function AdminStores() {
         body: JSON.stringify({ deliveryFee, freeDeliveryAbove, minOrderValue }),
       });
       qc.invalidateQueries({ queryKey: getListAdminStoresQueryKey() });
+      qc.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() });
       toast({ title: "Store fees updated", description: "Delivery fee and free-delivery discount rule saved." });
     } catch (error) {
       toast({ title: "Fee update failed", description: (error as Error).message, variant: "destructive" });
@@ -62,6 +63,7 @@ export default function AdminStores() {
       qc.invalidateQueries({ queryKey: ["/api/admin/products"] });
       qc.invalidateQueries({ queryKey: ["/api/products"] });
       qc.invalidateQueries({ queryKey: ["/api/stores"] });
+      qc.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() });
       toast({ title: "Store and seller deleted", description: "Vendor account, store, products and related order data removed." });
     } catch (error) {
       toast({ title: "Store delete failed", description: (error as Error).message, variant: "destructive" });

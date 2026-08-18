@@ -21,8 +21,8 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const { data: dashboard, isLoading } = useGetAdminDashboard({
-    query: { enabled: !!user, queryKey: getGetAdminDashboardQueryKey() },
+  const { data: dashboard, isLoading, isError, refetch } = useGetAdminDashboard({
+    query: { enabled: !!user, queryKey: getGetAdminDashboardQueryKey(), refetchOnWindowFocus: true, refetchOnMount: "always" },
   });
   const { data: testControls } = useQuery({
     queryKey: ["/api/admin/test-controls"],
@@ -63,6 +63,13 @@ export default function AdminDashboard() {
         <h1 className="text-2xl font-bold">Admin Dashboard</h1>
         <p className="text-muted-foreground text-sm mt-0.5">Welcome, {user?.name}</p>
       </div>
+
+      {isError && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+          <span>Unable to refresh dashboard statistics. Please try again.</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>Try again</Button>
+        </div>
+      )}
 
       <WalletSummaryCard href="/admin/wallet" title="Admin wallet" tone="dark" />
 

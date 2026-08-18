@@ -256,14 +256,40 @@ async function ensureDemoUser(account: typeof demoAccounts[number]) {
 // GET /api/admin/dashboard
 router.get("/dashboard", async (req: AuthRequest, res) => {
   try {
+    await ensureAdminUsersColumns();
+    await ensureDeliveryReviewColumns();
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
-    const [users, allOrders, stores, deliveryPartners] = await Promise.all([
-      db.select({ count: sql<number>`count(*)` }).from(usersTable),
+    const [counts, allOrders] = await Promise.all([
+      db.execute(sql`
+        select
+          (select count(*) from users where deleted_at is null)::int as "totalUsers",
+          (select count(*)
+             from stores s
+             inner join users u on u.id = s.user_id
+            where s.is_active = true
+              and s.is_verified = true
+              and u.is_active = true
+              and u.deleted_at is null)::int as "totalStores",
+          (select count(*)
+             from stores s
+             inner join users u on u.id = s.user_id
+            where s.is_active = true
+              and s.is_verified = false
+              and u.is_active = true
+              and u.deleted_at is null)::int as "pendingStores",
+          (select count(*)
+             from delivery_partners dp
+             inner join users u on u.id = dp.user_id
+            where dp.is_online = true
+              and dp.is_verified = true
+              and coalesce(dp.delivery_status, 'pending') = 'approved'
+              and u.is_active = true
+              and u.deleted_at is null)::int as "activeDeliveryPartners"
+      `),
       db.select().from(ordersTable),
-      db.select({ count: sql<number>`count(*)` }).from(storesTable),
-      db.select({ count: sql<number>`count(*)` }).from(deliveryPartnersTable).where(eq(deliveryPartnersTable.isOnline, true)),
     ]);
+    const summary = (counts as any)[0] ?? {};
 
     const todayOrders = allOrders.filter(o => new Date(o.createdAt) >= today);
     const completed = allOrders.filter(o => o.status === "delivered");
@@ -276,13 +302,14 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
     const [firstStore] = await db.select().from(storesTable).limit(1);
 
     res.json({
-      totalUsers: Number(users[0]?.count ?? 0),
+      totalUsers: Number(summary.totalUsers ?? 0),
       totalOrders: allOrders.length,
       totalRevenue: totalRevenue.toFixed(2),
-      totalStores: Number(stores[0]?.count ?? 0),
+      totalStores: Number(summary.totalStores ?? 0),
+      pendingStores: Number(summary.pendingStores ?? 0),
       todayOrders: todayOrders.length,
       todayRevenue: todayRevenue.toFixed(2),
-      activeDeliveryPartners: Number(deliveryPartners[0]?.count ?? 0),
+      activeDeliveryPartners: Number(summary.activeDeliveryPartners ?? 0),
       recentOrders: recentOrders.map(o => ({ ...o, store: firstStore })),
     });
   } catch (err) {

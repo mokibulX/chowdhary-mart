@@ -325,11 +325,12 @@ export default function VendorProducts() {
     }
   };
 
-  const lookupBarcode = async () => {
-    const barcode = String(watch("barcode") ?? "").replace(/\D/g, "");
+  const lookupBarcode = async (barcodeOverride?: string, allowCurrentLookup = false) => {
+    if (barcodeLoading && !allowCurrentLookup) return;
+    const barcode = String(barcodeOverride ?? watch("barcode") ?? "").replace(/\D/g, "");
     setValue("barcode", barcode, { shouldDirty: true, shouldValidate: true });
     if (!/^\d{8,14}$/.test(barcode)) {
-      toast({ title: "Valid barcode required", description: "Enter an 8 to 14 digit barcode.", variant: "destructive" });
+      toast({ title: "Invalid barcode", description: "Please enter a valid barcode.", variant: "destructive" });
       return;
     }
     setBarcodeLoading(true);
@@ -358,13 +359,16 @@ export default function VendorProducts() {
         setValue("weight", quantityMatch[1], { shouldDirty: true });
         setValue("unit", quantityMatch[2] || "pc", { shouldDirty: true });
       }
-      const images = Array.isArray(found.images) ? found.images.filter((url: unknown) => typeof url === "string" && /^https:\/\//i.test(url)) : [];
+      const images: string[] = Array.isArray(found.images)
+        ? Array.from(new Set<string>(found.images.filter((url: unknown): url is string => typeof url === "string" && /^(https?:\/\/|\/api\/)/i.test(url)).map((url: string) => url.trim()))).slice(0, 12)
+        : [];
       if (images.length) setImageUrls(images);
       setValue("expiryRequired", Boolean(found.expiryRequired), { shouldDirty: true });
       if (found.specifications?.ExpiryDate) setValue("expiryDate", String(found.specifications.ExpiryDate), { shouldDirty: true });
       toast({ title: "Product details imported", description: `${images.length} company image(s) and available product details added. Review or edit everything before saving.` });
     } catch (err) {
-      toast({ title: "Product not found", description: getFriendlyErrorMessage(err, "Product not found. Please add the product details manually."), variant: "destructive" });
+      const description = getFriendlyErrorMessage(err, "Product not found. Please add the product details manually.");
+      toast({ title: description.includes("not found") ? "Product not found" : "Barcode lookup failed", description, variant: "destructive" });
     } finally {
       setBarcodeLoading(false);
     }
@@ -380,18 +384,20 @@ export default function VendorProducts() {
       return;
     }
     setBarcodeLoading(true);
+    let bitmap: ImageBitmap | undefined;
     try {
-      const bitmap = await createImageBitmap(file);
+      bitmap = await createImageBitmap(file);
       const detector = new Detector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
       const results = await detector.detect(bitmap);
-      bitmap.close();
       const barcode = String(results?.[0]?.rawValue ?? "").replace(/\D/g, "");
       if (!/^\d{8,14}$/.test(barcode)) throw new Error("No valid product barcode was found in the photo.");
       setValue("barcode", barcode, { shouldDirty: true, shouldValidate: true });
-      window.setTimeout(() => void lookupBarcode(), 0);
+      await lookupBarcode(barcode, true);
     } catch (error) {
       setBarcodeLoading(false);
       toast({ title: "Barcode scan failed", description: getFriendlyErrorMessage(error, "Keep the barcode clear, well-lit and fully inside the camera frame."), variant: "destructive" });
+    } finally {
+      bitmap?.close();
     }
   };
 
@@ -634,9 +640,9 @@ export default function VendorProducts() {
                       {...register("barcode", { onChange: (event) => { event.target.value = event.target.value.replace(/\D/g, "").slice(0, 14); } })}
                       data-testid="input-barcode"
                     />
-                    <Button type="button" variant="outline" className="shrink-0 bg-white" onClick={lookupBarcode} disabled={barcodeLoading} data-testid="btn-barcode-lookup">
+                    <Button type="button" variant="outline" className="shrink-0 bg-white" onClick={() => void lookupBarcode()} disabled={barcodeLoading} data-testid="btn-barcode-lookup">
                       {barcodeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanBarcode className="mr-2 h-4 w-4" />}
-                      {barcodeLoading ? "Finding" : "Find"}
+                      {barcodeLoading ? "Looking up product..." : "Find"}
                     </Button>
                     <label className={`inline-flex h-10 shrink-0 cursor-pointer items-center justify-center rounded-md border border-blue-200 bg-white px-3 text-sm font-medium hover:bg-blue-50 ${barcodeLoading ? "pointer-events-none opacity-60" : ""}`}>
                       <Camera className="mr-2 h-4 w-4" /> Scan

@@ -74,6 +74,7 @@ export default function SellerRegister() {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [credentialFieldsReady, setCredentialFieldsReady] = useState(false);
   const [zones, setZones] = useState<any[]>([]);
   const [zoneBusy, setZoneBusy] = useState(false);
   const [gpsBusy, setGpsBusy] = useState(false);
@@ -88,6 +89,13 @@ export default function SellerRegister() {
         available: true,
       }
     : null;
+
+  useEffect(() => {
+    setForm({ ...initialForm });
+    setOtpSent(false);
+    setOtp("");
+    setCredentialFieldsReady(false);
+  }, []);
 
   const update = (key: keyof SellerForm, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -289,15 +297,28 @@ export default function SellerRegister() {
               </div>
             </div>
 
-            <form onSubmit={submit} className="space-y-4">
+            <form onSubmit={submit} className="space-y-4" autoComplete="off" name="seller-registration" data-form-type="other">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Owner name *" value={form.name} onChange={(value) => update("name", value)} />
                 <Field label="Mobile number *" value={form.phone} onChange={(value) => update("phone", value.replace(/\D/g, "").slice(0, 10))} inputMode="tel" />
-                <Field label="Email *" value={form.email} onChange={(value) => update("email", value)} type="email" />
+                <Field label="Email *" value={form.email} onChange={(value) => update("email", value)} type="email" autoComplete="off" readOnly={!credentialFieldsReady} onFocus={() => setCredentialFieldsReady(true)} />
                 <div className="space-y-1.5">
                   <Label>Password *</Label>
                   <div className="relative">
-                    <Input value={form.password} onChange={(event) => update("password", event.target.value)} type={showPassword ? "text" : "password"} className="h-12 rounded-2xl pr-10" />
+                    <Input
+                      id="seller-registration-password"
+                      name="seller-registration-password"
+                      value={form.password}
+                      onChange={(event) => update("password", event.target.value)}
+                      onFocus={() => setCredentialFieldsReady(true)}
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      readOnly={!credentialFieldsReady}
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      spellCheck={false}
+                      className="h-12 rounded-2xl pr-10"
+                    />
                     <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-gray-100" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
@@ -498,6 +519,9 @@ function Field({
   type = "text",
   inputMode,
   placeholder,
+  autoComplete = "off",
+  readOnly = false,
+  onFocus,
 }: {
   label: string;
   value: string;
@@ -505,11 +529,29 @@ function Field({
   type?: string;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   placeholder?: string;
+  autoComplete?: string;
+  readOnly?: boolean;
+  onFocus?: () => void;
 }) {
+  const fieldName = `seller-registration-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   return (
     <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <Input className="h-12 rounded-2xl" value={value} onChange={(event) => onChange(event.target.value)} type={type} inputMode={inputMode} placeholder={placeholder} />
+      <Label htmlFor={fieldName}>{label}</Label>
+      <Input
+        id={fieldName}
+        name={fieldName}
+        className="h-12 rounded-2xl"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onFocus={onFocus}
+        type={type}
+        inputMode={inputMode}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        readOnly={readOnly}
+        data-lpignore="true"
+        data-1p-ignore="true"
+      />
     </div>
   );
 }

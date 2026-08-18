@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { customFetch, getListAdminUsersQueryKey, useListAdminUsers } from "@workspace/api-client-react";
+import { customFetch, getGetAdminDashboardQueryKey, getListAdminUsersQueryKey, useListAdminUsers } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -48,6 +48,7 @@ export default function AdminUsers() {
     try {
       await customFetch(`/api/admin/users/${target.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !target.isActive }) });
       toast({ title: target.isActive ? "User blocked" : "User activated" });
+      qc.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() });
       refresh();
     } catch (error) {
       toast({ title: "User update failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
@@ -67,6 +68,7 @@ export default function AdminUsers() {
       qc.invalidateQueries({ queryKey: ["/api/products"] });
       qc.invalidateQueries({ queryKey: ["/api/admin/stores"] });
       qc.invalidateQueries({ queryKey: ["/api/stores"] });
+      qc.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() });
       toast({ title: target.role === "vendor" ? "Seller and products deleted" : "User deleted" });
       refresh();
     } catch (error) {

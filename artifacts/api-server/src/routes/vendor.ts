@@ -8,6 +8,7 @@ import { requireApprovedVendor, requireAuth, requireRole, type AuthRequest } fro
 import { sellerZoneIds } from "../lib/zones";
 import { createAndPushNotification } from "../lib/push-service";
 import { expireOrderIfNeeded, lifecycleMeta } from "../lib/order-lifecycle";
+import { storePublicImage } from "./uploads";
 
 const router = Router();
 
@@ -98,7 +99,7 @@ async function prepareProductSpecifications(categoryId: unknown, input: unknown,
 router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
   const barcode = String(req.params.barcode ?? "").replace(/\D/g, "");
   if (barcode.length < 8 || barcode.length > 14) {
-    res.status(400).json({ error: "Enter a valid 8 to 14 digit barcode" });
+    res.status(400).json({ error: "Please enter a valid barcode." });
     return;
   }
   try {
@@ -112,13 +113,19 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
     const providers = ["world.openfoodfacts.org", "world.openbeautyfacts.org", "world.openproductsfacts.org"];
     let product: Record<string, unknown> | undefined;
     let source = "Open Facts";
+    let providerUnavailable = false;
+    let providerResponded = false;
     for (const provider of providers) {
       try {
         const response = await fetch(`https://${provider}/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${fields}`, {
           headers: { "User-Agent": "ChowdharyMart/1.0 (barcode product import)" },
           signal: AbortSignal.timeout(7000),
         });
-        if (!response.ok) continue;
+        providerResponded = true;
+        if (!response.ok) {
+          if (response.status === 429 || response.status >= 500) providerUnavailable = true;
+          continue;
+        }
         const result = await response.json() as { status?: number; product?: Record<string, unknown> };
         if (result.status === 1 && result.product) {
           product = result.product;
@@ -126,10 +133,15 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
           break;
         }
       } catch (error) {
+        providerUnavailable = true;
         req.log.warn({ err: error, provider }, "Barcode provider lookup failed");
       }
     }
     if (!product) {
+      if (!providerResponded || providerUnavailable) {
+        res.status(502).json({ error: "Product lookup is temporarily unavailable. Please try again." });
+        return;
+      }
       res.status(404).json({ error: "Product not found. Please add the product details manually." });
       return;
     }
@@ -138,9 +150,25 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       res.status(404).json({ error: "Product exists, but its name is not available" });
       return;
     }
-    const imageUrls = [product.image_url, product.image_front_url, product.image_ingredients_url, product.image_nutrition_url, product.image_packaging_url]
+    const remoteImageUrls = [product.image_url, product.image_front_url, product.image_ingredients_url, product.image_nutrition_url, product.image_packaging_url]
       .map(textValue)
       .filter((url, index, values) => /^https:\/\//i.test(url) && values.indexOf(url) === index);
+    const imageUrls: string[] = [];
+    for (const remoteUrl of remoteImageUrls.slice(0, 6)) {
+      try {
+        const imageResponse = await fetch(remoteUrl, { signal: AbortSignal.timeout(5000), headers: { "User-Agent": "ChowdharyMart/1.0 (barcode image import)" } });
+        const mime = String(imageResponse.headers.get("content-type") ?? "").split(";")[0].toLowerCase();
+        const contentLength = Number(imageResponse.headers.get("content-length") ?? 0);
+        if (!imageResponse.ok || !mime.startsWith("image/") || contentLength > 5 * 1024 * 1024) continue;
+        const buffer = Buffer.from(await imageResponse.arrayBuffer());
+        if (!buffer.length || buffer.length > 5 * 1024 * 1024) continue;
+        const stored = await storePublicImage(req, buffer, mime, "barcode-products", req.user!.userId);
+        imageUrls.push(stored.imageUrl);
+      } catch (error) {
+        req.log.warn({ err: error, remoteUrl }, "Could not copy barcode image into storage");
+        imageUrls.push(remoteUrl);
+      }
+    }
     const nutriments = product.nutriments && typeof product.nutriments === "object" ? product.nutriments as Record<string, unknown> : {};
     const nutrition = Object.fromEntries(Object.entries(nutriments)
       .filter(([key, value]) => !key.endsWith("_unit") && !key.endsWith("_value") && ["string", "number"].includes(typeof value))
@@ -423,6 +451,15 @@ router.post("/products", async (req: AuthRequest, res) => {
     const productImages = cleanProductImages(images);
     const preparedSpecifications = await prepareProductSpecifications(categoryId, specifications, isAvailable ?? true);
     const discountPercent = mrp && price ? (((Number(mrp) - Number(price)) / Number(mrp)) * 100).toFixed(2) : "0";
+    const normalizedSku = textValue(sku);
+    if (normalizedSku) {
+      const [duplicate] = await db.select({ id: productsTable.id }).from(productsTable)
+        .where(and(eq(productsTable.storeId, store.id), eq(productsTable.sku, normalizedSku))).limit(1);
+      if (duplicate) {
+        res.status(409).json({ error: "This barcode is already linked to a product in your store." });
+        return;
+      }
+    }
 
     const [product] = await db.insert(productsTable).values({
       storeId: store.id,
@@ -437,7 +474,7 @@ router.post("/products", async (req: AuthRequest, res) => {
       images: productImages,
       weight,
       unit,
-      sku: textValue(sku) || null,
+      sku: normalizedSku || null,
       specifications: preparedSpecifications,
       stock: stock ?? 0,
       isAvailable: isAvailable ?? true,
@@ -466,11 +503,20 @@ router.patch("/products/:productId", async (req: AuthRequest, res) => {
     if (!store) { res.status(404).json({ error: "Store not found" }); return; }
     const [existing] = await db.select().from(productsTable).where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id))).limit(1);
     if (!existing || (store.zoneId && existing.zoneId && existing.zoneId !== store.zoneId)) { res.status(404).json({ error: "Product not found in your zone" }); return; }
+    const normalizedSku = textValue(sku);
+    if (normalizedSku && normalizedSku !== textValue(existing.sku)) {
+      const [duplicate] = await db.select({ id: productsTable.id }).from(productsTable)
+        .where(and(eq(productsTable.storeId, store.id), eq(productsTable.sku, normalizedSku))).limit(1);
+      if (duplicate) {
+        res.status(409).json({ error: "This barcode is already linked to a product in your store." });
+        return;
+      }
+    }
     const nextImages = images === undefined ? existing.images : cleanProductImages(images);
     const preparedSpecifications = await prepareProductSpecifications(categoryId, specifications, isAvailable);
 
     const [product] = await db.update(productsTable)
-      .set({ name, description, categoryId, price, mrp, weight, unit, sku: textValue(sku) || null, specifications: preparedSpecifications, stock, isAvailable, isFeatured, images: nextImages, discountPercent, updatedAt: new Date() })
+      .set({ name, description, categoryId, price, mrp, weight, unit, sku: normalizedSku || null, specifications: preparedSpecifications, stock, isAvailable, isFeatured, images: nextImages, discountPercent, updatedAt: new Date() })
       .where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id)))
       .returning();
 

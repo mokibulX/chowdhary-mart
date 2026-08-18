@@ -44,6 +44,7 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
   const [imageIndex, setImageIndex] = useState(0);
+  const [imageFailed, setImageFailed] = useState(false);
 
   const { data: cart } = useGetCart({ query: { enabled: !!user, queryKey: getGetCartQueryKey() } });
   const addToCart = useAddToCart();
@@ -65,6 +66,7 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
 
   useEffect(() => {
     setImageIndex(0);
+    setImageFailed(false);
   }, [product.id]);
 
   useEffect(() => {
@@ -113,13 +115,14 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
   return (
     <Link href={`/product/${product.id}`}>
       <Card className={`group flex h-full cursor-pointer flex-row overflow-hidden rounded-xl border bg-white shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg sm:flex-col ${categoryStyle.cardClass} ${compact ? "min-h-[126px] sm:min-h-[210px]" : "min-h-[132px] sm:min-h-[282px]"}`} data-template={template} data-testid={`product-card-${product.id}`}>
-        <div className={`relative h-[112px] w-[112px] flex-shrink-0 overflow-hidden bg-gray-50 sm:h-auto sm:w-full ${categoryStyle.imageClass}`}>
-          {images[imageIndex] ? (
+        <div className={`relative h-[112px] w-[112px] flex-shrink-0 overflow-hidden bg-gray-50/70 sm:h-auto sm:w-full ${categoryStyle.imageClass}`}>
+          {images[imageIndex] && !imageFailed ? (
             <img
               src={images[imageIndex]}
               alt={product.name}
               loading="lazy"
               decoding="async"
+              onError={() => setImageFailed(true)}
               className={`h-full w-full transition-transform duration-500 group-hover:scale-105 ${categoryStyle.objectClass}`}
             />
           ) : (
@@ -195,9 +198,9 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
           {showStepper && (
           <div className="mt-auto pt-2">
             {available ? (
-              <div className="grid grid-cols-2 gap-1 rounded-full border bg-gray-50 p-1 shadow-inner">
+              <div className="grid grid-cols-2 gap-2">
                 {qty > 0 ? (
-                  <div className="flex h-8 items-center justify-between rounded-full bg-white px-0.5 shadow-sm" onClick={(event) => event.preventDefault()}>
+                  <div className="flex h-8 items-center justify-between rounded-full border bg-white px-0.5" onClick={(event) => event.preventDefault()}>
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-primary" onClick={(event) => handleAdjust(event, qty - 1)} data-testid={`btn-decrease-${product.id}`}>
                       <Minus className="h-3.5 w-3.5" />
                     </Button>
@@ -207,7 +210,7 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
                     </Button>
                   </div>
                 ) : (
-                  <Button size="sm" variant="ghost" className="h-8 rounded-full bg-white text-xs font-bold text-primary shadow-sm hover:bg-white" onClick={handleAdd} disabled={addToCart.isPending} data-testid={`btn-add-${product.id}`}>
+                  <Button size="sm" variant="outline" className="h-8 rounded-full bg-white text-xs font-bold text-primary" onClick={handleAdd} disabled={addToCart.isPending} data-testid={`btn-add-${product.id}`}>
                     <Plus className="mr-0.5 h-3.5 w-3.5" />
                     Add
                   </Button>
@@ -254,13 +257,13 @@ const CARD_STYLES: Record<CardTemplate, { cardClass: string; imageClass: string;
     metaLabel: "Pack",
   },
   fresh_produce: {
-    cardClass: "border-green-100 bg-gradient-to-b from-green-50/45 to-white",
+    cardClass: "bg-white",
     imageClass: "aspect-square",
     objectClass: "object-contain p-2 sm:p-3",
     metaLabel: "Per kg",
   },
   electronics_spec: {
-    cardClass: "bg-gradient-to-b from-blue-50/40 to-white",
+    cardClass: "bg-white",
     imageClass: "aspect-square",
     objectClass: "object-contain p-3 sm:p-4",
     metaLabel: "Model",
@@ -272,7 +275,7 @@ const CARD_STYLES: Record<CardTemplate, { cardClass: string; imageClass: string;
     metaLabel: "Style",
   },
   beauty_compact: {
-    cardClass: "bg-gradient-to-b from-pink-50/50 to-white",
+    cardClass: "bg-white",
     imageClass: "aspect-square",
     objectClass: "object-contain p-3",
     metaLabel: "Size",
@@ -284,7 +287,7 @@ const CARD_STYLES: Record<CardTemplate, { cardClass: string; imageClass: string;
     metaLabel: "Prep",
   },
   books_portrait: {
-    cardClass: "bg-gradient-to-b from-amber-50/50 to-white",
+    cardClass: "bg-white",
     imageClass: "aspect-square",
     objectClass: "object-contain p-2",
     metaLabel: "Book",
