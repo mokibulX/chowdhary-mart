@@ -619,7 +619,21 @@ export default function VendorProducts() {
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Product" : "Add New Product"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-3" noValidate>
+          <form
+            onSubmitCapture={(event) => {
+              const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLElement | null;
+              const activeElement = document.activeElement as HTMLElement | null;
+              if (submitter?.dataset.testid === "btn-save") return;
+              if (activeElement?.id === "product-barcode") {
+                event.preventDefault();
+                event.stopPropagation();
+                void lookupBarcode();
+              }
+            }}
+            onSubmit={handleSubmit(onSubmit, onInvalid)}
+            className="space-y-3"
+            noValidate
+          >
             <div className="grid grid-cols-5 gap-1 rounded-xl border bg-gray-50 p-2">
               {PRODUCT_STEPS.map((step, index) => (
                 <button
@@ -652,13 +666,14 @@ export default function VendorProducts() {
                       inputMode="numeric"
                       maxLength={14}
                       placeholder="Scan or enter 8-14 digit barcode"
+                      {...register("barcode", { onChange: (event) => { event.target.value = event.target.value.replace(/\D/g, "").slice(0, 14); } })}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
                           event.preventDefault();
+                          event.stopPropagation();
                           void lookupBarcode();
                         }
                       }}
-                      {...register("barcode", { onChange: (event) => { event.target.value = event.target.value.replace(/\D/g, "").slice(0, 14); } })}
                       data-testid="input-barcode"
                     />
                     <Button type="button" variant="outline" className="shrink-0 bg-white" onClick={() => void lookupBarcode()} disabled={barcodeLoading} data-testid="btn-barcode-lookup">
