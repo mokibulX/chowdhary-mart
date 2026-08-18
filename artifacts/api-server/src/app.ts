@@ -10,6 +10,9 @@ import { requestContext } from "./middleware/request-context";
 import { getCorsOptions, securityHeaders } from "./middleware/security";
 
 const app: Express = express();
+// Render and other reverse proxies terminate TLS before forwarding requests.
+// Trust the forwarded scheme so generated public upload URLs stay HTTPS.
+app.set("trust proxy", 1);
 const workspaceRoot = path.basename(process.cwd()) === "api-server"
   ? path.resolve(process.cwd(), "..", "..")
   : process.cwd();

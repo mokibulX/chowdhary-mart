@@ -116,12 +116,16 @@ function categoryRequiresExpiry(name = "") {
 
 function BarcodeResultCard({ product }: { product: any }) {
   const specs = product.specifications && typeof product.specifications === "object" ? product.specifications : {};
-  const image = Array.isArray(product.images) ? product.images[0] : "";
+  const images: string[] = Array.isArray(product.images) ? Array.from(new Set<string>(product.images.filter((url: unknown): url is string => typeof url === "string" && Boolean(url.trim())).map((url: string) => url.trim()))).slice(0, 12) : [];
+  const image = images[0] ?? "";
   const value = (item: unknown) => String(item ?? "").trim() || "Not available";
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
       <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="h-28 w-28 shrink-0 overflow-hidden rounded-lg border bg-white">{image ? <img src={image} alt={product.name || "Scanned product"} className="h-full w-full object-contain" /> : <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">Image not available</div>}</div>
+        <div className="w-28 shrink-0">
+          <div className="h-28 w-28 overflow-hidden rounded-lg border bg-white">{image ? <img src={image} alt={product.name || "Scanned product"} className="h-full w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">Image not available</div>}</div>
+          {images.length > 1 && <div className="mt-1 grid grid-cols-4 gap-1">{images.slice(0, 4).map((url: string, index: number) => <div key={`${url}-${index}`} className="h-6 overflow-hidden rounded border bg-white"><img src={url} alt="" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /></div>)}</div>}
+        </div>
         <div className="min-w-0 flex-1"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Barcode product found</p><h3 className="mt-1 text-lg font-bold break-words">{value(product.name)}</h3><p className="text-sm text-muted-foreground">{value(product.brand || specs.Brand)}</p><p className="mt-1 text-xs font-medium">Barcode: {value(product.barcode)}</p></div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"><InfoCell label="Category" value={product.category || specs.Category} /><InfoCell label="MRP" value={product.mrp ? `₹${product.mrp}` : undefined} /><InfoCell label="Pack size" value={product.quantity || specs.Quantity} /><InfoCell label="Manufacturer" value={specs.Manufacturer} /><InfoCell label="Origin" value={specs.Origin || specs.Countries} /><InfoCell label="Description" value={product.description} /></div>
@@ -341,7 +345,7 @@ export default function VendorProducts() {
       const imported = found.specifications && typeof found.specifications === "object" ? found.specifications : {};
       setImportedSpecifications(imported);
       const detailLines = Object.entries(imported)
-        .filter(([key, value]) => key !== "Nutrition" && key !== "Barcode" && key !== "Source" && typeof value !== "object")
+        .filter(([key, value]) => !["Nutrition", "Barcode", "Source", "ExpiryDate", "MFGDate"].includes(key) && typeof value !== "object")
         .map(([key, value]) => `${key}: ${String(value)}`);
       const description = [found.description || "", ...detailLines].filter(Boolean).join("\n");
       setValue("description", description, { shouldDirty: true });
@@ -359,12 +363,14 @@ export default function VendorProducts() {
         setValue("weight", quantityMatch[1], { shouldDirty: true });
         setValue("unit", quantityMatch[2] || "pc", { shouldDirty: true });
       }
+      if (found.mrp && Number(found.mrp) > 0) {
+        setValue("mrp", Number(found.mrp), { shouldDirty: true, shouldValidate: true });
+      }
       const images: string[] = Array.isArray(found.images)
         ? Array.from(new Set<string>(found.images.filter((url: unknown): url is string => typeof url === "string" && /^(https?:\/\/|\/api\/)/i.test(url)).map((url: string) => url.trim()))).slice(0, 12)
         : [];
       if (images.length) setImageUrls(images);
       setValue("expiryRequired", Boolean(found.expiryRequired), { shouldDirty: true });
-      if (found.specifications?.ExpiryDate) setValue("expiryDate", String(found.specifications.ExpiryDate), { shouldDirty: true });
       toast({ title: "Product details imported", description: `${images.length} company image(s) and available product details added. Review or edit everything before saving.` });
     } catch (err) {
       const description = getFriendlyErrorMessage(err, "Product not found. Please add the product details manually.");
@@ -417,6 +423,15 @@ export default function VendorProducts() {
   };
   const removeImageField = (index: number) => {
     setImageUrls(prev => prev.filter((_, i) => i !== index));
+  };
+  const setMainImage = (index: number) => {
+    setImageUrls((prev) => {
+      if (index <= 0 || index >= prev.length) return prev;
+      const next = [...prev];
+      const [selected] = next.splice(index, 1);
+      next.unshift(selected);
+      return next;
+    });
   };
   const toggleSize = (size: string) => {
     setSelectedSizes((prev) => prev.includes(size) ? prev.filter((item) => item !== size) : [...prev, size]);
@@ -637,6 +652,12 @@ export default function VendorProducts() {
                       inputMode="numeric"
                       maxLength={14}
                       placeholder="Scan or enter 8-14 digit barcode"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void lookupBarcode();
+                        }
+                      }}
                       {...register("barcode", { onChange: (event) => { event.target.value = event.target.value.replace(/\D/g, "").slice(0, 14); } })}
                       data-testid="input-barcode"
                     />
@@ -863,6 +884,9 @@ export default function VendorProducts() {
                       <div key={`${index}-${url.slice(0, 12)}`} className="flex items-center gap-2">
                         <div className="h-12 w-12 overflow-hidden rounded-md border bg-gray-50">
                           {url ? <img src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
+                        </div>
+                        <div className="w-20 shrink-0 text-center text-[11px] font-semibold text-muted-foreground">
+                          {index === 0 ? "Main image" : <Button type="button" variant="ghost" size="sm" className="h-7 px-1 text-[11px]" onClick={() => setMainImage(index)}>Set main</Button>}
                         </div>
                         <Input
                           value={url}

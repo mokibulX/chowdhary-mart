@@ -59,7 +59,9 @@ export async function storePrivateDocument(req: Request, dataUrl: unknown, folde
 }
 
 function publicBaseUrl(req: AuthRequest) {
-  return `${req.protocol}://${req.get("host")}`;
+  const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const forwardedHost = req.get("x-forwarded-host")?.split(",")[0]?.trim();
+  return `${forwardedProto || req.protocol}://${forwardedHost || req.get("host")}`;
 }
 
 async function uploadLocal(req: AuthRequest, storagePath: string, buffer: Buffer) {

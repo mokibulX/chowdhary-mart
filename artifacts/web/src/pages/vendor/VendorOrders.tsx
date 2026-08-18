@@ -133,9 +133,9 @@ export default function VendorOrders() {
           <h1 className="text-xl font-bold sm:text-2xl">Orders</h1>
           <p className="text-sm text-muted-foreground">Order details, item snapshots, bill and packing slip printing.</p>
         </div>
-        <div className="flex max-w-full gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+        <div className="flex min-w-0 max-w-full gap-2 overflow-x-auto pb-2 [scrollbar-width:none]">
           {["all", "pending", "confirmed", "packed", "picked_up", "on_the_way", "delivered", "cancelled"].map((f) => (
-            <Button key={f} variant={filter === f ? "default" : "outline"} size="sm" onClick={() => setFilter(f)} className="whitespace-nowrap" data-testid={`filter-${f}`}>
+            <Button key={f} variant={filter === f ? "default" : "outline"} size="sm" onClick={() => setFilter(f)} className="shrink-0 whitespace-nowrap" data-testid={`filter-${f}`}>
               {f === "all" ? "All" : STATUS_LABEL[f]}
             </Button>
           ))}
