@@ -166,9 +166,9 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
           </div>
 
           <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-            <span className="text-base font-bold text-gray-950">Rs.{Number(product.price).toFixed(0)}</span>
+            <span className="text-base font-bold text-gray-950">₹{Number(product.price).toFixed(0)}</span>
             {product.mrp && Number(product.mrp) > Number(product.price) && (
-              <span className="text-xs text-muted-foreground line-through">Rs.{Number(product.mrp).toFixed(0)}</span>
+              <span className="text-xs text-muted-foreground line-through">₹{Number(product.mrp).toFixed(0)}</span>
             )}
           </div>
 
@@ -263,8 +263,8 @@ const CARD_STYLES: Record<CardTemplate, { cardClass: string; imageClass: string;
   },
   fashion_portrait: {
     cardClass: "bg-white",
-    imageClass: "aspect-[3/4]",
-    objectClass: "object-cover",
+    imageClass: "aspect-square",
+    objectClass: "object-contain p-2",
     metaLabel: "Style",
   },
   beauty_compact: {
@@ -275,13 +275,13 @@ const CARD_STYLES: Record<CardTemplate, { cardClass: string; imageClass: string;
   },
   food_menu: {
     cardClass: "bg-white",
-    imageClass: "aspect-[1.25/1]",
-    objectClass: "object-cover",
+    imageClass: "aspect-square",
+    objectClass: "object-contain p-2",
     metaLabel: "Prep",
   },
   books_portrait: {
     cardClass: "bg-gradient-to-b from-amber-50/50 to-white",
-    imageClass: "aspect-[3/4]",
+    imageClass: "aspect-square",
     objectClass: "object-contain p-2",
     metaLabel: "Book",
   },

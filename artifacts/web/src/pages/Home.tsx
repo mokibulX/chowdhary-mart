@@ -431,9 +431,6 @@ export default function Home() {
 }
 
 function ProductRail({ title, subtitle, products, isLoading, href }: { title: string; subtitle?: string; products: any[]; isLoading?: boolean; href: string }) {
-  const main = products[0];
-  const rest = products.slice(1, 5);
-
   return (
     <section className="rounded-lg border bg-white p-4">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -444,36 +441,12 @@ function ProductRail({ title, subtitle, products, isLoading, href }: { title: st
         <Link href={href} className="text-sm font-medium text-primary">View all</Link>
       </div>
       {isLoading ? (
-        <Skeleton className="h-72 rounded-xl" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-[250px] rounded-xl" />)}
+        </div>
       ) : products.length > 0 ? (
-        <div className="grid gap-3 md:grid-cols-[1.2fr_1fr]">
-          <Link href={`/product/${main.id}`} className="overflow-hidden rounded-xl border bg-gradient-to-br from-white to-blue-50 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
-            <div className="aspect-[1.45/1] bg-white">
-              {main.images?.[0] && <img src={main.images[0]} alt={main.name} className="h-full w-full object-contain p-5" />}
-            </div>
-            <div className="p-4">
-              <p className="line-clamp-2 text-lg font-bold">{main.name}</p>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-xl font-bold">Rs.{Number(main.price).toFixed(0)}</span>
-                {main.mrp && Number(main.mrp) > Number(main.price) && <span className="text-sm text-muted-foreground line-through">Rs.{Number(main.mrp).toFixed(0)}</span>}
-              </div>
-              {main.discountPercent && <p className="mt-1 text-sm font-semibold text-green-600">{Math.round(Number(main.discountPercent))}% off</p>}
-            </div>
-          </Link>
-          <div className="grid grid-cols-2 gap-3">
-            {rest.map((product: any) => (
-              <Link key={product.id} href={`/product/${product.id}`} className="overflow-hidden rounded-xl border bg-white p-2 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md">
-                <div className="aspect-square rounded-lg bg-gray-50">
-                  {product.images?.[0] && <img src={product.images[0]} alt={product.name} className="h-full w-full object-contain p-2" />}
-                </div>
-                <p className="mt-2 line-clamp-2 text-xs font-semibold leading-4">{product.name}</p>
-                <p className="mt-1 text-sm font-bold">Rs.{Number(product.price).toFixed(0)}</p>
-              </Link>
-            ))}
-          </div>
-          <Link href={href} className="mx-auto flex h-10 w-fit items-center justify-center rounded-full border border-dashed bg-gray-50 px-4 text-xs font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5 md:col-start-2">
-            More
-          </Link>
+        <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {products.slice(0, 10).map((product: any) => <ProductCard key={product.id} product={product} compact />)}
         </div>
       ) : (
         <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
