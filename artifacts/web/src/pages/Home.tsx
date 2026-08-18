@@ -216,9 +216,8 @@ export default function Home() {
       </section>
 
       <section className="rounded-lg border bg-white p-3 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3">
           <h2 className="text-sm font-bold">Tap a product style</h2>
-          <span className="text-xs text-muted-foreground">Category opens below</span>
         </div>
         <div className="lch-clean-scroll flex max-w-full gap-3 overflow-x-auto pb-1">
           {quickPhotoProducts.map((product: any) => (
@@ -250,19 +249,19 @@ export default function Home() {
             </div>
           </div>
           {loadingSelectedCategory ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
               {Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-xl" />)}
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
                 {selectedCategoryProducts.map((product) => (
                   <ProductCard key={product.id} product={product} compact />
                 ))}
               </div>
               <div ref={categoryLoadMoreRef} className="flex min-h-16 items-center justify-center py-4">
                 {loadingMoreCategoryProducts ? (
-                  <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
                     {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-xl" />)}
                   </div>
                 ) : hasMoreCategoryProducts ? (
@@ -441,11 +440,11 @@ function ProductRail({ title, subtitle, products, isLoading, href }: { title: st
         <Link href={href} className="text-sm font-medium text-primary">View all</Link>
       </div>
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-[250px] rounded-xl" />)}
         </div>
       ) : products.length > 0 ? (
-        <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
           {products.slice(0, 10).map((product: any) => <ProductCard key={product.id} product={product} compact />)}
         </div>
       ) : (

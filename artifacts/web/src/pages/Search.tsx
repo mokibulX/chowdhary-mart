@@ -516,7 +516,7 @@ export default function Search() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-56 rounded-lg sm:h-64" />)}
         </div>
       ) : filteredProducts.length === 0 ? (
@@ -528,12 +528,12 @@ export default function Search() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
             {filteredProducts.map((product: any) => <ProductCard key={product.id} product={product} />)}
           </div>
           <div ref={loadMoreRef} className="flex min-h-16 items-center justify-center py-4">
             {isFetchingNextPage ? (
-              <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
                 {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-56 rounded-lg sm:h-64" />)}
               </div>
             ) : hasNextPage ? (

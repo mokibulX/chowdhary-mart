@@ -60,6 +60,8 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
   const brand = product.brand?.name ?? product.brandName ?? product.category?.name ?? product.categoryName ?? "";
   const unitText = [product.weight, product.unit].filter(Boolean).join(" ");
   const showStepper = !compact && !["fashion_portrait", "books_portrait"].includes(template);
+  const ratingValue = Number(product.rating);
+  const hasRating = Number.isFinite(ratingValue) && ratingValue > 0;
 
   useEffect(() => {
     setImageIndex(0);
@@ -110,8 +112,8 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
 
   return (
     <Link href={`/product/${product.id}`}>
-      <Card className={`group flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg ${categoryStyle.cardClass} ${compact ? "min-h-[210px]" : "min-h-[238px] sm:min-h-[282px]"}`} data-template={template} data-testid={`product-card-${product.id}`}>
-        <div className={`relative w-full flex-shrink-0 overflow-hidden bg-gray-50 ${categoryStyle.imageClass}`}>
+      <Card className={`group flex h-full cursor-pointer flex-row overflow-hidden rounded-xl border bg-white shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg sm:flex-col ${categoryStyle.cardClass} ${compact ? "min-h-[126px] sm:min-h-[210px]" : "min-h-[132px] sm:min-h-[282px]"}`} data-template={template} data-testid={`product-card-${product.id}`}>
+        <div className={`relative h-[112px] w-[112px] flex-shrink-0 overflow-hidden bg-gray-50 sm:h-auto sm:w-full ${categoryStyle.imageClass}`}>
           {images[imageIndex] ? (
             <img
               src={images[imageIndex]}
@@ -149,7 +151,7 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
           )}
         </div>
 
-        <CardContent className={`flex min-w-0 flex-1 flex-col ${compact ? "p-2.5" : "p-3"}`}>
+        <CardContent className={`flex min-w-0 flex-1 flex-col p-2.5 sm:p-3`}>
           <div className="mb-1 flex items-start justify-between gap-2">
             <p className="line-clamp-1 text-[11px] text-muted-foreground">{unitText || brand || categoryStyle.metaLabel}</p>
             {available && <span className="whitespace-nowrap rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">40 min</span>}
@@ -157,19 +159,21 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
 
           <h3 className={`${compact ? "min-h-[32px] text-[12px] leading-4" : "min-h-[34px] text-[13px] leading-[17px]"} line-clamp-2 font-semibold text-gray-950`}>{product.name}</h3>
 
-          <div className="mt-1.5 flex min-w-0 items-center gap-1 text-[11px] text-amber-600">
-            <Star className="h-3.5 w-3.5 fill-amber-400 stroke-amber-400" />
-            <span className="font-semibold">{product.rating ? Number(product.rating).toFixed(1) : "4.3"}</span>
-            {template === "electronics_spec" && <span className="line-clamp-1 text-muted-foreground">- {(product.warranty || product.specifications?.Warranty || "Warranty") as string}</span>}
-            {template === "fresh_produce" && <span className="ml-1 text-green-600">Fresh</span>}
-            {discount > 0 && template !== "electronics_spec" && <span className="ml-1 text-green-600">{Math.round(discount)}% off</span>}
-          </div>
+          {hasRating && (
+            <div className="mt-1.5 flex min-w-0 items-center gap-1 text-[11px] text-amber-600">
+              <Star className="h-3.5 w-3.5 fill-amber-400 stroke-amber-400" />
+              <span className="font-semibold">{ratingValue.toFixed(1)}</span>
+              {template === "electronics_spec" && <span className="line-clamp-1 text-muted-foreground">- {(product.warranty || product.specifications?.Warranty || "Warranty") as string}</span>}
+            </div>
+          )}
+          {template === "fresh_produce" && <span className="mt-1 line-clamp-1 text-[10px] font-semibold text-green-600">Fresh</span>}
 
           <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
             <span className="text-base font-bold text-gray-950">₹{Number(product.price).toFixed(0)}</span>
             {product.mrp && Number(product.mrp) > Number(product.price) && (
               <span className="text-xs text-muted-foreground line-through">₹{Number(product.mrp).toFixed(0)}</span>
             )}
+            {discount > 0 && <span className="text-[10px] font-bold text-green-600">{Math.round(discount)}% OFF</span>}
           </div>
 
           {template === "electronics_spec" && (
@@ -257,7 +261,7 @@ const CARD_STYLES: Record<CardTemplate, { cardClass: string; imageClass: string;
   },
   electronics_spec: {
     cardClass: "bg-gradient-to-b from-blue-50/40 to-white",
-    imageClass: "aspect-[1.08/1]",
+    imageClass: "aspect-square",
     objectClass: "object-contain p-3 sm:p-4",
     metaLabel: "Model",
   },

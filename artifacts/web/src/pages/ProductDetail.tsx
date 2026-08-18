@@ -753,7 +753,7 @@ export default function ProductDetail() {
             <Button className="mt-3" variant="outline" onClick={() => relatedQuery.refetch()}>Try Again</Button>
           </div>
         ) : relatedQuery.isLoading ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 8 }).map((_, index) => (
               <div key={index} className="space-y-3 rounded-xl border p-3">
                 <Skeleton className="aspect-square rounded-lg" />
@@ -769,7 +769,7 @@ export default function ProductDetail() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {relatedProducts.map((item: any) => {
                 const relatedQty = cart?.items?.find((cartItem: any) => cartItem.productId === item.id)?.qty ?? 0;
                 const wishlisted = wishlist?.some((wish: { productId: number }) => wish.productId === item.id) ?? false;
@@ -788,7 +788,7 @@ export default function ProductDetail() {
             </div>
             <div ref={relatedLoaderRef} className="min-h-16 py-4 text-center">
               {relatedQuery.isFetchingNextPage && (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {Array.from({ length: 4 }).map((_, index) => (
                     <div key={index} className="space-y-3 rounded-xl border p-3">
                       <Skeleton className="aspect-square rounded-lg" />
@@ -834,11 +834,11 @@ function RelatedProductCard({
   const brand = product.brandName ?? product.brand?.name ?? product.specifications?.Brand ?? product.category?.name ?? "";
   return (
     <article
-      className="group flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg"
+      className="group flex min-w-0 flex-row overflow-hidden rounded-xl border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg sm:flex-col"
       onMouseEnter={onPrefetch}
       onTouchStart={onPrefetch}
     >
-      <Link href={`/product/${product.id}`} className="relative block aspect-square bg-gray-50">
+      <Link href={`/product/${product.id}`} className="relative block h-[112px] w-[112px] flex-shrink-0 bg-gray-50 sm:h-auto sm:w-full sm:aspect-square">
         {image ? (
           <img src={image} alt={product.name} loading="lazy" className="h-full w-full object-contain p-3 transition-transform duration-300 group-hover:scale-105 sm:p-4" />
         ) : (
@@ -849,7 +849,7 @@ function RelatedProductCard({
           <Heart className={`h-4 w-4 ${wishlisted ? "fill-red-500 stroke-red-500" : ""}`} />
         </button>
       </Link>
-      <div className="flex min-w-0 flex-1 flex-col p-3">
+      <div className="flex min-w-0 flex-1 flex-col p-2.5 sm:p-3">
         <div className="mb-1 flex items-center justify-between gap-2">
           <p className="line-clamp-1 text-[11px] text-muted-foreground">{unit || brand || "unit"}</p>
           {available ? <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">{product.deliveryEtaMins ?? 40} min</span> : <span className="text-[10px] text-red-500">Out</span>}
@@ -858,14 +858,15 @@ function RelatedProductCard({
           {product.name}
         </Link>
         <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">{brand}</p>
-        <div className="mt-1 flex items-center gap-1 text-[11px] text-amber-600">
+        {Number(product.rating) > 0 && <div className="mt-1 flex items-center gap-1 text-[11px] text-amber-600">
           <Star className="h-3.5 w-3.5 fill-amber-400 stroke-amber-400" />
-          <span className="font-semibold">{product.rating ? Number(product.rating).toFixed(1) : "4.3"}</span>
+          <span className="font-semibold">{Number(product.rating).toFixed(1)}</span>
           {product.shopName && <span className="line-clamp-1 text-muted-foreground">- {product.shopName}</span>}
-        </div>
+        </div>}
         <div className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-          <span className="text-base font-bold text-gray-950">Rs.{Number(product.price).toFixed(0)}</span>
-          {product.mrp && Number(product.mrp) > Number(product.price) && <span className="text-xs text-muted-foreground line-through">Rs.{Number(product.mrp).toFixed(0)}</span>}
+          <span className="text-base font-bold text-gray-950">₹{Number(product.price).toFixed(0)}</span>
+          {product.mrp && Number(product.mrp) > Number(product.price) && <span className="text-xs text-muted-foreground line-through">₹{Number(product.mrp).toFixed(0)}</span>}
+          {discount > 0 && <span className="text-[10px] font-bold text-green-600">{Math.round(discount)}% OFF</span>}
         </div>
         <div className="mt-auto pt-3">
           {available ? (
