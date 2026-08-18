@@ -28,8 +28,68 @@ export function validCoordinate(lat: unknown, lng: unknown) {
   return Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
 }
 
-export function isInsideZone(zone: Pick<ServiceZone, "centreLatitude" | "centreLongitude" | "radiusMeters">, lat: number, lng: number) {
+type GeoPoint = { lat: number; lng: number };
+
+function pointFromGeometry(value: unknown): GeoPoint | null {
+  if (Array.isArray(value) && value.length >= 2) {
+    const first = Number(value[0]);
+    const second = Number(value[1]);
+    return Number.isFinite(first) && Number.isFinite(second) && Math.abs(second) <= 90 && Math.abs(first) <= 180
+      ? { lat: second, lng: first }
+      : null;
+  }
+  if (value && typeof value === "object") {
+    const item = value as Record<string, unknown>;
+    const lat = Number(item.lat ?? item.latitude);
+    const lng = Number(item.lng ?? item.lon ?? item.longitude);
+    return validCoordinate(lat, lng) ? { lat, lng } : null;
+  }
+  return null;
+}
+
+function polygonRings(geometry: unknown): GeoPoint[][] {
+  if (!geometry || typeof geometry !== "object") return [];
+  const value = geometry as Record<string, unknown>;
+  const raw = value.type === "Polygon" && Array.isArray(value.coordinates)
+    ? value.coordinates
+    : value.coordinates ?? value.points ?? value.vertices ?? value.path;
+  if (!Array.isArray(raw)) return [];
+  const rings = value.type === "Polygon" ? raw : [raw];
+  return rings
+    .filter(Array.isArray)
+    .map((ring) => (ring as unknown[]).map(pointFromGeometry).filter((point): point is GeoPoint => Boolean(point)))
+    .filter((ring) => ring.length >= 3);
+}
+
+function pointInRing(point: GeoPoint, ring: GeoPoint[]) {
+  let inside = false;
+  for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
+    const current = ring[index];
+    const prior = ring[previous];
+    const intersects = ((current.lng > point.lng) !== (prior.lng > point.lng))
+      && point.lat < ((prior.lat - current.lat) * (point.lng - current.lng)) / (prior.lng - current.lng) + current.lat;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+export function isInsideZone(zone: Pick<ServiceZone, "centreLatitude" | "centreLongitude" | "radiusMeters" | "boundaryGeometry">, lat: number, lng: number) {
+  const rings = polygonRings(zone.boundaryGeometry);
+  if (rings.length) return pointInRing({ lat, lng }, rings[0]) && rings.slice(1).every((ring) => !pointInRing({ lat, lng }, ring));
   return distanceKm(lat, lng, zone.centreLatitude, zone.centreLongitude) * 1000 <= Number(zone.radiusMeters ?? 5000);
+}
+
+export async function getActiveDeliveryZones(lat?: number, lng?: number) {
+  const rows = await db.select().from(serviceZonesTable).where(and(
+    eq(serviceZonesTable.isActive, true),
+    eq(serviceZonesTable.acceptingOrders, true),
+    eq(serviceZonesTable.deliveryEnabled, true),
+    isNull(serviceZonesTable.archivedAt),
+  ));
+  return rows.map((zone) => {
+    const distance = validCoordinate(lat, lng) ? distanceKm(Number(lat), Number(lng), zone.centreLatitude, zone.centreLongitude) : null;
+    return { ...zone, distanceKm: distance === null ? null : Number(distance.toFixed(2)), insideServiceZone: distance === null ? false : isInsideZone(zone, Number(lat), Number(lng)) };
+  });
 }
 
 export async function getEligibleRegistrationZones(type: "seller" | "rider", lat?: number, lng?: number) {
@@ -46,7 +106,7 @@ export async function getEligibleRegistrationZones(type: "seller" | "rider", lat
       return {
         ...zone,
         distanceKm: distance === null ? null : Number(distance.toFixed(2)),
-        insideServiceZone: distance === null ? false : distance * 1000 <= Number(zone.radiusMeters ?? 5000),
+        insideServiceZone: distance === null ? false : isInsideZone(zone, Number(lat), Number(lng)),
       };
     })
     .sort((a, b) => Number(a.distanceKm ?? 9999) - Number(b.distanceKm ?? 9999));
@@ -115,6 +175,10 @@ export function publicZone(zone: ServiceZone & { distanceKm?: number | null; ins
     city: zone.city,
     state: zone.state,
     approximateArea: `${zone.city ?? "Local area"} service zone`,
+    centreLatitude: zone.centreLatitude,
+    centreLongitude: zone.centreLongitude,
+    boundaryGeometry: zone.boundaryGeometry ?? null,
+    zoneType: polygonRings(zone.boundaryGeometry).length ? "polygon" : "radius",
     radiusMeters: zone.radiusMeters,
     deliveryMinutes: zone.deliveryMinutes,
     minimumOrderAmount: zone.minimumOrderAmount,

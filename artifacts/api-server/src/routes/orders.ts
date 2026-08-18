@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 import { generateOrderNumber } from "../lib/auth";
-import { getEligibleRegistrationZones } from "../lib/zones";
+import { getActiveDeliveryZones, getEligibleRegistrationZones } from "../lib/zones";
 import { beginIdempotency, getIdempotencyKey, requestHash, saveIdempotencyResponse } from "../lib/idempotency";
 import { validateCouponForUser } from "../lib/coupons";
 import { createAndPushNotification } from "../lib/push-service";
@@ -141,6 +141,10 @@ router.post("/", async (req: AuthRequest, res) => {
     const selectedAddress = String(pickupAddress ?? address.line1 ?? `${DEFAULT_LOCATION.city}, ${DEFAULT_LOCATION.state}, ${DEFAULT_LOCATION.country}`).trim();
     if (!Number.isFinite(selectedLat) || !Number.isFinite(selectedLng) || !selectedAddress) {
       return { status: 400, body: { error: "Please confirm your exact delivery location on the map before placing the order." } };
+    }
+    const deliveryZones = await getActiveDeliveryZones(selectedLat, selectedLng);
+    if (!deliveryZones.some((zone) => zone.insideServiceZone)) {
+      return { status: 400, body: { error: "Sorry, cMart is not available at this location yet." } };
     }
     const configuredMaxDistance = safeNum(pricingSettings.maxDeliveryDistanceKm, 0);
     const serviceRadiusKm = configuredMaxDistance > 0

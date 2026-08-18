@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, desc, ilike, and, sql, inArray } from "drizzle-orm";
+import { eq, desc, ilike, and, sql, inArray, isNull } from "drizzle-orm";
 import {
   db, usersTable, ordersTable, storesTable, couponsTable, couponUsesTable, bannersTable,
   deliveryPartnersTable, productsTable, categoriesTable,
@@ -1854,7 +1854,10 @@ router.delete("/categories/:categoryId", async (req: AuthRequest, res) => {
 // GET /api/admin/service-zones
 router.get("/service-zones", async (req: AuthRequest, res) => {
   try {
-    const zones = await db.select().from(serviceZonesTable).orderBy(desc(serviceZonesTable.createdAt));
+    // Keep archived zones for historical references, but never return them in the active admin list.
+    const zones = await db.select().from(serviceZonesTable)
+      .where(isNull(serviceZonesTable.archivedAt))
+      .orderBy(desc(serviceZonesTable.createdAt));
     const [stores, products, orders] = await Promise.all([
       db.select().from(storesTable),
       db.select().from(productsTable),
@@ -1907,21 +1910,62 @@ router.patch("/service-zones/:zoneId", async (req: AuthRequest, res) => {
 
 // DELETE /api/admin/service-zones/:zoneId
 router.delete("/service-zones/:zoneId", async (req: AuthRequest, res) => {
+  let zoneId: number | undefined;
   try {
-    const zoneId = Number(req.params.zoneId);
-    const hasStores = await db.select({ id: storesTable.id }).from(storesTable).where(eq(storesTable.zoneId, zoneId)).limit(1);
-    if (hasStores.length) {
-      await db.update(serviceZonesTable).set({ archivedAt: new Date(), isActive: false, acceptingOrders: false, deliveryEnabled: false, updatedByAdminId: req.user!.userId }).where(eq(serviceZonesTable.id, zoneId));
-      await auditZone(req, "zone.archived", { zoneId });
-      res.json({ message: "Service zone archived because stores are assigned to it." });
+    zoneId = Number(req.params.zoneId);
+    if (!Number.isInteger(zoneId) || zoneId <= 0) {
+      res.status(400).json({ error: "Invalid service zone ID" });
       return;
     }
-    await db.delete(serviceZonesTable).where(eq(serviceZonesTable.id, zoneId));
-    await auditZone(req, "zone.deleted", { zoneId });
-    res.json({ message: "Service zone deleted" });
+    const [zone] = await db.select({ id: serviceZonesTable.id, archivedAt: serviceZonesTable.archivedAt })
+      .from(serviceZonesTable)
+      .where(eq(serviceZonesTable.id, zoneId))
+      .limit(1);
+    if (!zone) {
+      res.status(404).json({ error: "Service zone not found" });
+      return;
+    }
+    if (zone.archivedAt) {
+      res.json({ message: "Service zone deleted successfully.", deleted: true, alreadyDeleted: true });
+      return;
+    }
+
+    // Archive instead of hard-deleting because stores, assignments and historical orders can reference this zone.
+    const [archived] = await db.update(serviceZonesTable).set({
+      archivedAt: new Date(),
+      isActive: false,
+      acceptingOrders: false,
+      deliveryEnabled: false,
+      registrationEnabled: false,
+      sellerRegistrationEnabled: false,
+      riderRegistrationEnabled: false,
+      updatedByAdminId: req.user!.userId,
+      updatedAt: new Date(),
+    }).where(and(eq(serviceZonesTable.id, zoneId), isNull(serviceZonesTable.archivedAt))).returning({ id: serviceZonesTable.id });
+    if (!archived) {
+      res.status(409).json({ error: "This service zone was already removed. Refresh and try again." });
+      return;
+    }
+    await auditZone(req, "zone.archived", { zoneId });
+    res.json({ message: "Service zone deleted successfully.", deleted: true, softDeleted: true });
   } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
+    const databaseError = err as { code?: string; constraint?: string; detail?: string; message?: string };
+    req.log.error({
+      err,
+      zoneId,
+      databaseCode: databaseError.code,
+      constraint: databaseError.constraint,
+      detail: databaseError.detail,
+    }, "Service zone delete failed");
+    if (databaseError.code === "23503") {
+      res.status(409).json({ error: "This service zone is still linked to active records." });
+      return;
+    }
+    if (databaseError.code === "22P02") {
+      res.status(400).json({ error: "Invalid service zone ID." });
+      return;
+    }
+    res.status(500).json({ error: "Unable to delete the service zone. Please try again." });
   }
 });
 

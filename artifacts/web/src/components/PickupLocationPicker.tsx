@@ -27,6 +27,7 @@ export type PickupLocation = {
   district?: string;
   state?: string;
   area?: string;
+  boundaryGeometry?: any;
 };
 
 type StorePoint = {
@@ -46,6 +47,9 @@ type Props = {
   confirmLabel?: string;
   locateFirst?: boolean;
   compact?: boolean;
+  serviceZones?: Array<{ id: number; centreLatitude?: number; centreLongitude?: number; radiusMeters?: number; boundaryGeometry?: any; insideServiceZone?: boolean }>;
+  polygonMode?: boolean;
+  initialPolygon?: Array<{ lat: number; lng: number }>;
   onClose: () => void;
   onConfirm: (location: PickupLocation) => void;
 };
@@ -205,6 +209,9 @@ export function PickupLocationPicker({
   confirmLabel = "Confirm This Delivery Point",
   locateFirst = true,
   compact = false,
+  serviceZones: suppliedServiceZones,
+  polygonMode = false,
+  initialPolygon = [],
   onClose,
   onConfirm,
 }: Props) {
@@ -214,6 +221,7 @@ export function PickupLocationPicker({
   const marker = useRef<any>(null);
   const storeMarker = useRef<any>(null);
   const circle = useRef<any>(null);
+  const zoneOverlays = useRef<any[]>([]);
   const geocoder = useRef<any>(null);
   const autocomplete = useRef<any>(null);
   const idleTimer = useRef<number | null>(null);
@@ -223,14 +231,29 @@ export function PickupLocationPicker({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fallbackMap, setFallbackMap] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
   const [search, setSearch] = useState("");
   const [fallbackCenter, setFallbackCenter] = useState<{ lat: number; lng: number } | null>(initial ? { lat: initial.lat, lng: initial.lng } : null);
   const [fallbackZoom, setFallbackZoom] = useState(FALLBACK_TILE_MAX_ZOOM);
   const [fallbackDrag, setFallbackDrag] = useState<{ x: number; y: number; center: { lat: number; lng: number } } | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [serviceZones, setServiceZones] = useState(suppliedServiceZones ?? []);
+  const [polygonPoints, setPolygonPoints] = useState(initialPolygon);
   const storePoint = pointFrom(store);
   const active = mode === "inline" || open;
   const defaultDeliveryPoint = { lat: DEFAULT_LOCATION.lat, lng: DEFAULT_LOCATION.lng };
+
+  const loadServiceability = async (point: { lat: number; lng: number }) => {
+    if (suppliedServiceZones) return suppliedServiceZones.some((zone) => zone.insideServiceZone);
+    try {
+      const data = await customFetch<{ items: typeof serviceZones }>(`/api/public/service-zones?type=customer&lat=${point.lat}&lng=${point.lng}`, { responseType: "json" });
+      const items = data.items ?? [];
+      setServiceZones(items);
+      return items.some((zone) => zone.insideServiceZone);
+    } catch {
+      return null;
+    }
+  };
 
   const buildLocation = async (point: { lat: number; lng: number }) => {
     setBusy(true);
@@ -258,22 +281,25 @@ export function PickupLocationPicker({
         address = best?.formatted_address || address;
         parts = locationPartsFromGeocodeResult(best, address);
       }
+      const zoneAvailable = await loadServiceability(point);
+      const shopAvailable = distance === null || distance <= SERVICE_RADIUS_KM;
       setSelected({
         lat: point.lat,
         lng: point.lng,
         address,
         distanceKm: distance === null ? null : Number(distance.toFixed(2)),
-        available: distance === null || distance <= SERVICE_RADIUS_KM,
+        available: zoneAvailable === null ? shopAvailable : shopAvailable && zoneAvailable,
         ...parts,
       });
     } catch {
       const distance = storePoint ? haversineKm(storePoint, point) : null;
+      const zoneAvailable = await loadServiceability(point);
       setSelected({
         lat: point.lat,
         lng: point.lng,
         address: `Pinned location ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`,
         distanceKm: distance === null ? null : Number(distance.toFixed(2)),
-        available: distance === null || distance <= SERVICE_RADIUS_KM,
+        available: zoneAvailable === null ? distance === null || distance <= SERVICE_RADIUS_KM : zoneAvailable && (distance === null || distance <= SERVICE_RADIUS_KM),
       });
       setError("Address name could not be loaded, but this pinned coordinate is ready.");
     } finally {
@@ -306,6 +332,10 @@ export function PickupLocationPicker({
     }
     map.current.panTo(point);
     void buildLocation(point);
+  };
+
+  const addPolygonPoint = (point: { lat: number; lng: number }) => {
+    if (polygonMode) setPolygonPoints((points) => [...points, point]);
   };
 
   const locateMe = async () => {
@@ -365,7 +395,8 @@ export function PickupLocationPicker({
       dragMoved.current = false;
       return;
     }
-    const point = fallbackPointFromEvent(event);
+      const point = fallbackPointFromEvent(event);
+    addPolygonPoint(point);
     setFallbackCenter(point);
     void buildLocation(point);
   };
@@ -432,6 +463,7 @@ export function PickupLocationPicker({
         mapId: window.__cmGoogleMapsRuntimeConfig?.mapStyleId || env("MAP_STYLE_ID") || undefined,
         styles: window.__cmGoogleMapsRuntimeConfig?.mapStyleId || env("MAP_STYLE_ID") ? undefined : PLACE_LABEL_MAP_STYLE,
       });
+      setMapReady(true);
       googleTileTimer.current = window.setTimeout(() => {
         if (cancelled) return;
         setFallbackMap(true);
@@ -467,7 +499,9 @@ export function PickupLocationPicker({
         });
       }
       map.current.addListener("click", (event: any) => {
-        setMarkerPosition({ lat: event.latLng.lat(), lng: event.latLng.lng() });
+        const point = { lat: event.latLng.lat(), lng: event.latLng.lng() };
+        addPolygonPoint(point);
+        setMarkerPosition(point);
       });
       map.current.addListener("idle", () => {
         if (idleTimer.current) window.clearTimeout(idleTimer.current);
@@ -517,12 +551,48 @@ export function PickupLocationPicker({
       marker.current?.setMap(null);
       storeMarker.current?.setMap(null);
       circle.current?.setMap(null);
+      zoneOverlays.current.forEach((overlay) => overlay.setMap?.(null));
+      zoneOverlays.current = [];
       marker.current = null;
       map.current = null;
+      setMapReady(false);
       if (idleTimer.current) window.clearTimeout(idleTimer.current);
       if (googleTileTimer.current) window.clearTimeout(googleTileTimer.current);
     };
   }, [active]);
+
+  useEffect(() => {
+    if (!window.google?.maps || !map.current) return;
+    zoneOverlays.current.forEach((overlay) => overlay.setMap?.(null));
+    zoneOverlays.current = serviceZones.map((zone) => {
+      const geometry = zone.boundaryGeometry;
+      const coordinates = geometry?.type === "Polygon" ? geometry.coordinates?.[0] : geometry?.coordinates ?? geometry?.points ?? geometry?.vertices;
+      if (Array.isArray(coordinates) && coordinates.length >= 3) {
+        const paths = coordinates.map((point: any) => Array.isArray(point) ? { lat: Number(point[1]), lng: Number(point[0]) } : { lat: Number(point.lat ?? point.latitude), lng: Number(point.lng ?? point.longitude) });
+        return new window.google.maps.Polygon({ map: map.current, paths, fillColor: "#16a34a", fillOpacity: 0.1, strokeColor: "#15803d", strokeOpacity: 0.9, strokeWeight: 2, clickable: false });
+      }
+      const centre = { lat: Number(zone.centreLatitude), lng: Number(zone.centreLongitude) };
+      return new window.google.maps.Circle({ map: map.current, center: centre, radius: Number(zone.radiusMeters ?? 5000), fillColor: "#16a34a", fillOpacity: 0.1, strokeColor: "#15803d", strokeOpacity: 0.9, strokeWeight: 2, clickable: false });
+    });
+    return () => {
+      zoneOverlays.current.forEach((overlay) => overlay.setMap?.(null));
+    };
+  }, [serviceZones, fallbackMap, mapReady]);
+
+  useEffect(() => {
+    if (!window.google?.maps || !map.current || !polygonMode) return;
+    const polygon = new window.google.maps.Polygon({
+      map: map.current,
+      paths: polygonPoints,
+      fillColor: "#2563eb",
+      fillOpacity: 0.12,
+      strokeColor: "#2563eb",
+      strokeOpacity: 0.95,
+      strokeWeight: 2,
+      clickable: false,
+    });
+    return () => polygon.setMap(null);
+  }, [polygonMode, polygonPoints]);
 
   useEffect(() => {
     if (!window.google?.maps || !map.current) return;
@@ -603,6 +673,10 @@ export function PickupLocationPicker({
             <circle cx="15" cy="15" r="4.6" fill="white" />
           </svg>
         </div>
+        <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-xl bg-white/95 px-3 py-2 text-[11px] font-semibold text-slate-700 shadow-lg">
+          <span className="mr-3 inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-green-600" /> Service area</span>
+          <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-slate-400" /> Outside service area</span>
+        </div>
         <div className="pointer-events-none absolute inset-x-3 top-3 z-10">
           <div className="pointer-events-auto flex min-w-0 items-center gap-1.5 rounded-2xl bg-white p-2 shadow-2xl sm:gap-2">
             <Search className="ml-2 h-5 w-5 text-muted-foreground" />
@@ -655,12 +729,16 @@ export function PickupLocationPicker({
           <Navigation className="mt-1 h-5 w-5 flex-shrink-0 text-primary" />
         </div>
         {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}
+        {selected?.available && (
+          <p className="mt-3 rounded-xl border border-green-200 bg-green-50 p-3 text-sm font-bold text-green-700">Delivery available at this location.</p>
+        )}
         {!selected?.available && (
           <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
-            Sorry! We currently deliver only within a 5 KM service area.
+            Sorry, cMart is not available at this location yet.
           </p>
         )}
-        <Button className="mt-4 w-full" size="lg" disabled={!selected || !selected.available || busy} onClick={() => selected && onConfirm(selected)}>
+        {polygonMode && <p className="mt-3 rounded-xl bg-blue-50 p-3 text-xs font-semibold text-blue-700">Tap at least 3 points on the map to draw this custom service boundary.</p>}
+        <Button className="mt-4 w-full" size="lg" disabled={!selected || (!polygonMode && !selected.available) || busy || (polygonMode && polygonPoints.length < 3)} onClick={() => selected && onConfirm({ ...selected, boundaryGeometry: polygonMode ? { type: "Polygon", coordinates: [[...polygonPoints, polygonPoints[0]].map((point) => [point.lng, point.lat])] } : undefined })}>
           {busy ? "Checking location..." : confirmLabel}
         </Button>
       </div>
@@ -673,7 +751,7 @@ export function PickupLocationPicker({
         <div className={`${fullscreen ? "hidden" : "flex"} flex-shrink-0 items-start justify-between gap-3 px-4 pb-3 pt-4`}>
           <div className="min-w-0">
             <Badge className={selected?.available ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-red-100 text-red-700 hover:bg-red-100"}>
-              {selected?.available ? "Delivery available" : "Outside 5 KM"}
+              {selected?.available ? "Delivery available" : "No service area"}
             </Badge>
             <h2 className="mt-2 text-lg font-black">{title}</h2>
             <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
@@ -694,7 +772,7 @@ export function PickupLocationPicker({
         <div className="flex flex-shrink-0 items-start justify-between gap-3 px-4 pb-3 pt-3">
           <div className="min-w-0">
             <Badge className={selected?.available ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-red-100 text-red-700 hover:bg-red-100"}>
-              {selected?.available ? "Delivery available" : "Outside 5 KM"}
+              {selected?.available ? "Delivery available" : "No service area"}
             </Badge>
             <h2 className="mt-2 text-lg font-black">{title}</h2>
             <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { customFetch, getGetMeQueryKey, getListDeliveryOrdersQueryKey, useListDeliveryOrders, useUpdateDeliveryLocation } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -9,10 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Bike, Camera, CheckCircle, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, X } from "lucide-react";
+import { ArrowLeft, Bike, Camera, CheckCircle, CircleUserRound, DollarSign, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, WalletCards, X } from "lucide-react";
 import { LiveDeliveryMap } from "@/components/LiveDeliveryMap";
 import { getBrowserLocation, watchBrowserLocation } from "@/lib/live-location";
-import { WalletSummaryCard } from "@/components/WalletSummaryCard";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const NEXT_STATUS: Record<string, string> = {
@@ -40,6 +39,7 @@ export default function DeliveryDashboard() {
   const [lastAccuracy, setLastAccuracy] = useState<number | undefined>();
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
+  const [orderFilter, setOrderFilter] = useState<"active" | "completed" | "cancelled">("active");
 
   const { data: orders, isLoading } = useListDeliveryOrders({
     query: { enabled: !!user, queryKey: getListDeliveryOrdersQueryKey(), refetchInterval: 5000 },
@@ -58,6 +58,11 @@ export default function DeliveryDashboard() {
   const activeOrders = (orders ?? []).filter((order: any) => ["packed", "picked_up", "on_the_way"].includes(order.status));
   const waitingOrders = (orders ?? []).filter((order: any) => ["confirmed", "preparing"].includes(order.status));
   const currentOrder = activeOrders[0] ?? waitingOrders[0];
+  const visibleOrders = (orders ?? []).filter((order: any) => orderFilter === "completed"
+    ? order.status === "delivered"
+    : orderFilter === "cancelled"
+      ? order.status === "cancelled"
+      : order.status !== "delivered" && order.status !== "cancelled");
   const currentSessionSeconds = dashboardSummary?.currentOnlineStartedAt
     ? Math.max(0, Math.floor((clock - new Date(dashboardSummary.currentOnlineStartedAt).getTime()) / 1000))
     : 0;
@@ -226,65 +231,58 @@ export default function DeliveryDashboard() {
   };
 
   return (
-    <div className="app-shell bg-gray-50">
-      <header className="sticky top-0 z-40 border-b bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+    <div className="app-shell bg-[#f6f7f9] pb-24 text-slate-950">
+      <header className="sticky top-0 z-40 border-b bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => window.history.back()}>
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => window.history.back()}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <Link href="/" className="truncate font-bold text-primary">Chowdhary Mart Partner</Link>
+            <div className="min-w-0"><p className="truncate text-sm font-black">cMart Partner</p><p className="text-[11px] text-muted-foreground">Delivery workspace</p></div>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-            <Link href="/">
-              <Button className="w-full sm:w-auto" variant="outline" size="sm">
-                <Home className="mr-2 h-4 w-4" /> Shop Home
-              </Button>
-            </Link>
-            <Button className="w-full sm:w-auto" variant={userOnline ? "default" : "outline"} size="sm" onClick={toggleOnline} disabled={onlineBusy}>
-              <Power className="mr-2 h-4 w-4" /> {userOnline ? "Go offline" : "Go online"}
-            </Button>
-            <Button className="w-full sm:w-auto" variant={autoGps ? "default" : "outline"} size="sm" onClick={() => setAutoGps(value => !value)}>
-              <LocateFixed className="mr-2 h-4 w-4" /> {autoGps ? "GPS live" : "Start GPS"}
-            </Button>
-            <Button className="col-span-2 w-full sm:col-span-1 sm:w-auto" variant="ghost" size="sm" onClick={logout}>
-              <LogOut className="mr-2 h-4 w-4" /> Logout
-            </Button>
+          <div className="flex items-center gap-2">
+            <Badge className={userOnline ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}>{userOnline ? "ONLINE" : "OFFLINE"}</Badge>
+            <Button size="icon" variant="ghost" onClick={logout} aria-label="Log out"><LogOut className="h-4 w-4" /></Button>
           </div>
         </div>
       </header>
 
-      <main className="app-content mx-auto max-w-6xl space-y-4 px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6">
-        <section className="rounded-lg bg-gray-950 p-4 text-white sm:p-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <main id="top" className="app-content mx-auto max-w-6xl space-y-4 px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6">
+        <section className="rounded-2xl bg-slate-950 p-5 text-white shadow-sm sm:p-6">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p className="text-sm text-white/60">Delivery partner</p>
-              <h1 className="truncate text-xl font-bold sm:text-2xl">Welcome, {user?.name}</h1>
-              <p className="mt-1 text-sm text-white/70">Accept orders, update pickup status and share live GPS.</p>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/55">Current status</p>
+              <h1 className="mt-1 truncate text-2xl font-black sm:text-3xl">{user?.name}</h1>
+              <p className="mt-2 text-sm text-white/65">{userOnline ? `Online for ${formatDuration(currentSessionSeconds)}` : "Go online when you are ready to deliver."}</p>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-center sm:gap-3">
-              <Stat value={activeOrders.length} label="Active" />
-              <Stat value={waitingOrders.length} label="Available" />
-              <Stat value={`₹${Number(dashboardSummary?.earningsToday ?? 0).toFixed(0)}`} label="Today" />
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-48">
+              <Button className="h-12 w-full rounded-xl bg-orange-500 px-6 text-base font-bold text-white hover:bg-orange-600" onClick={toggleOnline} disabled={onlineBusy}>
+                <Power className="mr-2 h-5 w-5" /> {onlineBusy ? "Updating..." : userOnline ? "Go offline" : "Go online"}
+              </Button>
+              <Button variant="ghost" className="h-9 text-xs text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setAutoGps((value) => !value)}>
+                <LocateFixed className="mr-2 h-4 w-4" /> {autoGps ? "Live GPS on" : "Share live GPS"}
+              </Button>
             </div>
           </div>
         </section>
 
-        <WalletSummaryCard href="/delivery/wallet" title="Delivery partner wallet" tone="dark" />
-
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <SummaryCard label="Today's online time" value={formatDuration(dashboardSummary?.onlineSecondsToday ?? 0)} detail={userOnline ? `Current session ${formatDuration(currentSessionSeconds)}` : "Go online when ready"} />
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <SummaryCard label="Today's earnings" value={`₹${Number(dashboardSummary?.earningsToday ?? 0).toFixed(0)}`} detail={`${dashboardSummary?.earningsWeek ?? 0} this week`} />
           <SummaryCard label="Today's orders" value={String(dashboardSummary?.ordersToday ?? 0)} detail={`${dashboardSummary?.ordersWeek ?? 0} this week`} />
-          <SummaryCard label="Today's earnings" value={`₹${Number(dashboardSummary?.earningsToday ?? 0).toFixed(0)}`} detail={`₹${Number(dashboardSummary?.earningsWeek ?? 0).toFixed(0)} this week`} />
-          <SummaryCard label="Current status" value={String(currentStatus).replace(/_/g, " ").toUpperCase()} detail={userOnline ? `Live ${formatDuration(currentSessionSeconds)}` : "Currently offline"} accent={userOnline} />
+          <SummaryCard label="Online time" value={formatDuration(dashboardSummary?.onlineSecondsToday ?? 0)} detail={userOnline ? "Live now" : "Today"} />
+          <SummaryCard label="Wallet balance" value={`₹${Number((user as any)?.walletBalance ?? dashboardSummary?.walletBalance ?? 0).toFixed(0)}`} detail="Available to withdraw" />
         </section>
 
-        <section className="rounded-lg border bg-white p-4 sm:p-5">
+        {currentOrder && <section className="rounded-2xl border border-orange-200 bg-orange-50 p-4 shadow-sm sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-wide text-orange-700">Current delivery</p><h2 className="mt-1 text-lg font-black">{currentOrder.store?.name ?? "Assigned order"}</h2></div><Badge className="capitalize bg-white text-orange-700">{currentOrder.status.replace(/_/g, " ")}</Badge></div>
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">Pickup</p><p className="font-semibold">{currentOrder.store?.address ?? "Seller location"}</p></div><div><p className="text-xs text-muted-foreground">Drop</p><p className="font-semibold">{(currentOrder as any).pickupAddress ?? (currentOrder as any).addressSnapshot?.city ?? "Customer location"}</p></div><div><p className="text-xs text-muted-foreground">Order earning</p><p className="font-bold">₹{Number(currentOrder.deliveryFee ?? 0).toFixed(0)}</p></div></div>
+          <div className="mt-4 flex flex-wrap gap-2"><Link href={`/track/${currentOrder.id}`}><Button className="bg-orange-500 hover:bg-orange-600"><Navigation className="mr-2 h-4 w-4" /> Navigate</Button></Link><Button variant="outline" onClick={() => document.getElementById("orders")?.scrollIntoView({ behavior: "smooth" })}>View order</Button></div>
+        </section>}
+
+        <section id="earnings" className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div><h2 className="font-bold">Earnings and performance</h2><p className="text-sm text-muted-foreground">Real completed-order earnings and saved online sessions.</p></div>
-            <Button type="button" variant={userOnline ? "default" : "outline"} onClick={toggleOnline} disabled={onlineBusy}>
-              <Power className="mr-2 h-4 w-4" /> {onlineBusy ? "Updating..." : userOnline ? "Go offline" : "Go online"}
-            </Button>
+            <Link href="/delivery/wallet"><Button type="button" variant="outline">Open wallet</Button></Link>
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-3">
             <MetricTile label="This month" value={`₹${Number(dashboardSummary?.earningsMonth ?? 0).toFixed(0)}`} sub={`${formatDuration(dashboardSummary?.onlineSecondsMonth ?? 0)} online`} />
@@ -306,22 +304,25 @@ export default function DeliveryDashboard() {
           </div>
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="min-w-0 rounded-lg border bg-white p-3 sm:p-4">
+        <section id="orders" className="grid scroll-mt-20 gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="min-w-0 rounded-2xl border bg-white p-3 shadow-sm sm:p-4">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-bold">Orders</h2>
-              <Badge variant="outline">{orders?.length ?? 0} total</Badge>
+              <div><h2 className="font-bold">Orders</h2><p className="text-xs text-muted-foreground">Your delivery queue</p></div>
+              <Badge variant="outline">{visibleOrders.length}</Badge>
+            </div>
+            <div className="mb-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-1">
+              {([['active', 'Active'], ['completed', 'Completed'], ['cancelled', 'Cancelled']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setOrderFilter(value)} className={`rounded-lg px-2 py-2 text-xs font-bold ${orderFilter === value ? "bg-white text-orange-600 shadow-sm" : "text-muted-foreground"}`}>{label}</button>)}
             </div>
             {isLoading ? (
               <div className="space-y-3">{Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-32" />)}</div>
-            ) : !orders?.length ? (
+            ) : !visibleOrders.length ? (
               <div className="py-16 text-center text-muted-foreground">
                 <Package className="mx-auto mb-3 h-12 w-12 opacity-30" />
-                No orders assigned yet
+                {orderFilter === "active" ? "No active orders right now." : orderFilter === "completed" ? "You have not completed any deliveries yet." : "No cancelled orders."}
               </div>
             ) : (
               <div className="space-y-3">
-                {(orders as any[]).map((order) => (
+                {visibleOrders.map((order: any) => (
                   <div key={order.id} className="rounded-lg border p-3 shadow-sm sm:p-4">
                     {(() => {
                       const assigned = Boolean(order.liveTracking?.lifecycle?.assignedDeliveryPartnerId);
@@ -426,7 +427,7 @@ export default function DeliveryDashboard() {
           </div>
 
           <div className="min-w-0 space-y-4">
-            <div className="rounded-lg border bg-white p-3 sm:p-4">
+            <div className="rounded-2xl border bg-white p-3 shadow-sm sm:p-4">
               <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="font-bold">Live route preview</h2>
                 <Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={updateGpsOnce} disabled={updateLocation.isPending}>
@@ -453,7 +454,7 @@ export default function DeliveryDashboard() {
                 )}
               </div>
             </div>
-            <div className="rounded-lg border bg-white p-3 sm:p-4">
+            <div className="rounded-2xl border bg-white p-3 shadow-sm sm:p-4">
               <h2 className="mb-3 flex items-center gap-2 font-bold"><Route className="h-4 w-4" /> Delivery checklist</h2>
               {["Accept or reject quickly", "Mark picked up at seller", "Start delivery after pickup", "Share live GPS", "Ask customer OTP before delivered"].map((item) => (
                 <div key={item} className="flex items-center gap-2 border-t py-2 text-sm first:border-t-0">
@@ -465,17 +466,21 @@ export default function DeliveryDashboard() {
           </div>
         </section>
       </main>
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden" aria-label="Delivery navigation">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+          <BottomNavLink href="#top" label="Home" icon={<Home className="h-5 w-5" />} />
+          <BottomNavLink href="#orders" label="Orders" icon={<Package className="h-5 w-5" />} />
+          <BottomNavLink href="#earnings" label="Earnings" icon={<DollarSign className="h-5 w-5" />} />
+          <BottomNavLink href="/delivery/wallet" label="Wallet" icon={<WalletCards className="h-5 w-5" />} />
+          <BottomNavLink href="/delivery/profile" label="Profile" icon={<CircleUserRound className="h-5 w-5" />} />
+        </div>
+      </nav>
     </div>
   );
 }
 
-function Stat({ value, label }: { value: number | string; label: string }) {
-  return (
-    <div className="rounded-lg bg-white/10 px-2 py-3 sm:px-4">
-      <p className="text-xl font-bold sm:text-2xl">{value}</p>
-      <p className="text-xs text-white/60">{label}</p>
-    </div>
-  );
+function BottomNavLink({ href, label, icon }: { href: string; label: string; icon: ReactNode }) {
+  return <Link href={href} className="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-semibold text-slate-500 transition-colors hover:bg-orange-50 hover:text-orange-600">{icon}<span>{label}</span></Link>;
 }
 
 function formatDuration(seconds: number) {

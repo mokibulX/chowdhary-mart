@@ -1,10 +1,17 @@
 import { Router } from "express";
-import { getEligibleRegistrationZones, publicZone, validateZoneSelection } from "../lib/zones";
+import { getActiveDeliveryZones, getEligibleRegistrationZones, publicZone, validateZoneSelection } from "../lib/zones";
 
 const router = Router();
 
 router.get("/service-zones", async (req, res) => {
   try {
+    if (req.query.type === "customer") {
+      const lat = req.query.lat !== undefined ? Number(req.query.lat) : undefined;
+      const lng = req.query.lng !== undefined ? Number(req.query.lng) : undefined;
+      const zones = await getActiveDeliveryZones(lat, lng);
+      res.json({ items: zones.map(publicZone) });
+      return;
+    }
     const type = req.query.type === "rider" ? "rider" : "seller";
     const lat = req.query.lat !== undefined ? Number(req.query.lat) : undefined;
     const lng = req.query.lng !== undefined ? Number(req.query.lng) : undefined;

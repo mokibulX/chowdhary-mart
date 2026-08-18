@@ -233,6 +233,7 @@ function Router() {
       <Route path="/rider/home">{() => <DeliveryRoute component={DeliveryDashboard} />}</Route>
       <Route path="/delivery">{() => <DeliveryRoute component={DeliveryDashboard} />}</Route>
       <Route path="/delivery/wallet">{() => <DeliveryRoute component={Wallet} />}</Route>
+      <Route path="/delivery/profile">{() => <DeliveryRoute component={Profile} />}</Route>
 
       {/* Protected customer routes */}
       <Route path="/cart">{() => <ProtectedCustomerRoute component={Cart} />}</Route>
