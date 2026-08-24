@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 import { generateOrderNumber } from "../lib/auth";
-import { getActiveDeliveryZones, getEligibleRegistrationZones } from "../lib/zones";
+import { getActiveDeliveryZones, isInsideZone } from "../lib/zones";
 import { beginIdempotency, getIdempotencyKey, requestHash, saveIdempotencyResponse } from "../lib/idempotency";
 import { validateCouponForUser } from "../lib/coupons";
 import { createAndPushNotification } from "../lib/push-service";
@@ -154,11 +154,11 @@ router.post("/", async (req: AuthRequest, res) => {
     if (shopDistanceKm > serviceRadiusKm) {
       return { status: 400, body: { error: `Sorry! We currently deliver only within ${serviceRadiusKm.toFixed(0)} KM of this seller.` } };
     }
-    const customerZones = await getEligibleRegistrationZones("seller", selectedLat, selectedLng);
+    const customerZones = await getActiveDeliveryZones(selectedLat, selectedLng);
     const customerZone = customerZones.find((zone) => zone.insideServiceZone && zone.acceptingOrders);
-    const shopZoneId = store.zoneId ?? customerZone?.id ?? null;
-    if (customerZone && shopZoneId !== customerZone.id && process.env.CROSS_ZONE_DELIVERY_ENABLED !== "true") {
-      return { status: 400, body: { error: "Your cart store is outside the selected delivery zone. Please switch to a nearby store." } };
+    const shopZoneId = store.zoneId ?? null;
+    if (!customerZone || !shopZoneId || shopZoneId !== customerZone.id || !isInsideZone(customerZone, Number(store.lat), Number(store.lng))) {
+      return { status: 400, body: { error: "This seller is outside your selected service area. Please choose a nearby seller." } };
     }
 
     // Compute subtotal

@@ -1,7 +1,6 @@
 ﻿import { useState } from "react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod/v4";
 import {
   useListVendorProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useListCategories,
@@ -116,19 +115,24 @@ function categoryRequiresExpiry(name = "") {
 
 function BarcodeResultCard({ product }: { product: any }) {
   const specs = product.specifications && typeof product.specifications === "object" ? product.specifications : {};
-  const images: string[] = Array.isArray(product.images) ? Array.from(new Set<string>(product.images.filter((url: unknown): url is string => typeof url === "string" && Boolean(url.trim())).map((url: string) => url.trim()))).slice(0, 12) : [];
+  const rawImages = Array.isArray(product.images) ? product.images : [product.imageUrl, product.mainImage, product.image_url, product.image_front_url];
+  const images: string[] = Array.from(new Set<string>(rawImages.filter((url: unknown): url is string => typeof url === "string" && Boolean(url.trim())).map((url: string) => url.trim()))).slice(0, 12);
   const image = images[0] ?? "";
   const value = (item: unknown) => String(item ?? "").trim() || "Not available";
+  const detailEntries = Object.entries(specs)
+    .filter(([label, item]) => !["Nutrition", "Source", "ExpiryRequired", "MFGDate", "ExpiryDate", "Store pricing", "Reviews", "Specifications"].includes(label) && String(item ?? "").trim())
+    .slice(0, 16);
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="w-28 shrink-0">
-          <div className="h-28 w-28 overflow-hidden rounded-lg border bg-white">{image ? <img src={image} alt={product.name || "Scanned product"} className="h-full w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">Image not available</div>}</div>
-          {images.length > 1 && <div className="mt-1 grid grid-cols-4 gap-1">{images.slice(0, 4).map((url: string, index: number) => <div key={`${url}-${index}`} className="h-6 overflow-hidden rounded border bg-white"><img src={url} alt="" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /></div>)}</div>}
+          <div className="h-28 w-28 overflow-hidden rounded-lg border bg-white">{image ? <img src={image} alt={product.name || "Scanned product"} referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">Image not available</div>}</div>
+          {images.length > 1 && <div className="mt-1 grid grid-cols-4 gap-1">{images.slice(0, 4).map((url: string, index: number) => <div key={`${url}-${index}`} className="h-6 overflow-hidden rounded border bg-white"><img src={url} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /></div>)}</div>}
         </div>
-        <div className="min-w-0 flex-1"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Barcode product found</p><h3 className="mt-1 text-lg font-bold break-words">{value(product.name)}</h3><p className="text-sm text-muted-foreground">{value(product.brand || specs.Brand)}</p><p className="mt-1 text-xs font-medium">Barcode: {value(product.barcode)}</p></div>
+        <div className="min-w-0 flex-1"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Company product found</p><h3 className="mt-1 text-lg font-bold break-words">{value(product.name)}</h3><p className="text-sm text-muted-foreground">{value(product.brand || specs.Brand)}</p></div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4"><InfoCell label="Category" value={product.category || specs.Category} /><InfoCell label="MRP" value={product.mrp ? `₹${product.mrp}` : undefined} /><InfoCell label="Pack size" value={product.quantity || specs.Quantity} /><InfoCell label="Manufacturer" value={specs.Manufacturer} /><InfoCell label="Origin" value={specs.Origin || specs.Countries} /><InfoCell label="Description" value={product.description} /></div>
+      {detailEntries.length > 0 && <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">{detailEntries.map(([label, item]) => <InfoCell key={label} label={label} value={item} />)}</div>}
       <p className="mt-3 text-xs text-emerald-800">Review the imported information below. Missing values remain editable and are shown as Not available.</p>
     </div>
   );
@@ -162,7 +166,6 @@ export default function VendorProducts() {
   const del = useDeleteProduct();
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema as any),
     defaultValues: { isAvailable: true, isFeatured: false, stock: 10, expiryRequired: false },
   });
   const isAvailable = watch("isAvailable");
@@ -241,6 +244,28 @@ export default function VendorProducts() {
   };
 
   const onSubmit = (data: FormData) => {
+    const sellerPrice = Number(data.price);
+    const productMrp = Number(data.mrp);
+    if (!data.name?.trim()) {
+      toast({ title: "Product name required", description: "Enter a product name before saving.", variant: "destructive" });
+      setProductStep(0);
+      return;
+    }
+    if (!data.categoryId) {
+      toast({ title: "Category required", description: "Select a category before saving.", variant: "destructive" });
+      setProductStep(0);
+      return;
+    }
+    if (!Number.isFinite(sellerPrice) || sellerPrice < 0.01) {
+      toast({ title: "Price required", description: "Enter your selling price before saving.", variant: "destructive" });
+      setProductStep(0);
+      return;
+    }
+    if (!Number.isFinite(productMrp) || productMrp < 0.01) {
+      toast({ title: "MRP required", description: "Enter a valid MRP before saving.", variant: "destructive" });
+      setProductStep(0);
+      return;
+    }
     if (data.expiryRequired) {
       if (!data.mfgDate || !data.expiryDate) {
         toast({ title: "Expiry dates required", description: "Enter both manufacturing date and expiry date for this product.", variant: "destructive" });
@@ -296,8 +321,8 @@ export default function VendorProducts() {
       name: data.name,
       description: data.description,
       categoryId: data.categoryId,
-      price: String(data.price),
-      mrp: String(data.mrp),
+      price: String(sellerPrice),
+      mrp: String(productMrp),
       stock: data.stock,
       weight: data.weight,
       unit: data.unit,
@@ -366,9 +391,8 @@ export default function VendorProducts() {
       if (found.mrp && Number(found.mrp) > 0) {
         setValue("mrp", Number(found.mrp), { shouldDirty: true, shouldValidate: true });
       }
-      const images: string[] = Array.isArray(found.images)
-        ? Array.from(new Set<string>(found.images.filter((url: unknown): url is string => typeof url === "string" && /^(https?:\/\/|\/api\/)/i.test(url)).map((url: string) => url.trim()))).slice(0, 12)
-        : [];
+      const returnedImages = Array.isArray(found.images) ? found.images : [found.imageUrl, found.mainImage, found.image_url, found.image_front_url];
+      const images: string[] = Array.from(new Set<string>(returnedImages.filter((url: unknown): url is string => typeof url === "string" && /^(https?:\/\/|\/api\/)/i.test(url)).map((url: string) => url.trim()))).slice(0, 12);
       if (images.length) setImageUrls(images);
       setValue("expiryRequired", Boolean(found.expiryRequired), { shouldDirty: true });
       toast({ title: "Product details imported", description: `${images.length} company image(s) and available product details added. Review or edit everything before saving.` });
@@ -898,7 +922,7 @@ export default function VendorProducts() {
                     {imageUrls.map((url, index) => (
                       <div key={`${index}-${url.slice(0, 12)}`} className="flex items-center gap-2">
                         <div className="h-12 w-12 overflow-hidden rounded-md border bg-gray-50">
-                          {url ? <img src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
+                          {url ? <img src={url} alt="" referrerPolicy="no-referrer" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
                         </div>
                         <div className="w-20 shrink-0 text-center text-[11px] font-semibold text-muted-foreground">
                           {index === 0 ? "Main image" : <Button type="button" variant="ghost" size="sm" className="h-7 px-1 text-[11px]" onClick={() => setMainImage(index)}>Set main</Button>}
@@ -964,7 +988,7 @@ export default function VendorProducts() {
                   <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Customer preview</p>
                   <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
                     <div className="aspect-square overflow-hidden rounded-lg bg-gray-50">
-                      {imageUrls[0] ? <img src={imageUrls[0]} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain p-3" /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No image</div>}
+                      {imageUrls[0] ? <img src={imageUrls[0]} alt="" referrerPolicy="no-referrer" loading="lazy" decoding="async" className="h-full w-full object-contain p-3" /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No image</div>}
                     </div>
                     <div className="min-w-0">
                       <h3 className="line-clamp-2 text-lg font-bold">{watch("name") || "Product title"}</h3>
@@ -1169,7 +1193,7 @@ export default function VendorProducts() {
                   {imageUrls.map((url, index) => (
                     <div key={`${index}-${url.slice(0, 12)}`} className="flex items-center gap-2">
                       <div className="h-12 w-12 overflow-hidden rounded-md border bg-gray-50">
-                        {url ? <img src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
+                        {url ? <img src={url} alt="" referrerPolicy="no-referrer" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <Package className="m-3 h-6 w-6 text-gray-300" />}
                       </div>
                       <Input
                         value={url}

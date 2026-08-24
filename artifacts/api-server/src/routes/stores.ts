@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db, storesTable, bannersTable } from "@workspace/db";
+import { getActiveDeliveryZones, isInsideZone } from "../lib/zones";
 
 const router = Router();
 
@@ -12,6 +13,7 @@ router.get("/", async (req, res) => {
     const lng = Number(req.query.lng);
     const radiusKm = Math.max(0.5, Math.min(25, Number(req.query.radiusKm ?? req.query.distance ?? 5) || 5));
     const hasLocation = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    let eligibleZones: any[] = [];
     const conditions = [
       eq(storesTable.isActive, true),
       eq(storesTable.isOpen, true),
@@ -28,12 +30,21 @@ router.get("/", async (req, res) => {
           )
         ) <= coalesce(${storesTable.radiusKm}, ${radiusKm})
       `);
+      const zones = await getActiveDeliveryZones(lat, lng);
+      eligibleZones = zones.filter((zone) => zone.insideServiceZone);
+      const ids = eligibleZones.map((zone) => zone.id);
+      conditions.push(ids.length ? inArray(storesTable.zoneId, ids) : sql`false`);
     }
     const stores = await db.select().from(storesTable)
       .where(and(...conditions))
       .orderBy(desc(storesTable.rating))
       .limit(limit);
-    res.json(stores);
+    res.json(hasLocation
+      ? stores.filter((store) => {
+          const zone = eligibleZones.find((item) => item.id === store.zoneId);
+          return Boolean(zone && isInsideZone(zone, Number(store.lat), Number(store.lng)));
+        })
+      : stores);
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

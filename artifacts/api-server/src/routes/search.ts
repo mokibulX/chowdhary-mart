@@ -2,8 +2,9 @@ import { Router } from "express";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { categoriesTable, db, productsTable, storesTable } from "@workspace/db";
+import { getActiveDeliveryZones } from "../lib/zones";
 
 const router = Router();
 
@@ -141,6 +142,11 @@ router.get("/suggestions", async (req, res) => {
     const q = normalize(req.query.q);
     const limit = Math.min(Number(req.query.limit) || 8, 12);
     const zoneId = req.query.zoneId ? Number(req.query.zoneId) : undefined;
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const hasLocation = Number.isFinite(lat) && Number.isFinite(lng);
+    const locationZones = hasLocation ? await getActiveDeliveryZones(lat, lng) : [];
+    const allowedZoneIds = zoneId && Number.isInteger(zoneId) ? [zoneId] : locationZones.filter((zone) => zone.insideServiceZone).map((zone) => zone.id);
     if (q.length < 1) {
       res.json({ items: [] });
       return;
@@ -155,7 +161,7 @@ router.get("/suggestions", async (req, res) => {
         eq(productsTable.isAvailable, true),
         sql`${productsTable.stock} > 0`,
         eq(storesTable.isActive, true),
-        zoneId ? sql`(${storesTable.id} = ${storesTable.id})` : undefined,
+        allowedZoneIds.length ? inArray(storesTable.zoneId, allowedZoneIds) : hasLocation ? sql`false` : undefined,
         or(
           ilike(productsTable.name, `${q}%`),
           ilike(productsTable.name, `%${q}%`),
@@ -214,6 +220,8 @@ router.post("/image", async (req, res) => {
     const lng = Number(body.lng);
     const radiusKm = Math.max(0.5, Math.min(25, Number(body.radiusKm ?? 5) || 5));
     const hasLocation = validLocation(lat, lng);
+    const locationZones = hasLocation ? await getActiveDeliveryZones(lat, lng) : [];
+    const allowedZoneIds = locationZones.filter((zone) => zone.insideServiceZone).map((zone) => zone.id);
     const uploadedHash = uploadedFileHash(body);
 
     const rows = await db
@@ -226,6 +234,7 @@ router.post("/image", async (req, res) => {
         sql`${productsTable.stock} > 0`,
         eq(storesTable.isActive, true),
         hasLocation ? nearbyStoreCondition(lat, lng, radiusKm) : undefined,
+        hasLocation ? (allowedZoneIds.length ? inArray(storesTable.zoneId, allowedZoneIds) : sql`false`) : undefined,
       ))
       .orderBy(desc(productsTable.rating), desc(productsTable.createdAt))
       .limit(250);

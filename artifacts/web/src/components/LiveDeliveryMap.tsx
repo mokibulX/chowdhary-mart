@@ -224,13 +224,16 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
   const directionRenderer = useRef<any>(null);
   const routePolyline = useRef<any>(null);
   const trafficLayer = useRef<any>(null);
+  const transitLayer = useRef<any>(null);
   const riderOverlay = useRef<any>(null);
   const staticMarkers = useRef<any[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const [riderCardOpen, setRiderCardOpen] = useState(false);
-  const [mapType, setMapType] = useState<"roadmap" | "satellite">("roadmap");
+  const [mapType, setMapType] = useState<"roadmap" | "satellite">("satellite");
   const [trafficOn, setTrafficOn] = useState(false);
+  const [transitOn, setTransitOn] = useState(false);
+  const [routeTravelTime, setRouteTravelTime] = useState<string | null>(null);
   const [liveGps, setLiveGps] = useState<any>(null);
   const [fallbackMap, setFallbackMap] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -308,11 +311,17 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
           setFallbackMap(true);
           return;
         }
+        const mapId = getEnv("MAP_STYLE_ID");
         mapInstance.current = new google.maps.Map(mapRef.current, {
           center,
           zoom: compact ? 14 : 15,
           mapTypeId: mapType,
-          mapId: getEnv("MAP_STYLE_ID") || undefined,
+          tilt: mapType === "satellite" ? 45 : 0,
+          heading: 0,
+          rotateControl: true,
+          isFractionalZoomEnabled: true,
+          tiltInteractionEnabled: true,
+          ...(mapId ? { mapId, renderingType: "VECTOR" } : {}),
           disableDefaultUI: true,
           clickableIcons: true,
           gestureHandling: "greedy",
@@ -330,6 +339,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
           },
         });
         trafficLayer.current = new google.maps.TrafficLayer();
+        transitLayer.current = new google.maps.TransitLayer();
         setReady(true);
         setFallbackMap(false);
         setError("");
@@ -345,12 +355,17 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
       window.removeEventListener("cm-google-maps-auth-failure", handleAuthFailure);
       routePolyline.current?.setMap(null);
       routePolyline.current = null;
+      trafficLayer.current?.setMap(null);
+      transitLayer.current?.setMap(null);
+      trafficLayer.current = null;
+      transitLayer.current = null;
     };
   }, [compact, googleKeyMissing]);
 
   useEffect(() => {
     if (!ready || !mapInstance.current || !window.google?.maps) return;
     mapInstance.current.setMapTypeId(mapType);
+    mapInstance.current.setTilt(mapType === "satellite" ? 45 : 0);
   }, [mapType, ready]);
 
   useEffect(() => {
@@ -369,6 +384,11 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
     if (!ready || !trafficLayer.current || !mapInstance.current) return;
     trafficLayer.current.setMap(trafficOn ? mapInstance.current : null);
   }, [trafficOn, ready]);
+
+  useEffect(() => {
+    if (!ready || !transitLayer.current || !mapInstance.current) return;
+    transitLayer.current.setMap(transitOn ? mapInstance.current : null);
+  }, [transitOn, ready]);
 
   useEffect(() => {
     if (!ready || !mapInstance.current || !window.google?.maps) return;
@@ -419,6 +439,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
   useEffect(() => {
     if (!ready || !window.google?.maps || !directionRenderer.current) return;
     const google = window.google;
+    setRouteTravelTime(null);
     const clearFallbackRoute = () => {
       routePolyline.current?.setMap(null);
       routePolyline.current = null;
@@ -440,6 +461,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
     if (routeUnavailable || isDelivered) {
       directionRenderer.current.setDirections({ routes: [] });
       clearFallbackRoute();
+      setRouteTravelTime(null);
       return;
     }
     const service = new google.maps.DirectionsService();
@@ -453,6 +475,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
       if (routeStatus === "OK" && result) {
         clearFallbackRoute();
         directionRenderer.current.setDirections(result);
+        setRouteTravelTime(result.routes?.[0]?.legs?.[0]?.duration?.text || null);
         setError("");
       } else {
         directionRenderer.current.setDirections({ routes: [] });
@@ -461,6 +484,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
             const fallbackPath = data?.routes?.[0]?.path;
             if (Array.isArray(fallbackPath) && fallbackPath.length) {
               drawFallbackRoute(fallbackPath.map((point: LatLng) => ({ lat: Number(point.lat), lng: Number(point.lng) })).filter((point: LatLng) => Number.isFinite(point.lat) && Number.isFinite(point.lng)));
+              setRouteTravelTime(data?.routes?.[0]?.legs?.[0]?.duration?.text || null);
               setError("");
               return;
             }
@@ -525,7 +549,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
               </p>
             </div>
             <div className="grid grid-cols-3 gap-2 text-center text-xs">
-              <MapStat icon={Clock} label="ETA" value={isDelivered ? "Done" : `${etaMins} min`} />
+              <MapStat icon={Clock} label="Travel time" value={isDelivered ? "Done" : routeTravelTime || `${etaMins} min`} />
               <MapStat icon={Navigation} label="Distance" value={distanceKm ? `${distanceKm.toFixed(1)} km` : "Live"} />
               <MapStat icon={Route} label="Speed" value={speed ? `${Math.round(speed)} km/h` : "GPS"} />
             </div>
@@ -537,6 +561,9 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
             </Button>
             <Button size="sm" variant="outline" onClick={() => setTrafficOn((value) => !value)}>
               <Navigation className="mr-2 h-4 w-4" /> {trafficOn ? "Hide traffic" : "Traffic"}
+            </Button>
+            <Button size="sm" variant={transitOn ? "default" : "outline"} onClick={() => setTransitOn((value) => !value)}>
+              <Route className="mr-2 h-4 w-4" /> {transitOn ? "Hide transit" : "Transit view"}
             </Button>
             <Button size="sm" variant="outline" onClick={() => {
               if (!mapInstance.current || !window.google?.maps || !boundsPoints.length) return;

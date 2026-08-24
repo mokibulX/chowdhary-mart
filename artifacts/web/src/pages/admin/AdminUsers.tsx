@@ -27,7 +27,14 @@ export default function AdminUsers() {
 
   const params = { role: role || undefined, q: search || undefined, limit: 50 };
   const { data: users, isLoading } = useListAdminUsers(params, {
-    query: { enabled: !!user, queryKey: getListAdminUsersQueryKey(params) },
+    query: {
+      enabled: !!user,
+      queryKey: getListAdminUsersQueryKey(params),
+      refetchOnWindowFocus: true,
+      refetchOnMount: "always",
+      refetchInterval: 10000,
+      staleTime: 0,
+    },
   });
 
   const refresh = () => qc.invalidateQueries({ queryKey: getListAdminUsersQueryKey(params) });

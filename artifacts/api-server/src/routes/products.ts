@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { eq, ilike, and, desc, asc, sql, or } from "drizzle-orm";
+import { eq, ilike, and, desc, asc, inArray, sql, or } from "drizzle-orm";
 import { db, productsTable, categoriesTable, storesTable, reviewsTable } from "@workspace/db";
+import { getActiveDeliveryZones } from "../lib/zones";
 
 const router = Router();
 
@@ -79,6 +80,11 @@ router.get("/", async (req, res) => {
     const lng = Number(req.query.lng);
     const radiusKm = Math.max(0.5, Math.min(25, Number(req.query.radiusKm ?? req.query.distance ?? 5) || 5));
     const hasLocation = validLocation(lat, lng);
+    const requestedZoneId = Number(req.query.zoneId);
+    const locationZones = hasLocation ? await getActiveDeliveryZones(lat, lng) : [];
+    const allowedZoneIds = Number.isInteger(requestedZoneId) && requestedZoneId > 0
+      ? [requestedZoneId]
+      : locationZones.filter((zone) => zone.insideServiceZone).map((zone) => zone.id);
 
     const conditions = [
       eq(productsTable.isAvailable, true),
@@ -88,6 +94,8 @@ router.get("/", async (req, res) => {
     if (categoryId) conditions.push(eq(productsTable.categoryId, Number(categoryId)));
     if (storeId) conditions.push(eq(productsTable.storeId, Number(storeId)));
     if (featured === "true") conditions.push(eq(productsTable.isFeatured, true));
+    if (allowedZoneIds.length) conditions.push(inArray(storesTable.zoneId, allowedZoneIds));
+    else if (hasLocation) conditions.push(sql`false`);
     if (hasLocation) conditions.push(storeDistanceCondition(lat, lng, radiusKm));
     if (terms.length) {
       conditions.push(or(...terms.flatMap((term) => [

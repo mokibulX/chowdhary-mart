@@ -4,6 +4,7 @@ import {
   db, storesTable, ordersTable, orderItemsTable, productsTable,
   orderTrackingTable, usersTable, mediaLibraryTable, categoriesTable
 } from "@workspace/db";
+import { readEnv } from "@workspace/db";
 import { requireApprovedVendor, requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { sellerZoneIds } from "../lib/zones";
 import { createAndPushNotification } from "../lib/push-service";
@@ -74,6 +75,36 @@ function textValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function catalogText(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return String(value).trim();
+  if (Array.isArray(value)) return value.map(catalogText).filter(Boolean).join(", ");
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      record.name,
+      record.title,
+      record.role,
+      record.rating,
+      record.price,
+      record.currency_symbol ?? record.currency,
+      record.review,
+      record.link,
+      record.url,
+    ].map(catalogText).filter(Boolean).join(" - ");
+  }
+  return "";
+}
+
+function imageValues(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(imageValues);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [record.url, record.image_url, record.image, record.src].flatMap(imageValues);
+  }
+  return [];
+}
+
 function categoryRequiresExpiry(value: string) {
   return /(food|grocery|beverage|drink|snack|chocolate|dairy|milk|cosmetic|beauty|medicine|supplement|pet food)/i.test(value);
 }
@@ -109,15 +140,65 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       "brand_owner", "manufacturer_name", "manufacturer", "product_type", "generic_name", "model_number", "flavor",
       "price", "price_without_taxes", "mrp", "product_price",
       "packaging", "serving_size", "ingredients_text", "allergens", "nutriments", "nutrition_grades",
-      "nova_group", "ecoscore_grade", "image_url", "image_front_url", "image_ingredients_url",
-      "image_nutrition_url", "image_packaging_url", "expiration_date",
+      "nova_group", "ecoscore_grade", "image_url", "image_front_url", "image_front_small_url", "image_front_thumb_url",
+      "image_ingredients_url", "image_ingredients_small_url", "image_nutrition_url", "image_nutrition_small_url",
+      "image_packaging_url", "image_packaging_small_url", "selected_images", "expiration_date",
     ].join(",");
     const providers = ["world.openfoodfacts.org", "world.openbeautyfacts.org", "world.openproductsfacts.org"];
     let product: Record<string, unknown> | undefined;
     let source = "Open Facts";
     let providerUnavailable = false;
     let providerResponded = false;
-    for (const provider of providers) {
+
+    // Use cMart's own product catalog first. This path needs no external API key
+    // and preserves the exact images/details already approved in the marketplace.
+    const [localProduct] = await db.select().from(productsTable)
+      .where(eq(productsTable.sku, barcode))
+      .orderBy(desc(productsTable.createdAt))
+      .limit(1);
+    if (localProduct) {
+      const localSpecs = localProduct.specifications ?? {};
+      product = {
+        barcode_number: localProduct.sku,
+        title: localProduct.name,
+        description: localProduct.description,
+        images: localProduct.images ?? [],
+        quantity: localProduct.weight,
+        brand: localSpecs.Brand,
+        category: localSpecs.Category,
+        manufacturer: localSpecs.Manufacturer,
+        model: localSpecs.Model,
+        mrp: localProduct.mrp,
+        price: localProduct.price,
+        specifications: localSpecs,
+      };
+      source = "cMart Catalog";
+      providerResponded = true;
+    }
+    const barcodeLookupKey = readEnv("BARCODE_LOOKUP_API_KEY");
+    if (!product && barcodeLookupKey) {
+      try {
+        const response = await fetch(`https://api.barcodelookup.com/v3/products?barcode=${encodeURIComponent(barcode)}&formatted=y&key=${encodeURIComponent(barcodeLookupKey)}`, {
+          headers: { "User-Agent": "ChowdharyMart/1.0 (barcode product import)", accept: "application/json" },
+          signal: AbortSignal.timeout(8000),
+        });
+        providerResponded = true;
+        if (response.ok) {
+          const result = await response.json() as { products?: Record<string, unknown>[] };
+          if (Array.isArray(result.products) && result.products[0]) {
+            product = result.products[0];
+            source = "Barcode Lookup";
+          }
+        } else if (response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500) {
+          providerUnavailable = true;
+          req.log.warn({ status: response.status }, "Barcode Lookup API request failed");
+        }
+      } catch (error) {
+        providerUnavailable = true;
+        req.log.warn({ err: error }, "Barcode Lookup API request failed");
+      }
+    }
+    for (const provider of product ? [] : providers) {
       try {
         const response = await fetch(`https://${provider}/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${fields}`, {
           headers: { "User-Agent": "ChowdharyMart/1.0 (barcode product import)" },
@@ -147,19 +228,28 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       res.status(404).json({ error: "Product not found. Please add the product details manually." });
       return;
     }
-    const name = textValue(product.product_name) || textValue(product.product_name_en) || textValue(product.generic_name) || textValue(product.generic_name_en);
+    const name = textValue(product.title) || textValue(product.product_name) || textValue(product.product_name_en) || textValue(product.generic_name) || textValue(product.generic_name_en);
     if (!name) {
       res.status(404).json({ error: "Product exists, but its name is not available" });
       return;
     }
-    const remoteImageUrls = [product.image_url, product.image_front_url, product.image_ingredients_url, product.image_nutrition_url, product.image_packaging_url]
-      .map(textValue)
+    const selectedImages = imageValues(product.images).concat(imageValues(product.selected_images));
+    const remoteImageUrls = [
+      product.image_url, product.image_front_url, product.image_front_small_url, product.image_front_thumb_url,
+      product.image_ingredients_url, product.image_ingredients_small_url, product.image_nutrition_url,
+      product.image_nutrition_small_url, product.image_packaging_url, product.image_packaging_small_url,
+      ...selectedImages,
+    ]
+      .flatMap(imageValues)
+      .map((url) => url.startsWith("//") ? `https:${url}` : url)
+      .map((url) => url.replace(/^http:\/\//i, "https://"))
       .filter((url, index, values) => /^https:\/\//i.test(url) && values.indexOf(url) === index);
     const imageUrls: string[] = [];
     for (const remoteUrl of remoteImageUrls.slice(0, 6)) {
       try {
         const imageResponse = await fetch(remoteUrl, { signal: AbortSignal.timeout(5000), headers: { "User-Agent": "ChowdharyMart/1.0 (barcode image import)" } });
-        const mime = String(imageResponse.headers.get("content-type") ?? "").split(";")[0].toLowerCase();
+        const responseMime = String(imageResponse.headers.get("content-type") ?? "").split(";")[0].toLowerCase();
+        const mime = responseMime === "image/jpg" ? "image/jpeg" : responseMime;
         const contentLength = Number(imageResponse.headers.get("content-length") ?? 0);
         if (!imageResponse.ok || !mime.startsWith("image/") || contentLength > 5 * 1024 * 1024) continue;
         const buffer = Buffer.from(await imageResponse.arrayBuffer());
@@ -175,55 +265,108 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
     const nutrition = Object.fromEntries(Object.entries(nutriments)
       .filter(([key, value]) => !key.endsWith("_unit") && !key.endsWith("_value") && ["string", "number"].includes(typeof value))
       .slice(0, 30));
+    const barcodeNumber = catalogText(product.barcode_number) || textValue(product.barcode) || barcode;
+    const categoryText = textValue(product.category) || textValue(product.categories);
+    const quantityText = textValue(product.quantity) || textValue(product.pack_size) || textValue(product.size) || textValue(product.weight);
+    const expiryRequired = categoryRequiresExpiry(`${categoryText} ${textValue(product.product_name)} ${textValue(product.title)}`);
     const specifications = Object.fromEntries(Object.entries({
-      Brand: textValue(product.brands),
-      Company: textValue(product.brand_owner) || textValue(product.manufacturer) || textValue(product.manufacturer_name),
-      Category: textValue(product.categories),
+      Brand: textValue(product.brand) || textValue(product.brands),
+      Company: textValue(product.company) || textValue(product.brand_owner) || textValue(product.manufacturer) || textValue(product.manufacturer_name),
+      Category: categoryText,
       "Product type": textValue(product.product_type),
-      Variant: textValue(product.model_number),
+      Variant: textValue(product.model_number) || catalogText(product.model),
       Flavor: textValue(product.flavor),
-      Quantity: textValue(product.quantity),
+      Quantity: quantityText,
       Packaging: textValue(product.packaging),
       "Serving size": textValue(product.serving_size),
       Labels: textValue(product.labels),
       Origin: textValue(product.origins),
-      Manufacturer: textValue(product.manufacturer_name) || textValue(product.manufacturer) || textValue(product.brand_owner),
+      Manufacturer: textValue(product.manufacturer) || textValue(product.manufacturer_name) || textValue(product.brand_owner),
       "Manufacturer address": textValue(product.manufacturing_places),
       "Country of origin": textValue(product.origins) || textValue(product.countries),
       Countries: textValue(product.countries),
       Stores: textValue(product.stores),
-      Ingredients: textValue(product.ingredients_text),
+      "Store pricing": catalogText(product.stores),
+      Features: catalogText(product.features),
+      Specifications: catalogText(product.specifications),
+      Ingredients: catalogText(product.ingredients) || textValue(product.ingredients_text),
       Allergens: textValue(product.allergens),
+      "Nutrition facts": catalogText(product.nutrition_facts),
       "Nutrition grade": textValue(product.nutrition_grades),
       "NOVA group": product.nova_group == null ? "" : String(product.nova_group),
       "Eco score": textValue(product.ecoscore_grade),
+      "Barcode formats": catalogText(product.barcode_formats),
+      MPN: catalogText(product.mpn),
+      Model: catalogText(product.model),
+      ASIN: catalogText(product.asin),
+      Contributors: catalogText(product.contributors),
+      "Age group": catalogText(product.age_group),
+      Color: catalogText(product.color),
+      Gender: catalogText(product.gender),
+      Material: catalogText(product.material),
+      Pattern: catalogText(product.pattern),
+      "Energy efficiency": catalogText(product.energy_efficiency_rating),
+      Multipack: catalogText(product.multipack),
+      Size: catalogText(product.size),
+      Length: catalogText(product.length),
+      Width: catalogText(product.width),
+      Height: catalogText(product.height),
+      Weight: catalogText(product.weight),
+      "Release date": catalogText(product.release_date),
+      Reviews: catalogText(product.reviews),
       Nutrition: Object.keys(nutrition).length ? nutrition : undefined,
       Source: source,
-      Barcode: barcode,
-      ExpiryRequired: String(Boolean(textValue(product.expiration_date)) || categoryRequiresExpiry(`${textValue(product.categories)} ${textValue(product.product_name)}`)),
+      Barcode: barcodeNumber,
+      ExpiryRequired: String(expiryRequired),
     }).filter(([, value]) => value !== "" && value !== undefined));
-    const catalogMrp = textValue(product.mrp) || textValue(product.product_price) || textValue(product.price_without_taxes) || textValue(product.price);
+    const catalogMrp = textValue(product.mrp) || textValue(product.product_price) || textValue(product.price_without_taxes);
     res.json({
-      barcode,
+      barcode: barcodeNumber,
+      barcodeNumber,
+      barcodeFormats: catalogText(product.barcode_formats),
       name,
-      brand: textValue(product.brands),
-      company: textValue(product.brand_owner) || textValue(product.manufacturer) || textValue(product.manufacturer_name),
-      manufacturer: textValue(product.manufacturer_name) || textValue(product.manufacturer) || textValue(product.brand_owner),
-      manufacturerAddress: textValue(product.manufacturing_places),
-      countryOfOrigin: textValue(product.origins) || textValue(product.countries),
-      description: textValue(product.generic_name) || textValue(product.generic_name_en) || textValue(product.ingredients_text),
-      quantity: textValue(product.quantity),
-      packSize: textValue(product.quantity),
-      unit: textValue(product.quantity).match(/[a-zA-Z]+/)?.[0] || "",
+      brand: textValue(product.brand) || textValue(product.brands),
+      company: textValue(product.company) || textValue(product.brand_owner) || textValue(product.manufacturer) || textValue(product.manufacturer_name),
+      manufacturer: textValue(product.manufacturer) || textValue(product.manufacturer_name) || textValue(product.brand_owner),
+      manufacturerAddress: textValue(product.manufacturing_places) || textValue(product.manufacturer_address),
+      countryOfOrigin: textValue(product.origins) || textValue(product.country_of_origin) || textValue(product.countries),
+      description: textValue(product.description) || textValue(product.generic_name) || textValue(product.generic_name_en) || textValue(product.ingredients_text),
+      quantity: quantityText,
+      packSize: textValue(product.pack_size) || quantityText,
+      unit: quantityText.match(/[a-zA-Z]+/)?.[0] || "",
       mrp: catalogMrp,
       productType: textValue(product.product_type),
-      variant: textValue(product.model_number),
+      variant: textValue(product.model_number) || catalogText(product.model),
       flavor: textValue(product.flavor),
-      category: textValue(product.categories),
-      categoryTags: Array.isArray(product.categories_tags) ? product.categories_tags.map(textValue).filter(Boolean) : [],
+      category: categoryText,
+      categoryTags: Array.isArray(product.categories_tags) ? product.categories_tags.map(catalogText).filter(Boolean) : textValue(product.category).split(/\s*[>/|]\s*/).filter(Boolean),
+      mpn: catalogText(product.mpn),
+      model: catalogText(product.model),
+      asin: catalogText(product.asin),
+      contributors: catalogText(product.contributors),
+      ageGroup: catalogText(product.age_group),
+      ingredients: catalogText(product.ingredients) || textValue(product.ingredients_text),
+      nutritionFacts: catalogText(product.nutrition_facts),
+      color: catalogText(product.color),
+      gender: catalogText(product.gender),
+      material: catalogText(product.material),
+      pattern: catalogText(product.pattern),
+      energyEfficiencyRating: catalogText(product.energy_efficiency_rating),
+      multipack: catalogText(product.multipack),
+      size: catalogText(product.size),
+      length: catalogText(product.length),
+      width: catalogText(product.width),
+      height: catalogText(product.height),
+      weight: catalogText(product.weight),
+      releaseDate: catalogText(product.release_date),
+      features: catalogText(product.features),
+      stores: catalogText(product.stores),
+      reviews: catalogText(product.reviews),
       images: imageUrls,
+      imageUrl: imageUrls[0] || "",
+      mainImage: imageUrls[0] || "",
       specifications,
-      expiryRequired: Boolean(textValue(product.expiration_date)) || categoryRequiresExpiry(`${textValue(product.categories)} ${textValue(product.product_name)}`),
+      expiryRequired,
       source,
     });
   } catch (err) {

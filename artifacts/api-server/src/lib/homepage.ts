@@ -91,6 +91,7 @@ async function manualProducts(section: Section, zoneId?: number) {
       and(
         eq(homepageSectionProductsTable.sectionId, section.id),
         zoneId ? or(eq(homepageSectionProductsTable.zoneId, zoneId), sql`${homepageSectionProductsTable.zoneId} is null`) : undefined,
+        zoneId ? eq(storesTable.zoneId, zoneId) : undefined,
         or(sql`${homepageSectionProductsTable.startAt} is null`, lte(homepageSectionProductsTable.startAt, current)),
         or(sql`${homepageSectionProductsTable.endAt} is null`, gte(homepageSectionProductsTable.endAt, current)),
       ),
@@ -120,7 +121,7 @@ async function ruleProducts(section: Section, zoneId?: number) {
     .select({ product: productsTable, store: storesTable })
     .from(productsTable)
     .innerJoin(storesTable, eq(productsTable.storeId, storesTable.id))
-    .where(and(...base, eq(storesTable.isActive, true), eq(storesTable.isVerified, true), eq(storesTable.isOpen, true)))
+    .where(and(...base, eq(storesTable.isActive, true), eq(storesTable.isVerified, true), eq(storesTable.isOpen, true), zoneId ? eq(storesTable.zoneId, zoneId) : undefined))
     .orderBy(orderBy)
     .limit(section.productLimit);
 
@@ -129,7 +130,7 @@ async function ruleProducts(section: Section, zoneId?: number) {
     .map(({ product, store }) => ({ ...product, store }));
 }
 
-async function bestSellingProducts(section: Section) {
+async function bestSellingProducts(section: Section, zoneId?: number) {
   const rows = await db
     .select({
       productId: orderItemsTable.productId,
@@ -145,7 +146,7 @@ async function bestSellingProducts(section: Section) {
   if (!ids.length) return ruleProducts(section);
   const products = await db.select().from(productsTable).where(inArray(productsTable.id, ids));
   const enriched = await productsWithStores(products);
-  return enriched.filter((product) => productIsEligible(product, product.store));
+  return enriched.filter((product) => productIsEligible(product, product.store) && (!zoneId || product.store?.zoneId === zoneId));
 }
 
 export async function getHomepageSections(zoneId?: number) {
@@ -165,7 +166,7 @@ export async function getHomepageSections(zoneId?: number) {
   for (const section of active) {
     const pinned = await manualProducts(section, zoneId);
     let auto: Array<Product & { store?: Store | null }> = [];
-    if (section.sectionType === "BEST_SELLING") auto = await bestSellingProducts(section);
+    if (section.sectionType === "BEST_SELLING") auto = await bestSellingProducts(section, zoneId);
     else if (section.sectionType !== "MANUAL") auto = await ruleProducts(section, zoneId);
     const seen = new Set<number>();
     const products = [...pinned, ...auto].filter((product) => {

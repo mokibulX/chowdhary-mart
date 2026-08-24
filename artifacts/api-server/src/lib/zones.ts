@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   serviceZonesTable,
@@ -75,8 +75,14 @@ function pointInRing(point: GeoPoint, ring: GeoPoint[]) {
 
 export function isInsideZone(zone: Pick<ServiceZone, "centreLatitude" | "centreLongitude" | "radiusMeters" | "boundaryGeometry">, lat: number, lng: number) {
   const rings = polygonRings(zone.boundaryGeometry);
-  if (rings.length) return pointInRing({ lat, lng }, rings[0]) && rings.slice(1).every((ring) => !pointInRing({ lat, lng }, ring));
-  return distanceKm(lat, lng, zone.centreLatitude, zone.centreLongitude) * 1000 <= Number(zone.radiusMeters ?? 5000);
+  // Serviceability is boundary-only. Radius is retained in the schema for
+  // historical records, but must never create a new active service area.
+  if (!rings.length) return false;
+  return pointInRing({ lat, lng }, rings[0]) && rings.slice(1).every((ring) => !pointInRing({ lat, lng }, ring));
+}
+
+function hasPolygonBoundary(zone: Pick<ServiceZone, "boundaryGeometry">) {
+  return polygonRings(zone.boundaryGeometry).length > 0;
 }
 
 export async function getActiveDeliveryZones(lat?: number, lng?: number) {
@@ -86,7 +92,7 @@ export async function getActiveDeliveryZones(lat?: number, lng?: number) {
     eq(serviceZonesTable.deliveryEnabled, true),
     isNull(serviceZonesTable.archivedAt),
   ));
-  return rows.map((zone) => {
+  return rows.filter(hasPolygonBoundary).map((zone) => {
     const distance = validCoordinate(lat, lng) ? distanceKm(Number(lat), Number(lng), zone.centreLatitude, zone.centreLongitude) : null;
     return { ...zone, distanceKm: distance === null ? null : Number(distance.toFixed(2)), insideServiceZone: distance === null ? false : isInsideZone(zone, Number(lat), Number(lng)) };
   });
@@ -100,7 +106,7 @@ export async function getEligibleRegistrationZones(type: "seller" | "rider", lat
     type === "seller" ? eq(serviceZonesTable.sellerRegistrationEnabled, true) : eq(serviceZonesTable.riderRegistrationEnabled, true),
     type === "rider" ? eq(serviceZonesTable.deliveryEnabled, true) : undefined,
   ));
-  return rows
+  return rows.filter(hasPolygonBoundary)
     .map((zone) => {
       const distance = validCoordinate(lat, lng) ? distanceKm(Number(lat), Number(lng), zone.centreLatitude, zone.centreLongitude) : null;
       return {
@@ -125,6 +131,7 @@ export async function validateZoneSelection(type: "seller" | "rider", zoneId: un
     type === "rider" ? eq(serviceZonesTable.deliveryEnabled, true) : undefined,
   )).limit(1);
   if (!zone) return { ok: false as const, error: "Please select an active service zone." };
+  if (!hasPolygonBoundary(zone)) return { ok: false as const, error: "This service zone needs a custom boundary before it can be used." };
   if (!isInsideZone(zone, Number(lat), Number(lng))) {
     return { ok: false as const, error: type === "seller" ? "Your shop location is outside the selected service zone." : "Your current location is outside the selected service zone." };
   }
@@ -137,9 +144,17 @@ export async function sellerZoneIds(userId: number) {
     eq(sellerZoneAssignmentsTable.status, "approved"),
     isNull(sellerZoneAssignmentsTable.removedAt),
   ));
-  if (assignments.length) return assignments.map((item) => item.zoneId);
+  const assignedIds = assignments.length ? assignments.map((item) => item.zoneId) : [];
   const [store] = await db.select().from(storesTable).where(eq(storesTable.userId, userId)).limit(1);
-  return store?.zoneId ? [store.zoneId] : [];
+  const ids = assignedIds.length ? assignedIds : (store?.zoneId ? [store.zoneId] : []);
+  if (!ids.length) return [];
+  const active = await db.select({ id: serviceZonesTable.id }).from(serviceZonesTable).where(and(
+    inArray(serviceZonesTable.id, ids),
+    eq(serviceZonesTable.isActive, true),
+    isNull(serviceZonesTable.archivedAt),
+  ));
+  const activeIds = new Set(active.map((item) => item.id));
+  return ids.filter((id) => activeIds.has(id));
 }
 
 export async function riderZoneIds(userId: number) {
@@ -148,9 +163,17 @@ export async function riderZoneIds(userId: number) {
     eq(riderZoneAssignmentsTable.status, "approved"),
     isNull(riderZoneAssignmentsTable.removedAt),
   ));
-  if (assignments.length) return assignments.map((item) => item.zoneId);
+  const assignedIds = assignments.length ? assignments.map((item) => item.zoneId) : [];
   const [dp] = await db.select().from(deliveryPartnersTable).where(eq(deliveryPartnersTable.userId, userId)).limit(1);
-  return dp?.currentZoneId ? [dp.currentZoneId] : [];
+  const ids = assignedIds.length ? assignedIds : (dp?.currentZoneId ? [dp.currentZoneId] : []);
+  if (!ids.length) return [];
+  const active = await db.select({ id: serviceZonesTable.id }).from(serviceZonesTable).where(and(
+    inArray(serviceZonesTable.id, ids),
+    eq(serviceZonesTable.isActive, true),
+    isNull(serviceZonesTable.archivedAt),
+  ));
+  const activeIds = new Set(active.map((item) => item.id));
+  return ids.filter((id) => activeIds.has(id));
 }
 
 export async function auditZone(req: AuthRequest, action: string, payload: { zoneId?: number | null; targetUserId?: number | null; oldValue?: Record<string, unknown> | null; newValue?: Record<string, unknown> | null }) {

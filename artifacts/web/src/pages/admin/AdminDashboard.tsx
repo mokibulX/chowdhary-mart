@@ -22,7 +22,14 @@ export default function AdminDashboard() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { data: dashboard, isLoading, isError, refetch } = useGetAdminDashboard({
-    query: { enabled: !!user, queryKey: getGetAdminDashboardQueryKey(), refetchOnWindowFocus: true, refetchOnMount: "always" },
+    query: {
+      enabled: !!user,
+      queryKey: getGetAdminDashboardQueryKey(),
+      refetchOnWindowFocus: true,
+      refetchOnMount: "always",
+      refetchInterval: 10000,
+      staleTime: 0,
+    },
   });
   const { data: testControls } = useQuery({
     queryKey: ["/api/admin/test-controls"],

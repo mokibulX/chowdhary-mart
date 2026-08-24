@@ -382,7 +382,7 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
     const activeOrders = await Promise.all(orders.map(expireOrderIfNeeded));
     res.json(activeOrders
       .filter((order) => order.status === "confirmed")
-      .filter((order) => !order.zoneId || zones.includes(order.zoneId))
+      .filter((order) => Boolean(order.zoneId) && zones.includes(order.zoneId!))
       .map(order => {
         const store = storeMap.get(order.storeId);
         return {
@@ -421,9 +421,9 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
     if (order.status !== "confirmed") { res.status(409).json({ error: "This delivery request is no longer available." }); return; }
     if (!dp.isVerified || !dp.isOnline) { res.status(403).json({ error: "Delivery partner must be approved and online." }); return; }
     const zones = await riderZoneIds(req.user!.userId);
-    if (order.zoneId && !zones.includes(order.zoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
+    if (!order.zoneId || !zones.includes(order.zoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
     const [store] = await db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
-    if (store?.zoneId && !zones.includes(store.zoneId)) { res.status(403).json({ error: "Pickup store is outside your service zone." }); return; }
+    if (!store?.zoneId || !zones.includes(store.zoneId)) { res.status(403).json({ error: "Pickup store is outside your service zone." }); return; }
 
     const latestAssigned = await getLatestAssignedTracking(orderId);
     if (latestAssigned && !isRejectedTracking(latestAssigned.message) && latestAssigned.deliveryPartnerId !== dp.id) {
@@ -468,7 +468,7 @@ router.post("/orders/:orderId/reject", async (req: AuthRequest, res) => {
     const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
     if (!order) { res.status(404).json({ error: "Order not found" }); return; }
     const zones = await riderZoneIds(req.user!.userId);
-    if (order.zoneId && !zones.includes(order.zoneId)) {
+    if (!order.zoneId || !zones.includes(order.zoneId)) {
       res.status(403).json({ error: "This order belongs to another service zone." });
       return;
     }
@@ -494,7 +494,7 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     const { status, pickupOtp: enteredPickupOtp, otp } = req.body as { status: "picked_up" | "on_the_way" | "delivered"; pickupOtp?: string; otp?: string };
     const [targetOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
     const zones = await riderZoneIds(req.user!.userId);
-    if (!targetOrder || (targetOrder.zoneId && !zones.includes(targetOrder.zoneId))) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
+    if (!targetOrder || !targetOrder.zoneId || !zones.includes(targetOrder.zoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
     if (!(await assertDeliveryAssignment(orderId, dp.id))) {
       res.status(403).json({ error: "This order is not assigned to this delivery partner." });
       return;

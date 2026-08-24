@@ -10,22 +10,22 @@ import { LocateFixed, MapPin, Navigation, Plus, Save, ShieldCheck, Trash2 } from
 import { IndiaStateSelect } from "@/components/IndiaLocationSelects";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 import { getCurrentIndianLocation } from "@/lib/live-location";
-import { DEFAULT_LOCATION } from "@/lib/default-location";
 
 const QUERY_KEY = ["/api/admin/service-zones"];
 
 const DEFAULT_FORM: Record<string, any> = {
   zoneCode: "",
   zoneName: "",
-  centreLatitude: String(DEFAULT_LOCATION.lat),
-  centreLongitude: String(DEFAULT_LOCATION.lng),
+  centreLatitude: "",
+  centreLongitude: "",
   radiusMeters: "5000",
   defaultDeliveryTime: "40",
   minimumOrderAmount: "99",
-  city: DEFAULT_LOCATION.city,
-  state: DEFAULT_LOCATION.state,
-  zoneType: "radius",
+  city: "",
+  state: "",
+  zoneType: "polygon",
   boundaryGeometry: null,
+  storeId: "",
 };
 
 export default function AdminZones() {
@@ -36,15 +36,24 @@ export default function AdminZones() {
     queryKey: QUERY_KEY,
     queryFn: () => customFetch<any[]>("/api/admin/service-zones", { responseType: "json" }),
   });
+  const { data: stores = [], isLoading: storesLoading } = useQuery({
+    queryKey: ["/api/admin/stores"],
+    queryFn: () => customFetch<any[]>("/api/admin/stores", { responseType: "json" }),
+  });
   const [zoneToDelete, setZoneToDelete] = useState<any | null>(null);
   const createZone = useMutation({
-    mutationFn: () => customFetch("/api/admin/service-zones", { method: "POST", body: JSON.stringify({ ...form, boundaryGeometry: form.zoneType === "polygon" ? form.boundaryGeometry : null }), responseType: "json" }),
+    mutationFn: () => {
+      const code = String(form.zoneCode ?? "").trim().toUpperCase();
+      const duplicate = zones.some((zone: any) => String(zone.zoneCode ?? zone.code ?? "").trim().toUpperCase() === code);
+      if (duplicate) throw new Error("This zone code already exists. Please use a different zone code.");
+      return customFetch("/api/admin/service-zones", { method: "POST", body: JSON.stringify({ ...form, storeId: form.storeId || null, zoneType: "polygon", boundaryGeometry: form.boundaryGeometry }), responseType: "json" });
+    },
     onSuccess: () => {
       setForm(DEFAULT_FORM);
       qc.invalidateQueries({ queryKey: QUERY_KEY });
       toast({ title: "Location added", description: "New delivery service zone is ready." });
     },
-    onError: (error: any) => toast({ title: "Location add failed", description: error?.data?.error ?? "Please check zone code and GPS.", variant: "destructive" }),
+    onError: (error: any) => toast({ title: "Location add failed", description: error?.data?.error ?? error?.message ?? "Please check zone code and GPS.", variant: "destructive" }),
   });
   const saveZone = useMutation({
     mutationFn: ({ id, data }: { id: number; data: any }) => customFetch(`/api/admin/service-zones/${id}`, { method: "PATCH", body: JSON.stringify(data), responseType: "json" }),
@@ -70,7 +79,7 @@ export default function AdminZones() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold">Service Zones</h1>
-        <p className="text-sm text-muted-foreground">5 km marketplace coverage, delivery ETA and zone-level operational controls.</p>
+        <p className="text-sm text-muted-foreground">Create a service area by drawing its exact boundary on the map.</p>
       </div>
 
       <section className="rounded-xl border bg-white p-4">
@@ -81,32 +90,32 @@ export default function AdminZones() {
         <div className="grid gap-3 md:grid-cols-4">
           <Field label="Code" value={form.zoneCode} onChange={(value) => setForm({ ...form, zoneCode: value })} placeholder="KOL-AREA-5K" />
           <Field label="Name" value={form.zoneName} onChange={(value) => setForm({ ...form, zoneName: value })} placeholder="Zone name" />
-          <Field label="City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} placeholder={DEFAULT_LOCATION.city} />
+          <Field label="City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} placeholder="Select city" />
           <IndiaStateSelect label="State" value={form.state} onChange={(value) => setForm({ ...form, state: value })} />
-          <Field label="Latitude" value={form.centreLatitude} onChange={(value) => setForm({ ...form, centreLatitude: value })} />
-          <Field label="Longitude" value={form.centreLongitude} onChange={(value) => setForm({ ...form, centreLongitude: value })} />
-          <Field label="Radius meters" value={form.radiusMeters} onChange={(value) => setForm({ ...form, radiusMeters: value })} />
-          <label className="grid gap-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">Zone type</span>
-            <select className="h-10 rounded-md border bg-white px-3" value={form.zoneType} onChange={(event) => setForm({ ...form, zoneType: event.target.value, boundaryGeometry: event.target.value === "radius" ? null : form.boundaryGeometry })}>
-              <option value="radius">Radius circle</option>
-              <option value="polygon">Custom polygon</option>
-            </select>
-          </label>
-          <Field label="Delivery min" value={form.defaultDeliveryTime} onChange={(value) => setForm({ ...form, defaultDeliveryTime: value })} />
-          <Field label="Min order" value={form.minimumOrderAmount} onChange={(value) => setForm({ ...form, minimumOrderAmount: value })} />
-          <Button className="h-10 self-end" onClick={() => createZone.mutate()} disabled={createZone.isPending}>
-            <Plus className="mr-2 h-4 w-4" /> Add Zone
-          </Button>
+        </div>
+        <div className="mt-3 max-w-xl">
+          <label className="mb-1 block text-sm font-medium">Store / dark store (optional)</label>
+          <select
+            className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+            value={form.storeId}
+            onChange={(event) => setForm({ ...form, storeId: event.target.value })}
+            disabled={storesLoading}
+          >
+            <option value="">Assign later</option>
+            {stores.map((store: any) => <option key={store.id} value={store.id}>{store.name} ({store.city ?? "location pending"})</option>)}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">The selected store must be geographically inside this polygon.</p>
         </div>
         <ZoneLocationTools
           lat={form.centreLatitude}
           lng={form.centreLongitude}
           city={form.city}
           state={form.state}
-          polygonMode={form.zoneType === "polygon"}
+          polygonMode
           initialPolygon={form.boundaryGeometry?.coordinates?.[0]?.slice(0, -1)?.map((point: number[]) => ({ lat: point[1], lng: point[0] })) ?? []}
-          zonePreview={{ id: 0, centreLatitude: Number(form.centreLatitude), centreLongitude: Number(form.centreLongitude), radiusMeters: Number(form.radiusMeters), boundaryGeometry: form.boundaryGeometry, insideServiceZone: true }}
+          zonePreview={Number.isFinite(Number(form.centreLatitude)) && Number.isFinite(Number(form.centreLongitude)) && form.centreLatitude && form.centreLongitude
+            ? { id: 0, centreLatitude: Number(form.centreLatitude), centreLongitude: Number(form.centreLongitude), radiusMeters: Number(form.radiusMeters), boundaryGeometry: form.boundaryGeometry, insideServiceZone: true }
+            : undefined}
           onChange={(location) => setForm({
             ...form,
             centreLatitude: location.lat,
@@ -116,6 +125,9 @@ export default function AdminZones() {
             boundaryGeometry: location.boundaryGeometry ?? form.boundaryGeometry,
           })}
         />
+        <Button className="mt-4 w-full sm:w-auto" onClick={() => createZone.mutate()} disabled={createZone.isPending || !form.centreLatitude || !form.centreLongitude || !form.boundaryGeometry}>
+          <Plus className="mr-2 h-4 w-4" /> {createZone.isPending ? "Saving service area..." : "Save service area"}
+        </Button>
       </section>
 
       {isLoading ? (
@@ -169,7 +181,7 @@ function ZoneCard({ zone, save, remove, busy }: { zone: any; save: (data: any) =
     registrationEnabled: zone.registrationEnabled !== false,
     sellerRegistrationEnabled: zone.sellerRegistrationEnabled !== false,
     riderRegistrationEnabled: zone.riderRegistrationEnabled !== false,
-    zoneType: zone.boundaryGeometry ? "polygon" : "radius",
+    zoneType: "polygon",
     boundaryGeometry: zone.boundaryGeometry ?? null,
   });
   return (
@@ -197,19 +209,13 @@ function ZoneCard({ zone, save, remove, busy }: { zone: any; save: (data: any) =
         <Field label="Zone name" value={draft.zoneName} onChange={(value) => setDraft({ ...draft, zoneName: value })} />
         <Field label="City" value={draft.city} onChange={(value) => setDraft({ ...draft, city: value })} />
         <IndiaStateSelect label="State" value={draft.state} onChange={(value) => setDraft({ ...draft, state: value })} />
-        <Field label="Latitude" value={draft.centreLatitude} onChange={(value) => setDraft({ ...draft, centreLatitude: value })} />
-        <Field label="Longitude" value={draft.centreLongitude} onChange={(value) => setDraft({ ...draft, centreLongitude: value })} />
-        <Field label="Radius meters" value={draft.radiusMeters} onChange={(value) => setDraft({ ...draft, radiusMeters: value })} />
-        <label className="grid gap-1 text-sm"><span className="text-xs font-medium text-muted-foreground">Zone type</span><select className="h-10 rounded-md border bg-white px-3" value={draft.zoneType} onChange={(event) => setDraft({ ...draft, zoneType: event.target.value, boundaryGeometry: event.target.value === "radius" ? null : draft.boundaryGeometry })}><option value="radius">Radius circle</option><option value="polygon">Custom polygon</option></select></label>
-        <Field label="Delivery minutes" value={draft.defaultDeliveryTime} onChange={(value) => setDraft({ ...draft, defaultDeliveryTime: value })} />
-        <Field label="Minimum order" value={draft.minimumOrderAmount} onChange={(value) => setDraft({ ...draft, minimumOrderAmount: value })} />
       </div>
       <ZoneLocationTools
         lat={draft.centreLatitude}
         lng={draft.centreLongitude}
         city={draft.city}
         state={draft.state}
-        polygonMode={draft.zoneType === "polygon"}
+        polygonMode
         initialPolygon={draft.boundaryGeometry?.coordinates?.[0]?.slice(0, -1)?.map((point: number[]) => ({ lat: point[1], lng: point[0] })) ?? []}
         zonePreview={{ id: zone.id, centreLatitude: Number(draft.centreLatitude), centreLongitude: Number(draft.centreLongitude), radiusMeters: Number(draft.radiusMeters), boundaryGeometry: draft.boundaryGeometry, insideServiceZone: true }}
         onChange={(location) => setDraft({
@@ -221,16 +227,8 @@ function ZoneCard({ zone, save, remove, busy }: { zone: any; save: (data: any) =
           boundaryGeometry: location.boundaryGeometry ?? draft.boundaryGeometry,
         })}
       />
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-        <Toggle label="Active" checked={draft.status === "active"} onClick={() => setDraft({ ...draft, status: draft.status === "active" ? "paused" : "active" })} />
-        <Toggle label="Accept orders" checked={draft.acceptingOrders} onClick={() => setDraft({ ...draft, acceptingOrders: !draft.acceptingOrders })} />
-        <Toggle label="Delivery" checked={draft.deliveryEnabled} onClick={() => setDraft({ ...draft, deliveryEnabled: !draft.deliveryEnabled })} />
-        <Toggle label="Registration" checked={draft.registrationEnabled} onClick={() => setDraft({ ...draft, registrationEnabled: !draft.registrationEnabled })} />
-        <Toggle label="Seller signup" checked={draft.sellerRegistrationEnabled} onClick={() => setDraft({ ...draft, sellerRegistrationEnabled: !draft.sellerRegistrationEnabled })} />
-        <Toggle label="Rider signup" checked={draft.riderRegistrationEnabled} onClick={() => setDraft({ ...draft, riderRegistrationEnabled: !draft.riderRegistrationEnabled })} />
-      </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
-        <Button onClick={() => save({ ...draft, boundaryGeometry: draft.zoneType === "polygon" ? draft.boundaryGeometry : null })} disabled={busy}>
+        <Button onClick={() => save({ ...draft, zoneType: "polygon", boundaryGeometry: draft.boundaryGeometry })} disabled={busy || !draft.centreLatitude || !draft.centreLongitude || !draft.boundaryGeometry}>
           <Save className="mr-2 h-4 w-4" /> Save location
         </Button>
         <Button type="button" variant="outline" className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={remove} disabled={busy}>
@@ -241,7 +239,7 @@ function ZoneCard({ zone, save, remove, busy }: { zone: any; save: (data: any) =
   );
 }
 
-function ZoneLocationTools({ lat, lng, city, state, polygonMode = false, initialPolygon = [], zonePreview, onChange }: {
+function ZoneLocationTools({ lat, lng, city, state, polygonMode = true, initialPolygon = [], zonePreview, onChange }: {
   lat: string;
   lng: string;
   city?: string;
@@ -252,7 +250,7 @@ function ZoneLocationTools({ lat, lng, city, state, polygonMode = false, initial
   onChange: (location: { lat: string; lng: string; city?: string; state?: string; boundaryGeometry?: any }) => void;
 }) {
   const { toast } = useToast();
-  const [mapOpen, setMapOpen] = useState(false);
+  const [mapOpen] = useState(true);
   const [locating, setLocating] = useState(false);
   const numericLat = Number(lat);
   const numericLng = Number(lng);
@@ -274,12 +272,12 @@ function ZoneLocationTools({ lat, lng, city, state, polygonMode = false, initial
     try {
       const gps = await getCurrentIndianLocation();
       onChange({
-        lat: gps.lat.toFixed(6),
-        lng: gps.lng.toFixed(6),
+        lat: gps.lat.toFixed(7),
+        lng: gps.lng.toFixed(7),
         city: gps.city || city,
         state: gps.state || state,
       });
-      toast({ title: "Current location selected", description: "City, state, latitude and longitude were filled automatically." });
+      toast({ title: "GPS location applied", description: "City, state and coordinates were updated." });
     } catch (error) {
       toast({
         title: "GPS failed",
@@ -293,37 +291,27 @@ function ZoneLocationTools({ lat, lng, city, state, polygonMode = false, initial
 
   const applyMapLocation = (location: PickupLocation) => {
     onChange({
-      lat: location.lat.toFixed(6),
-      lng: location.lng.toFixed(6),
+      lat: location.lat.toFixed(7),
+      lng: location.lng.toFixed(7),
       city: location.city || city,
       state: location.state || state,
       boundaryGeometry: location.boundaryGeometry,
     });
-    setMapOpen(false);
-    toast({ title: "Map location selected", description: "Zone centre GPS updated." });
+    toast({ title: "Service area selected", description: "Map border and centre location updated." });
   };
 
   return (
     <div className="mt-3 rounded-xl border bg-gray-50/70 p-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm">
-          <p className="font-semibold">Zone centre GPS</p>
-          <p className="text-xs text-muted-foreground">Use current GPS to auto-fill the location, or select a different point on the map.</p>
+          <p className="font-semibold">Select service area on map</p>
+          <p className="text-xs text-muted-foreground">Draw the exact service boundary directly on the map.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Badge className="bg-orange-100 text-orange-700">Custom boundary</Badge>
           <Button type="button" variant="outline" size="sm" onClick={useGps} disabled={locating}>
             <LocateFixed className="mr-2 h-4 w-4" /> {locating ? "Detecting..." : "Use GPS"}
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => setMapOpen((value) => !value)}>
-            <MapPin className="mr-2 h-4 w-4" /> {mapOpen ? "Hide map" : "Select from map"}
-          </Button>
-          {hasCoords && (
-            <a href={`https://www.google.com/maps/search/?api=1&query=${numericLat},${numericLng}`} target="_blank" rel="noreferrer">
-              <Button type="button" variant="outline" size="sm">
-                <Navigation className="mr-2 h-4 w-4" /> Open map
-              </Button>
-            </a>
-          )}
         </div>
       </div>
       {mapOpen && (
@@ -331,15 +319,18 @@ function ZoneLocationTools({ lat, lng, city, state, polygonMode = false, initial
           <PickupLocationPicker
             mode="inline"
             initial={initial}
-            title="Select zone centre"
-            subtitle="Tap or drag the map to set the centre point, or use current GPS."
-            confirmLabel="Use this zone centre"
+            title="Draw service area"
+            subtitle="Tap the map to place pins around the service boundary."
+            confirmLabel="Use this service area"
             locateFirst={!initial}
-            compact
             polygonMode={polygonMode}
             initialPolygon={initialPolygon}
-            serviceZones={zonePreview ? [zonePreview] : undefined}
-            onClose={() => setMapOpen(false)}
+            // Never render a radius overlay in the polygon editor. Legacy
+            // radius records remain editable only by drawing a new boundary.
+            serviceZones={zonePreview?.boundaryGeometry ? [zonePreview] : undefined}
+            onLocationChange={(point) => onChange({ lat: point.lat.toFixed(7), lng: point.lng.toFixed(7) })}
+            hideTechnicalDetails
+            onClose={() => undefined}
             onConfirm={applyMapLocation}
           />
         </div>

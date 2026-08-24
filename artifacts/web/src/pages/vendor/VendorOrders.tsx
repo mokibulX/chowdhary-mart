@@ -325,7 +325,6 @@ function OrderItemRow({ item, detailed = false }: { item: any; detailed?: boolea
       <div className="min-w-0 text-sm">
         <p className="line-clamp-1 font-semibold">{item.productName ?? item.name}</p>
         <p className="text-xs text-muted-foreground">{variant}</p>
-        <p className="text-xs text-muted-foreground">SKU: {item.sku ?? `SKU-${item.productId}`} · Barcode: {item.barcode ?? "N/A"}</p>
         {detailed && <p className="text-xs text-muted-foreground">Brand: {item.brandName ?? "Chowdhary Mart"} · Stock at order: {item.stockAvailableAtOrder ?? "-"}</p>}
       </div>
       <div className="text-right text-sm">

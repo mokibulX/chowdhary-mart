@@ -12,7 +12,7 @@ import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { generateReferralCode, hashPassword } from "../lib/auth";
 import { HOMEPAGE_PERMISSIONS, getHomepageSections, slugify } from "../lib/homepage";
 import { assertTestModeFeature, testMode } from "../lib/test-mode";
-import { auditZone, validCoordinate } from "../lib/zones";
+import { auditZone, isInsideZone, validCoordinate } from "../lib/zones";
 import { ensureFinanceTables, ensureWallet, getFinanceSettings, settleCompletedOrder } from "../lib/finance";
 import { ensurePricingSchema } from "../lib/pricing";
 import { DEFAULT_LOCATION } from "../lib/default-location";
@@ -223,6 +223,13 @@ function zonePayload(body: Record<string, unknown>, adminId?: number) {
     riderRegistrationEnabled: body.riderRegistrationEnabled !== false,
     updatedByAdminId: adminId ?? null,
   };
+}
+
+function hasPolygonBoundary(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const geometry = value as { type?: unknown; coordinates?: unknown };
+  const ring = Array.isArray(geometry.coordinates) && Array.isArray(geometry.coordinates[0]) ? geometry.coordinates[0] : [];
+  return geometry.type === "Polygon" && ring.length >= 4;
 }
 
 async function ensureDemoUser(account: typeof demoAccounts[number]) {
@@ -1552,6 +1559,17 @@ router.patch("/stores/:storeId", async (req: AuthRequest, res) => {
     if (req.body.minOrderValue !== undefined) patch.minOrderValue = String(Number(req.body.minOrderValue || 0).toFixed(2));
     if (req.body.isOpen !== undefined) patch.isOpen = Boolean(req.body.isOpen);
     if (req.body.isActive !== undefined) patch.isActive = Boolean(req.body.isActive);
+    if (req.body.zoneId !== undefined) {
+      const zoneId = req.body.zoneId === null || req.body.zoneId === "" ? null : Number(req.body.zoneId);
+      if (zoneId !== null) {
+        const [zone] = await db.select().from(serviceZonesTable).where(and(eq(serviceZonesTable.id, zoneId), isNull(serviceZonesTable.archivedAt))).limit(1);
+        if (!zone || !hasPolygonBoundary(zone.boundaryGeometry) || !isInsideZone(zone, Number(existing.lat), Number(existing.lng))) {
+          res.status(400).json({ error: "The store location must be inside the selected polygon service area." });
+          return;
+        }
+      }
+      patch.zoneId = zoneId;
+    }
     const [store] = await db.update(storesTable).set(patch).where(eq(storesTable.id, storeId)).returning();
     if (req.body.isActive !== undefined) {
       await db.update(usersTable)
@@ -1909,12 +1927,44 @@ router.get("/service-zones", async (req: AuthRequest, res) => {
 // POST /api/admin/service-zones
 router.post("/service-zones", async (req: AuthRequest, res) => {
   try {
+    // New service areas are polygon-only. Radius circles are no longer a valid
+    // source of seller, customer, or rider serviceability.
+    if (!hasPolygonBoundary(req.body?.boundaryGeometry)) {
+      res.status(400).json({ error: "Draw at least three boundary pins on the map before saving the service area." });
+      return;
+    }
     const payload = zonePayload(req.body, req.user!.userId);
-    const [zone] = await db.insert(serviceZonesTable).values({ ...payload, createdByAdminId: req.user!.userId }).returning();
+    const requestedStoreId = req.body?.storeId === undefined || req.body?.storeId === "" || req.body?.storeId === null
+      ? null
+      : Number(req.body.storeId);
+    let storeToAssign: typeof storesTable.$inferSelect | undefined;
+    if (requestedStoreId !== null) {
+      if (!Number.isInteger(requestedStoreId) || requestedStoreId <= 0) {
+        res.status(400).json({ error: "Select a valid store for this service area." });
+        return;
+      }
+      [storeToAssign] = await db.select().from(storesTable).where(and(eq(storesTable.id, requestedStoreId), eq(storesTable.isActive, true))).limit(1);
+      if (!storeToAssign || !isInsideZone(payload, Number(storeToAssign.lat), Number(storeToAssign.lng))) {
+        res.status(400).json({ error: "The store location must be inside the selected polygon service area." });
+        return;
+      }
+    }
+    const [zone] = await db.transaction(async (tx) => {
+      const [createdZone] = await tx.insert(serviceZonesTable).values({ ...payload, createdByAdminId: req.user!.userId }).returning();
+      if (storeToAssign) {
+        await tx.update(storesTable).set({ zoneId: createdZone.id, updatedAt: new Date() }).where(eq(storesTable.id, storeToAssign.id));
+      }
+      return [createdZone];
+    });
     await auditZone(req, "zone.created", { zoneId: zone.id, newValue: payload });
     res.status(201).json({ ...zone, zoneCode: zone.code, zoneName: zone.name, status: zone.isActive ? "active" : "paused", defaultDeliveryTime: zone.deliveryMinutes });
   } catch (err) {
     req.log.error(err);
+    const databaseError = err as { code?: string };
+    if (databaseError.code === "23505") {
+      res.status(409).json({ error: "This zone code already exists. Please use a different zone code." });
+      return;
+    }
     res.status(400).json({ error: err instanceof Error ? err.message : "Could not create service zone" });
   }
 });
@@ -1925,12 +1975,22 @@ router.patch("/service-zones/:zoneId", async (req: AuthRequest, res) => {
     const zoneId = Number(req.params.zoneId);
     const [oldZone] = await db.select().from(serviceZonesTable).where(eq(serviceZonesTable.id, zoneId)).limit(1);
     if (!oldZone) { res.status(404).json({ error: "Service zone not found" }); return; }
+    const requestedBoundary = req.body?.boundaryGeometry ?? oldZone.boundaryGeometry;
+    if (!hasPolygonBoundary(requestedBoundary)) {
+      res.status(400).json({ error: "Draw a custom boundary before using this service area." });
+      return;
+    }
     const payload = zonePayload({ ...oldZone, ...req.body, code: req.body.code ?? req.body.zoneCode ?? oldZone.code, name: req.body.name ?? req.body.zoneName ?? oldZone.name, centreLatitude: req.body.centreLatitude ?? oldZone.centreLatitude, centreLongitude: req.body.centreLongitude ?? oldZone.centreLongitude }, req.user!.userId);
     const [zone] = await db.update(serviceZonesTable).set({ ...payload, updatedAt: new Date() }).where(eq(serviceZonesTable.id, zoneId)).returning();
     await auditZone(req, "zone.updated", { zoneId, oldValue: oldZone as any, newValue: payload });
     res.json({ ...zone, zoneCode: zone.code, zoneName: zone.name, status: zone.isActive ? "active" : "paused", defaultDeliveryTime: zone.deliveryMinutes });
   } catch (err) {
     req.log.error(err);
+    const databaseError = err as { code?: string };
+    if (databaseError.code === "23505") {
+      res.status(409).json({ error: "This zone code already exists. Please use a different zone code." });
+      return;
+    }
     res.status(400).json({ error: err instanceof Error ? err.message : "Could not update service zone" });
   }
 });
@@ -2003,9 +2063,17 @@ router.post("/service-zones/:zoneId/assign-seller", async (req: AuthRequest, res
     const sellerId = Number(req.body.sellerId);
     const shopId = req.body.shopId ? Number(req.body.shopId) : undefined;
     if (!sellerId) { res.status(400).json({ error: "Seller is required" }); return; }
-    if (shopId) await db.update(storesTable).set({ zoneId, updatedAt: new Date() }).where(eq(storesTable.id, shopId));
-    await db.insert(sellerZoneAssignmentsTable).values({ sellerId, shopId: shopId ?? null, zoneId, status: "approved", assignedByAdminId: req.user!.userId });
-    await auditZone(req, "seller.assigned", { zoneId, targetUserId: sellerId, newValue: { shopId } });
+    const [zone] = await db.select().from(serviceZonesTable).where(eq(serviceZonesTable.id, zoneId)).limit(1);
+    if (!zone || !hasPolygonBoundary(zone.boundaryGeometry)) { res.status(400).json({ error: "Only polygon service areas can receive sellers." }); return; }
+    const [sellerStore] = await db.select().from(storesTable).where(shopId ? eq(storesTable.id, shopId) : eq(storesTable.userId, sellerId)).limit(1);
+    if (!sellerStore || !isInsideZone(zone, Number(sellerStore.lat), Number(sellerStore.lng))) {
+      res.status(400).json({ error: "The seller shop location must be inside the selected service area." });
+      return;
+    }
+    const assignedShopId = sellerStore.id;
+    await db.update(storesTable).set({ zoneId, updatedAt: new Date() }).where(eq(storesTable.id, assignedShopId));
+    await db.insert(sellerZoneAssignmentsTable).values({ sellerId, shopId: assignedShopId, zoneId, status: "approved", assignedByAdminId: req.user!.userId });
+    await auditZone(req, "seller.assigned", { zoneId, targetUserId: sellerId, newValue: { shopId: assignedShopId } });
     res.json({ message: "Seller assigned to zone" });
   } catch (err) {
     req.log.error(err);
@@ -2019,6 +2087,13 @@ router.post("/service-zones/:zoneId/assign-rider", async (req: AuthRequest, res)
     const zoneId = Number(req.params.zoneId);
     const riderId = Number(req.body.riderId);
     if (!riderId) { res.status(400).json({ error: "Delivery partner is required" }); return; }
+    const [zone] = await db.select().from(serviceZonesTable).where(eq(serviceZonesTable.id, zoneId)).limit(1);
+    if (!zone || !hasPolygonBoundary(zone.boundaryGeometry)) { res.status(400).json({ error: "Only polygon service areas can receive delivery partners." }); return; }
+    const [rider] = await db.select().from(deliveryPartnersTable).where(eq(deliveryPartnersTable.userId, riderId)).limit(1);
+    if (!rider || !isInsideZone(zone, Number(rider.currentLat), Number(rider.currentLng))) {
+      res.status(400).json({ error: "The delivery partner location must be inside the selected service area." });
+      return;
+    }
     await db.update(deliveryPartnersTable).set({ currentZoneId: zoneId }).where(eq(deliveryPartnersTable.userId, riderId));
     await db.insert(riderZoneAssignmentsTable).values({ riderId, zoneId, isPrimary: req.body.isPrimary !== false, status: "approved", assignedByAdminId: req.user!.userId });
     await auditZone(req, "rider.assigned", { zoneId, targetUserId: riderId });
