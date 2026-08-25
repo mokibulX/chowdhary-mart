@@ -163,11 +163,13 @@ function ApplicationCard({ app, children }: { app: any; children?: ReactNode }) 
   );
 }
 
-function Info({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
+function Info({ label, value, wide }: { label: string; value?: string; wide?: boolean }) {
+  const text = String(value ?? "").trim();
+  if (!text || /^(not provided|vehicle not added)$/i.test(text)) return null;
   return (
     <div className={wide ? "sm:col-span-2" : ""}>
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-0.5 break-words font-medium">{value || "-"}</p>
+      <p className="mt-0.5 break-words font-medium">{text}</p>
     </div>
   );
 }
@@ -279,6 +281,10 @@ function DocumentPreview({ title, src }: { title: string; src?: string }) {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [hasReference, isAppResource, isDataUrl, resource]);
+
+  // Empty optional documents are not part of this application and should not
+  // leave placeholder cards in the admin review screen.
+  if (!hasReference) return null;
 
   const isPdf = mimeType === "application/pdf" || /\.pdf(?:$|[?#])/i.test(resource);
   return (

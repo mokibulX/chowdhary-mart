@@ -54,7 +54,7 @@ type RowAction = {
 };
 
 export default function Profile() {
-  const { user, logout } = useAuth();
+  const { user, confirmLogout } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const updateMe = useUpdateMe();
@@ -207,7 +207,7 @@ export default function Profile() {
 
       <button
         type="button"
-        onClick={logout}
+        onClick={confirmLogout}
         className="flex w-full items-center gap-4 rounded-lg border bg-white p-4 text-left shadow-sm transition-colors hover:bg-red-50"
         data-testid="btn-logout"
       >

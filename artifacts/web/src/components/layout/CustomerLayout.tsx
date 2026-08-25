@@ -53,7 +53,7 @@ const MOBILE_LINKS = [
 ];
 
 export function CustomerLayout({ children }: CustomerLayoutProps) {
-  const { user, logout } = useAuth();
+  const { user, confirmLogout } = useAuth();
   const { t } = useI18n();
   const [location, setLocation] = useLocation();
   const [search, setSearch] = useState("");
@@ -518,7 +518,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
       <header className="sticky top-0 z-50 border-b border-blue-700/40 bg-gradient-to-r from-[#044bd8] via-[#0757ee] to-[#0b6cff] text-white shadow-lg shadow-blue-950/15">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-3 py-3 md:hidden">
           <div className="flex min-h-12 items-center gap-2">
-            <MobileMenu user={user} logout={logout} setLocationOpen={setLocationOpen} deliveryLocation={deliveryLocation} />
+            <MobileMenu user={user} confirmLogout={confirmLogout} setLocationOpen={setLocationOpen} deliveryLocation={deliveryLocation} />
             <BrandBlock compact />
             {user && <Link href="/notifications"><Button variant="ghost" size="icon" className="text-white hover:bg-white/10"><Bell className="h-5 w-5" /></Button></Link>}
             <CartButton compact />
@@ -750,12 +750,12 @@ function BrandBlock({ compact = false }: { compact?: boolean }) {
 
 function MobileMenu({
   user,
-  logout,
+  confirmLogout,
   setLocationOpen,
   deliveryLocation,
 }: {
   user: any;
-  logout: () => void;
+  confirmLogout: () => void;
   setLocationOpen: (open: boolean) => void;
   deliveryLocation: DeliveryLocation;
 }) {
@@ -783,7 +783,7 @@ function MobileMenu({
           {user?.role === "vendor" && <Link href="/vendor" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Store className="h-4 w-4" /> Seller Dashboard</Link>}
           {user?.role === "admin" && <Link href="/admin/dashboard" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-primary transition-colors hover:bg-primary/5"><Settings className="h-4 w-4" /> Admin Dashboard</Link>}
         </div>
-        {user && <Button variant="outline" className="mt-6 w-full" onClick={logout}>Sign out</Button>}
+        {user && <Button variant="outline" className="mt-6 w-full" onClick={confirmLogout}>Sign out</Button>}
       </SheetContent>
     </Sheet>
   );

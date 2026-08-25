@@ -9,6 +9,7 @@ interface AuthContextType {
   token: string | null;
   login: (token: string) => void;
   logout: () => void;
+  confirmLogout: () => void;
   isLoading: boolean;
 }
 
@@ -115,8 +116,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const confirmLogout = () => {
+    if (window.confirm("Are you sure you want to log out?")) logout();
+  };
+
   return (
-    <AuthContext.Provider value={{ user: user ?? null, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user: user ?? null, token, login, logout, confirmLogout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

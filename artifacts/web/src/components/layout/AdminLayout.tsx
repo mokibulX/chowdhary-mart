@@ -20,7 +20,7 @@ const NAV = [
 ];
 
 export function AdminLayout({ children }: { children: ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user, confirmLogout } = useAuth();
   const [location] = useLocation();
 
   const navItems = (mobile = false) => (
@@ -83,7 +83,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <div className="mt-auto border-t p-3">
                 <div className="mb-2 truncate px-3 text-xs text-muted-foreground">{user?.name}</div>
                 <SheetClose asChild>
-                  <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-red-500" onClick={logout} data-testid="btn-logout-mobile">
+                  <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-red-500" onClick={confirmLogout} data-testid="btn-logout-mobile">
                     <LogOut className="mr-2 h-4 w-4" /> Sign Out
                   </Button>
                 </SheetClose>
@@ -116,7 +116,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         {navItems()}
         <div className="border-t border-white/10 p-3">
           <div className="mb-2 truncate rounded-xl bg-white/5 px-3 py-2 text-xs text-slate-300">{user?.name}</div>
-          <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl text-slate-300 hover:bg-red-500/10 hover:text-red-300" onClick={logout} data-testid="btn-logout">
+          <Button variant="ghost" size="sm" className="w-full justify-start rounded-xl text-slate-300 hover:bg-red-500/10 hover:text-red-300" onClick={confirmLogout} data-testid="btn-logout">
             <LogOut className="w-4 h-4 mr-2" />Sign Out
           </Button>
         </div>

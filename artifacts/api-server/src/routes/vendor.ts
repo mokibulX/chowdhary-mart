@@ -10,6 +10,7 @@ import { sellerZoneIds } from "../lib/zones";
 import { createAndPushNotification } from "../lib/push-service";
 import { expireOrderIfNeeded, lifecycleMeta } from "../lib/order-lifecycle";
 import { storePublicImage } from "./uploads";
+import { advanceDeliveryOffer } from "../lib/delivery-offers";
 
 const router = Router();
 
@@ -734,6 +735,14 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
       });
     } catch (notificationError) {
       req.log.warn({ err: notificationError, orderId }, "Customer order notification failed");
+    }
+
+    if (isAccept) {
+      try {
+        await advanceDeliveryOffer(orderId);
+      } catch (offerError) {
+        req.log.warn({ err: offerError, orderId }, "Delivery partner offer could not be started");
+      }
     }
 
     res.json({ ...order, store });

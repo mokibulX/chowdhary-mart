@@ -45,6 +45,7 @@ export default function Wallet() {
   const [transferAmount, setTransferAmount] = useState("500");
   const [transferMethod, setTransferMethod] = useState<"upi" | "bank">("upi");
   const [transferUpi, setTransferUpi] = useState("");
+  const [bankName, setBankName] = useState("");
   const [accountName, setAccountName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [ifsc, setIfsc] = useState("");
@@ -94,6 +95,15 @@ export default function Wallet() {
     queryKey: ["/api/wallet/withdrawals"],
     queryFn: () => customFetch<any[]>("/api/wallet/withdrawals"),
     enabled: !!user,
+  });
+  const { data: savedPayoutAccount } = useQuery({
+    queryKey: ["/api/delivery/payout-account"],
+    queryFn: async () => {
+      const account = await customFetch<any>("/api/delivery/payout-account");
+      if (account?.bankName) setBankName(String(account.bankName));
+      return account;
+    },
+    enabled: user?.role === "delivery_partner",
   });
   const { data: adminWithdrawals } = useQuery({
     queryKey: ["/api/admin/wallet-withdrawals"],
@@ -179,6 +189,19 @@ export default function Wallet() {
       toast({ title: "Transfer request failed", description: getFriendlyErrorMessage(err, "Please check transfer details and try again."), variant: "destructive" });
     } finally {
       setIsTransferring(false);
+    }
+  };
+
+  const savePayoutAccount = async () => {
+    try {
+      await customFetch("/api/delivery/payout-account", {
+        method: "PATCH",
+        body: JSON.stringify({ bankName, accountNumber, ifsc }),
+      });
+      qc.invalidateQueries({ queryKey: ["/api/delivery/payout-account"] });
+      toast({ title: "Bank account saved", description: "Your payout account is now pending admin verification." });
+    } catch (err) {
+      toast({ title: "Bank account save failed", description: getFriendlyErrorMessage(err, "Please check the bank details."), variant: "destructive" });
     }
   };
 
@@ -269,7 +292,7 @@ export default function Wallet() {
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-700">
         {user.role === "delivery_partner"
-          ? "Delivery earning wallet admin-controlled. Transfer request admin approve korle payout hobe."
+          ? "Delivery earnings become withdrawable 24 hours after the order is completed. Bank/UPI payout is released after admin approval and a configured payout provider."
           : user.role === "vendor"
             ? "Seller settlement wallet admin-controlled. Order settlement/admin adjustment diye balance update hobe."
             : user.role === "admin"
@@ -277,12 +300,25 @@ export default function Wallet() {
               : "Customer wallet real-money style demo: add money, spend in checkout, refund/transaction history tracked."}
       </div>
 
+      {user.role === "delivery_partner" && <section className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div><h2 className="font-semibold">Payout bank account</h2><p className="text-xs text-muted-foreground">Add the bank account where matured delivery earnings should be paid.</p></div>
+          {savedPayoutAccount?.hasAccount && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">Pending verification</span>}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-1"><Label>Bank name</Label><Input value={bankName} onChange={(event) => setBankName(event.target.value)} placeholder="State Bank of India" /></div>
+          <div className="space-y-1"><Label>Account number</Label><Input value={accountNumber} onChange={(event) => setAccountNumber(event.target.value.replace(/\D/g, ""))} placeholder={savedPayoutAccount?.accountNumber || "Account number"} inputMode="numeric" /></div>
+          <div className="space-y-1"><Label>IFSC</Label><Input value={ifsc} onChange={(event) => setIfsc(event.target.value.toUpperCase())} placeholder={savedPayoutAccount?.ifsc || "SBIN0000001"} /></div>
+        </div>
+        <Button className="mt-3 w-full sm:w-auto" onClick={savePayoutAccount}>Save bank account</Button>
+      </section>}
+
       <section className="rounded-xl border bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center gap-2">
           <Send className="h-5 w-5 text-[#0757ee]" />
           <div>
             <h2 className="font-semibold">Transfer to bank or UPI</h2>
-            <p className="text-xs text-muted-foreground">{user.role === "admin" ? "Admin transfers instantly." : "Transfer will complete after admin approval."}</p>
+            <p className="text-xs text-muted-foreground">{user.role === "admin" ? "Admin transfers instantly." : "Only matured balance can be requested; bank/UPI payout completes after admin approval."}</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">

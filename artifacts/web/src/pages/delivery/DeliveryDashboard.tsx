@@ -1,7 +1,9 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { customFetch, getGetMeQueryKey, getListDeliveryOrdersQueryKey, useListDeliveryOrders, useUpdateDeliveryLocation } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { isDemoOtp, testMode } from "@/lib/test-mode";
@@ -9,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Bike, Camera, CheckCircle, CircleUserRound, DollarSign, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, WalletCards, X } from "lucide-react";
+import { ArrowLeft, Bell, Bike, Camera, CheckCircle, CircleUserRound, DollarSign, Gift, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, WalletCards, X } from "lucide-react";
 import { LiveDeliveryMap } from "@/components/LiveDeliveryMap";
 import { getBrowserLocation, watchBrowserLocation } from "@/lib/live-location";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -27,7 +29,8 @@ const ACTION_LABEL: Record<string, string> = {
 };
 
 export default function DeliveryDashboard() {
-  const { user, logout } = useAuth();
+  const { user, confirmLogout } = useAuth();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [autoGps, setAutoGps] = useState(false);
@@ -40,6 +43,7 @@ export default function DeliveryDashboard() {
   const [onlineBusy, setOnlineBusy] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const [orderFilter, setOrderFilter] = useState<"active" | "completed" | "cancelled">("active");
+  const [livePoint, setLivePoint] = useState<{ lat: number; lng: number } | null>(null);
 
   const { data: orders, isLoading } = useListDeliveryOrders({
     query: { enabled: !!user, queryKey: getListDeliveryOrdersQueryKey(), refetchInterval: 5000 },
@@ -52,9 +56,17 @@ export default function DeliveryDashboard() {
   });
   const updateLocation = useUpdateDeliveryLocation();
 
+  useEffect(() => {
+    const point = dashboardSummary?.currentLocation;
+    if (point && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))) setLivePoint({ lat: Number(point.lat), lng: Number(point.lng) });
+  }, [dashboardSummary?.currentLocation?.lat, dashboardSummary?.currentLocation?.lng]);
+
   const refresh = () => qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
   const currentStatus = dashboardSummary?.currentStatus ?? ((user as any)?.isOnline ? "online" : "offline");
   const userOnline = currentStatus !== "offline";
+  useEffect(() => {
+    if (userOnline) setAutoGps(true);
+  }, [userOnline]);
   const activeOrders = (orders ?? []).filter((order: any) => ["packed", "picked_up", "on_the_way"].includes(order.status));
   const waitingOrders = (orders ?? []).filter((order: any) => ["confirmed", "preparing"].includes(order.status));
   const currentOrder = activeOrders[0] ?? waitingOrders[0];
@@ -75,7 +87,8 @@ export default function DeliveryDashboard() {
     if (!autoGps) return;
     setGpsError("");
     const stop = watchBrowserLocation(
-      (gps) => {
+        (gps) => {
+        setLivePoint({ lat: gps.lat, lng: gps.lng });
         setLastGpsAt(gps.capturedAt);
         setLastAccuracy(gps.accuracy);
         updateLocation.mutate({
@@ -101,6 +114,7 @@ export default function DeliveryDashboard() {
 
   const getPartnerLocation = async () => {
     const gps = await getBrowserLocation();
+    setLivePoint({ lat: gps.lat, lng: gps.lng });
     setLastGpsAt(gps.capturedAt);
     setLastAccuracy(gps.accuracy);
     return { lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy, speed: gps.speed, heading: gps.heading, timestamp: gps.capturedAt, orderId: currentOrder?.id };
@@ -235,20 +249,49 @@ export default function DeliveryDashboard() {
       <header className="sticky top-0 z-40 border-b bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-2">
-            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => window.history.back()}>
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setLocation("/delivery")} aria-label="Stay on delivery home">
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className="min-w-0"><p className="truncate text-sm font-black">cMart Partner</p><p className="text-[11px] text-muted-foreground">Delivery workspace</p></div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-2 sm:flex">
             <Badge className={userOnline ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}>{userOnline ? "ONLINE" : "OFFLINE"}</Badge>
-            <Button size="icon" variant="ghost" onClick={logout} aria-label="Log out"><LogOut className="h-4 w-4" /></Button>
+            <Button size="icon" variant="ghost" onClick={confirmLogout} aria-label="Log out"><LogOut className="h-4 w-4" /></Button>
+          </div>
+        </div>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 pb-3 sm:hidden">
+          <button
+            type="button"
+            onClick={toggleOnline}
+            disabled={onlineBusy}
+            className={`flex h-12 min-w-[132px] items-center gap-2 rounded-full border-2 px-2 text-sm font-black transition ${userOnline ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-slate-100 text-slate-600"}`}
+            aria-label={userOnline ? "Go offline" : "Go online"}
+          >
+            <span className={`flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm ${userOnline ? "text-emerald-600" : "text-slate-400"}`}><Power className="h-4 w-4" /></span>
+            {userOnline ? "Online" : "Offline"}
+          </button>
+          <div className="flex items-center gap-2">
+            <Button size="icon" variant="outline" className="h-11 w-11 rounded-full" onClick={() => document.getElementById("orders")?.scrollIntoView({ behavior: "smooth" })} aria-label="Open delivery notifications"><Bell className="h-5 w-5" /></Button>
+            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-slate-100 ring-2 ring-slate-200">
+              {(user as any)?.avatarUrl ? <img src={(user as any).avatarUrl} alt="Profile" className="h-full w-full object-cover" /> : <CircleUserRound className="h-6 w-6 text-slate-500" />}
+            </div>
           </div>
         </div>
       </header>
 
       <main id="top" className="app-content mx-auto max-w-6xl space-y-4 px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6">
-        <section className="rounded-2xl bg-slate-950 p-5 text-white shadow-sm sm:p-6">
+        <section className="order-first overflow-hidden rounded-2xl border bg-white p-2 shadow-sm sm:hidden">
+          <div className="flex items-center justify-between px-2 pb-2 pt-1"><div><h2 className="font-black">Live area map</h2><p className="text-xs text-muted-foreground">Nearby shops and your current location</p></div><Button size="sm" variant="outline" className="rounded-full" onClick={updateGpsOnce} disabled={updateLocation.isPending}><LocateFixed className="mr-1 h-4 w-4" /> Locate</Button></div>
+          <RiderMapPreview location={livePoint} currentOrder={currentOrder} />
+        </section>
+        <section className="rounded-2xl bg-slate-950 p-4 text-white shadow-sm sm:hidden">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10"><Bike className="h-6 w-6 text-orange-400" /></div>
+            <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-wider text-white/55">Delivery workspace</p><h1 className="truncate text-xl font-black">Good to see you, {user?.name?.split(" ")[0] ?? "Partner"}</h1></div>
+          </div>
+          <div className="mt-4 flex items-center justify-between rounded-xl bg-white/10 px-3 py-2 text-sm"><span>{userOnline ? `Online for ${formatDuration(currentSessionSeconds)}` : "Go online to receive nearby orders"}</span><LocateFixed className={`h-4 w-4 ${autoGps ? "text-emerald-300" : "text-white/50"}`} /></div>
+        </section>
+        <section className="hidden rounded-2xl bg-slate-950 p-5 text-white shadow-sm sm:block sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/55">Current status</p>
@@ -278,6 +321,23 @@ export default function DeliveryDashboard() {
           <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">Pickup</p><p className="font-semibold">{currentOrder.store?.address ?? "Seller location"}</p></div><div><p className="text-xs text-muted-foreground">Drop</p><p className="font-semibold">{(currentOrder as any).pickupAddress ?? (currentOrder as any).addressSnapshot?.city ?? "Customer location"}</p></div><div><p className="text-xs text-muted-foreground">Order earning</p><p className="font-bold">₹{Number(currentOrder.deliveryFee ?? 0).toFixed(0)}</p></div></div>
           <div className="mt-4 flex flex-wrap gap-2"><Link href={`/track/${currentOrder.id}`}><Button className="bg-orange-500 hover:bg-orange-600"><Navigation className="mr-2 h-4 w-4" /> Navigate</Button></Link><Button variant="outline" onClick={() => document.getElementById("orders")?.scrollIntoView({ behavior: "smooth" })}>View order</Button></div>
         </section>}
+
+        <section className="overflow-hidden rounded-2xl bg-slate-900 text-white shadow-sm sm:hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-4">
+            <div className="flex items-center gap-3"><Gift className="h-7 w-7 text-orange-400" /><div><p className="font-black">Deliver locally with cMart</p><p className="text-xs text-white/65">New orders appear here when you are online.</p></div></div>
+            <Button size="sm" variant="secondary" className="shrink-0 rounded-full" onClick={() => document.getElementById("orders")?.scrollIntoView({ behavior: "smooth" })}>View orders</Button>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border bg-white p-4 shadow-sm sm:hidden">
+          <div className="mb-3 flex items-center justify-between"><h2 className="flex items-center gap-2 text-lg font-black"><CheckCircle className="h-5 w-5 text-emerald-600" /> Today&apos;s progress</h2><Link href="#earnings" className="text-sm font-bold text-orange-600">View details</Link></div>
+          <div className="grid grid-cols-2 divide-x divide-y rounded-xl border bg-slate-50">
+            <ProgressMetric label="Earnings" value={`₹${Number(dashboardSummary?.earningsToday ?? 0).toFixed(0)}`} />
+            <ProgressMetric label="Trips" value={String(dashboardSummary?.ordersToday ?? 0)} />
+            <ProgressMetric label="Online time" value={formatDuration(dashboardSummary?.onlineSecondsToday ?? 0)} />
+            <ProgressMetric label="Wallet" value={`₹${Number((user as any)?.walletBalance ?? dashboardSummary?.walletBalance ?? 0).toFixed(0)}`} />
+          </div>
+        </section>
 
         <section id="earnings" className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -480,7 +540,10 @@ export default function DeliveryDashboard() {
 }
 
 function BottomNavLink({ href, label, icon }: { href: string; label: string; icon: ReactNode }) {
-  return <Link href={href} className="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-semibold text-slate-500 transition-colors hover:bg-orange-50 hover:text-orange-600">{icon}<span>{label}</span></Link>;
+  const className = "flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-semibold text-slate-500 transition-colors hover:bg-orange-50 hover:text-orange-600 active:bg-orange-50 active:text-orange-600";
+  return href.startsWith("#")
+    ? <a href={href} className={className}>{icon}<span>{label}</span></a>
+    : <Link href={href} className={className}>{icon}<span>{label}</span></Link>;
 }
 
 function formatDuration(seconds: number) {
@@ -497,4 +560,89 @@ function SummaryCard({ label, value, detail, accent }: { label: string; value: s
 
 function MetricTile({ label, value, sub }: { label: string; value: string; sub: string }) {
   return <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs font-semibold text-muted-foreground">{label}</p><p className="mt-1 text-xl font-bold">{value}</p><p className="mt-1 text-xs text-muted-foreground">{sub}</p></div>;
+}
+
+function RiderMapPreview({ location, currentOrder }: { location: { lat: number; lng: number } | null; currentOrder: any }) {
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const [nearbyShops, setNearbyShops] = useState<any[]>([]);
+  const [selectedShop, setSelectedShop] = useState<any | null>(null);
+  const [assignedZones, setAssignedZones] = useState<any[]>([]);
+  const mapRef = useRef<L.Map | null>(null);
+  const riderRef = useRef<L.CircleMarker | null>(null);
+  const shopRefs = useRef<L.CircleMarker[]>([]);
+  const zoneRefs = useRef<L.Polygon[]>([]);
+  const routeRef = useRef<L.Polyline | null>(null);
+  useEffect(() => {
+    if (!container || mapRef.current || !location) return;
+    const map = L.map(container, { zoomControl: true, scrollWheelZoom: false, doubleClickZoom: true, touchZoom: true, dragging: true, attributionControl: true }).setView([location.lat, location.lng], 15);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
+    mapRef.current = map;
+    customFetch<any[]>("/api/delivery/my-zones", { responseType: "json" }).then((zones) => {
+      setAssignedZones(zones ?? []);
+      (zones ?? []).forEach((zone) => {
+        const rings = boundaryToLeafletRings(zone.boundaryGeometry);
+        if (!rings.length) return;
+        const layer = L.polygon(rings as L.LatLngExpression[][], { color: "#f97316", weight: 3, opacity: 0.95, fillColor: "#fb923c", fillOpacity: 0.2 }).addTo(map);
+        layer.bindTooltip(zone.name ?? zone.code ?? "Assigned service zone", { sticky: true, direction: "center" });
+        zoneRefs.current.push(layer);
+      });
+    }).catch(() => undefined);
+    riderRef.current = L.circleMarker([location.lat, location.lng], { radius: 9, color: "#fff", weight: 4, fillColor: "#2563eb", fillOpacity: 1 }).addTo(map).bindTooltip("Your live location", { permanent: true, direction: "top", offset: [0, -8] });
+    const store = currentOrder?.store;
+    if (store?.lat && store?.lng) L.circleMarker([Number(store.lat), Number(store.lng)], { radius: 8, color: "#fff", weight: 3, fillColor: "#16a34a", fillOpacity: 1 }).addTo(map).bindPopup(`<strong>${escapePopup(store.name ?? "Pickup store")}</strong><br/>${escapePopup(store.address ?? "Seller location")}`);
+    customFetch<any[]>("/api/delivery/nearby-stores", { responseType: "json" }).then((stores) => {
+      setNearbyShops(stores ?? []);
+      (stores ?? []).forEach((shop) => {
+        if (!shop.lat || !shop.lng || Number(shop.id) === Number(store?.id)) return;
+        const marker = L.circleMarker([Number(shop.lat), Number(shop.lng)], { radius: 7, color: "#fff", weight: 3, fillColor: "#f97316", fillOpacity: 1 }).addTo(map);
+        marker.bindPopup(`<strong>${escapePopup(shop.name ?? "Nearby shop")}</strong><br/>${escapePopup(shop.address ?? "Local store")}<br/><small>Tap the shop card below to start navigation</small>`);
+        marker.on("click", () => setSelectedShop(shop));
+        shopRefs.current.push(marker);
+      });
+    }).catch(() => undefined);
+    return () => { riderRef.current?.remove(); shopRefs.current.forEach((marker) => marker.remove()); shopRefs.current = []; zoneRefs.current.forEach((layer) => layer.remove()); zoneRefs.current = []; routeRef.current?.remove(); routeRef.current = null; map.remove(); mapRef.current = null; };
+  }, [container, Boolean(location), currentOrder?.id]);
+  useEffect(() => {
+    if (!mapRef.current || !riderRef.current || !location) return;
+    riderRef.current.setLatLng([location.lat, location.lng]);
+    mapRef.current.panTo([location.lat, location.lng], { animate: true, duration: 0.35 });
+    if (selectedShop?.lat && selectedShop?.lng) {
+      routeRef.current?.remove();
+      routeRef.current = L.polyline([[location.lat, location.lng], [Number(selectedShop.lat), Number(selectedShop.lng)]], { color: "#f97316", weight: 5, opacity: 0.9, dashArray: "10 8" }).addTo(mapRef.current);
+    }
+  }, [location?.lat, location?.lng, selectedShop?.id]);
+  if (!location) return <div className="flex h-72 items-center justify-center rounded-xl bg-slate-100 px-6 text-center text-sm text-muted-foreground">Tap Locate or enable Live GPS to show your position on the map.</div>;
+  return <>
+    <div ref={setContainer} className="h-72 w-full overflow-hidden rounded-xl bg-slate-100" />
+    {assignedZones.length > 0 && <p className="px-1 pt-2 text-xs font-semibold text-orange-700">Highlighted zone: {assignedZones.map((zone) => zone.name ?? zone.code).join(", ")}</p>}
+    {!currentOrder && <div className="mt-2 space-y-2">
+      <p className="px-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Nearby seller shops</p>
+      {nearbyShops.length === 0 ? <p className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-muted-foreground">No nearby seller shop is available right now.</p> : nearbyShops.map((shop) => {
+        const active = Number(selectedShop?.id) === Number(shop.id);
+        return <button key={shop.id} type="button" onClick={() => setSelectedShop(shop)} className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left transition ${active ? "border-orange-500 bg-orange-50" : "bg-white hover:border-orange-300"}`}>
+          <span className="min-w-0"><span className="block truncate font-bold">{shop.name ?? "Seller shop"}</span><span className="block truncate text-xs text-muted-foreground">{shop.address ?? "Nearby store"}</span></span>
+          <span className="shrink-0 text-xs font-bold text-orange-600">{active ? "Route ready" : "Show route"}</span>
+        </button>;
+      })}
+      {selectedShop?.lat && selectedShop?.lng && <a className="flex h-10 items-center justify-center rounded-xl bg-orange-500 text-sm font-bold text-white hover:bg-orange-600" href={`https://www.google.com/maps/dir/?api=1&origin=${location.lat},${location.lng}&destination=${selectedShop.lat},${selectedShop.lng}`} target="_blank" rel="noreferrer">Navigate to {selectedShop.name ?? "seller shop"}</a>}
+    </div>}
+  </>;
+}
+
+function escapePopup(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character] ?? character);
+}
+
+function boundaryToLeafletRings(geometry: any): [number, number][][] {
+  const raw = geometry?.type === "Polygon" ? geometry.coordinates : geometry?.coordinates ?? geometry?.points ?? geometry?.vertices ?? geometry?.path;
+  if (!Array.isArray(raw)) return [];
+  const rings = geometry?.type === "Polygon" ? raw : [raw];
+  return rings.filter(Array.isArray).map((ring: any[]) => ring.map((point) => {
+    if (Array.isArray(point)) return [Number(point[1]), Number(point[0])] as [number, number];
+    return [Number(point?.lat ?? point?.latitude), Number(point?.lng ?? point?.lon ?? point?.longitude)] as [number, number];
+  }).filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng))).filter((ring: [number, number][]) => ring.length >= 3);
+}
+
+function ProgressMetric({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0 px-3 py-3"><p className="truncate text-xs font-semibold text-muted-foreground">{label}</p><p className="mt-1 truncate text-xl font-black text-slate-950">{value}</p></div>;
 }

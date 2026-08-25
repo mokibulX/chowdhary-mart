@@ -15,7 +15,7 @@ const NAV = [
 ];
 
 export function VendorLayout({ children }: { children: ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user, confirmLogout } = useAuth();
   const [location] = useLocation();
 
   const navItems = (mobile = false) => (
@@ -78,7 +78,7 @@ export function VendorLayout({ children }: { children: ReactNode }) {
               <div className="mt-auto border-t p-3">
                 <div className="mb-2 truncate px-3 text-xs text-muted-foreground">{user?.name}</div>
                 <SheetClose asChild>
-                  <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-red-500" onClick={logout} data-testid="btn-logout-mobile">
+                  <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-red-500" onClick={confirmLogout} data-testid="btn-logout-mobile">
                     <LogOut className="mr-2 h-4 w-4" /> Sign Out
                   </Button>
                 </SheetClose>
@@ -109,7 +109,7 @@ export function VendorLayout({ children }: { children: ReactNode }) {
         {navItems()}
         <div className="p-3 border-t">
           <div className="text-xs text-muted-foreground px-3 mb-2 truncate">{user?.name}</div>
-          <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-red-500" onClick={logout} data-testid="btn-logout">
+          <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-red-500" onClick={confirmLogout} data-testid="btn-logout">
             <LogOut className="w-4 h-4 mr-2" />Sign Out
           </Button>
         </div>

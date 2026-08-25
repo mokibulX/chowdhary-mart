@@ -1,13 +1,20 @@
 import { Router } from "express";
 import { createHash, randomUUID } from "node:crypto";
-import { eq, desc, and, sql } from "drizzle-orm";
-import { db, ordersTable, deliveryPartnersTable, liveLocationsTable, orderTrackingTable, storesTable, activeDeliveryLocationsTable, deliveryTrackingHistoryTable } from "@workspace/db";
+import { eq, desc, and, inArray, isNull, sql } from "drizzle-orm";
+import { db, ordersTable, deliveryPartnersTable, liveLocationsTable, orderTrackingTable, storesTable, activeDeliveryLocationsTable, deliveryTrackingHistoryTable, serviceZonesTable } from "@workspace/db";
 import { requireApprovedDeliveryPartner, requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { riderZoneIds, isInsideZone } from "../lib/zones";
 import { createAndPushNotification } from "../lib/push-service";
 import { deliveryOtp, expireOrderIfNeeded, lifecycleMeta, pickupOtp } from "../lib/order-lifecycle";
 import { testMode } from "../lib/test-mode";
 import { ensureFinanceTables, settleCompletedOrder } from "../lib/finance";
+import {
+  acceptDeliveryOffer,
+  advanceDeliveryOffer,
+  ensureDeliveryOffersTable,
+  getCurrentDeliveryOffer,
+  rejectDeliveryOffer,
+} from "../lib/delivery-offers";
 
 const router = Router();
 
@@ -68,7 +75,8 @@ async function activeDeliveryForPartner(partnerId: number) {
     select 1 from order_tracking ot
     join orders o on o.id = ot.order_id
     where ot.delivery_partner_id = ${partnerId}
-      and o.status in ('packed', 'picked_up', 'on_the_way', 'arriving')
+      and (o.status in ('packed', 'picked_up', 'on_the_way', 'arriving')
+        or (o.status = 'confirmed' and ot.message ilike '%accepted%'))
       and coalesce(ot.message, '') not ilike '%rejected%'
     limit 1
   `);
@@ -239,6 +247,31 @@ async function assertDeliveryAssignment(orderId: number, deliveryPartnerId: numb
   return latestAssigned.deliveryPartnerId === deliveryPartnerId;
 }
 
+async function maybeNotifyLatePickup(order: typeof ordersTable.$inferSelect, partnerId: number, userId: number) {
+  if (!("confirmed" === order.status || "preparing" === order.status || "packed" === order.status)) return;
+  const tracking = await db.select().from(orderTrackingTable).where(eq(orderTrackingTable.orderId, order.id));
+  const accepted = tracking.find((item) => item.deliveryPartnerId === partnerId && item.message?.includes("accepted"));
+  if (!accepted || Date.now() < new Date(accepted.updatedAt).getTime() + 4 * 60_000) return;
+  if (tracking.some((item) => item.deliveryPartnerId === partnerId && item.message?.includes("Late delivery reminder sent"))) return;
+  await db.insert(orderTrackingTable).values({
+    orderId: order.id,
+    deliveryPartnerId: partnerId,
+    status: order.status,
+    message: "Late delivery reminder sent to delivery partner",
+  });
+  try {
+    await createAndPushNotification({
+      userId,
+      type: "delivery_late_reminder",
+      title: "Pickup is taking longer than expected",
+      body: `Order #${order.orderNumber} is still waiting for pickup. Please reach the seller as soon as possible.`,
+      data: { orderId: order.id, status: order.status },
+    });
+  } catch {
+    // Tracking remains the durable record if push is unavailable.
+  }
+}
+
 // GET /api/delivery/dashboard-summary
 router.get("/dashboard-summary", async (req: AuthRequest, res) => {
   try {
@@ -296,6 +329,7 @@ router.get("/dashboard-summary", async (req: AuthRequest, res) => {
     }
     res.json({
       currentStatus: currentDeliveryStatus(dp.isOnline, activeDelivery),
+      currentLocation: dp.currentLat && dp.currentLng ? { lat: Number(dp.currentLat), lng: Number(dp.currentLng) } : null,
       currentOnlineStartedAt: onlineStartedAt,
       onlineSecondsToday,
       onlineSecondsWeek,
@@ -316,6 +350,77 @@ router.get("/dashboard-summary", async (req: AuthRequest, res) => {
   }
 });
 
+// GET /api/delivery/nearby-stores
+router.get("/nearby-stores", async (req: AuthRequest, res) => {
+  try {
+    const zones = await riderZoneIds(req.user!.userId);
+    if (!zones.length) { res.json([]); return; }
+    const stores = await db.select().from(storesTable);
+    res.json(stores
+      .filter((store) => store.isActive !== false && Boolean(store.zoneId) && zones.includes(store.zoneId!))
+      .map((store) => ({ id: store.id, name: store.name, address: store.address, bannerUrl: store.bannerUrl, lat: store.lat, lng: store.lng })));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load nearby stores" });
+  }
+});
+
+// GET /api/delivery/my-zones
+router.get("/my-zones", async (req: AuthRequest, res) => {
+  try {
+    const zoneIds = await riderZoneIds(req.user!.userId);
+    if (!zoneIds.length) { res.json([]); return; }
+    const zones = await db.select({
+      id: serviceZonesTable.id,
+      code: serviceZonesTable.code,
+      name: serviceZonesTable.name,
+      boundaryGeometry: serviceZonesTable.boundaryGeometry,
+      centreLatitude: serviceZonesTable.centreLatitude,
+      centreLongitude: serviceZonesTable.centreLongitude,
+    }).from(serviceZonesTable).where(and(inArray(serviceZonesTable.id, zoneIds), eq(serviceZonesTable.isActive, true), isNull(serviceZonesTable.archivedAt)));
+    res.json(zones);
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load assigned service zones" });
+  }
+});
+
+// GET/PATCH /api/delivery/payout-account
+router.get("/payout-account", async (req: AuthRequest, res) => {
+  try {
+    const accountRows = await db.execute(sql`
+      select bank_name as "bankName", bank_account_number as "bankAccountNumber", ifsc
+      from delivery_partners where user_id = ${req.user!.userId} limit 1
+    `);
+    const value = ((accountRows as any).rows?.[0] ?? {}) as { bankName?: string | null; bankAccountNumber?: string | null; ifsc?: string | null };
+    res.json({ bankName: value?.bankName ?? "", accountNumber: value?.bankAccountNumber ? `****${String(value.bankAccountNumber).slice(-4)}` : "", ifsc: value?.ifsc ?? "", hasAccount: Boolean(value?.bankAccountNumber && value?.ifsc) });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load payout account" });
+  }
+});
+
+router.patch("/payout-account", async (req: AuthRequest, res) => {
+  try {
+    const bankName = String(req.body?.bankName ?? "").trim();
+    const accountNumber = String(req.body?.accountNumber ?? "").replace(/\D/g, "");
+    const ifsc = String(req.body?.ifsc ?? "").trim().toUpperCase();
+    if (bankName.length < 3 || accountNumber.length < 9 || !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
+      res.status(400).json({ error: "Enter a valid bank name, account number and IFSC." });
+      return;
+    }
+    await db.execute(sql`
+      update delivery_partners
+      set bank_name = ${bankName}, bank_account_number = ${accountNumber}, ifsc = ${ifsc}, bank_verification_status = 'pending_review'
+      where user_id = ${req.user!.userId}
+    `);
+    res.json({ saved: true, bankName, accountNumber: `****${accountNumber.slice(-4)}`, ifsc, verificationStatus: "pending_review" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not save payout account" });
+  }
+});
+
 // GET /api/delivery/orders
 router.get("/orders", async (req: AuthRequest, res) => {
   try {
@@ -333,6 +438,7 @@ router.get("/orders", async (req: AuthRequest, res) => {
 
     const orders = await Promise.all(orderIds.map(async id => {
       const [rawOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, id)).limit(1);
+      if (rawOrder) await maybeNotifyLatePickup(rawOrder, dp.id, req.user!.userId);
       const order = rawOrder ? await expireOrderIfNeeded(rawOrder) : null;
       const store = order ? storeMap.get(order.storeId) : null;
       const lifecycle = order ? await lifecycleMeta(order) : null;
@@ -371,6 +477,8 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
   try {
     const dp = await getDP(req.user!.userId);
     if (!dp || !dp.isVerified || !dp.isOnline) { res.status(200).json([]); return; }
+    if (await activeDeliveryForPartner(dp.id)) { res.status(200).json([]); return; }
+    await ensureDeliveryOffersTable();
     const zones = await riderZoneIds(req.user!.userId);
     if (!zones.length) { res.status(200).json([]); return; }
     const orders = await db.select().from(ordersTable)
@@ -380,14 +488,18 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
     const stores = await db.select().from(storesTable);
     const storeMap = new Map(stores.map(s => [s.id, s]));
     const activeOrders = await Promise.all(orders.map(expireOrderIfNeeded));
-    res.json(activeOrders
+    const available = activeOrders
       .filter((order) => order.status === "confirmed")
-      .filter((order) => Boolean(order.zoneId) && zones.includes(order.zoneId!))
-      .map(order => {
+      .filter((order) => Boolean(order.zoneId) && zones.includes(order.zoneId!));
+    const offers = await Promise.all(available.map(async (order) => ({ order, offer: await advanceDeliveryOffer(order.id) })));
+    res.json(offers
+      .filter(({ offer }) => Number(offer?.deliveryPartnerId) === dp.id)
+      .map(({ order, offer }) => {
         const store = storeMap.get(order.storeId);
         return {
           ...order,
           store,
+          deliveryOffer: offer,
           liveTracking: {
             orderId: order.id,
             status: order.status,
@@ -400,6 +512,7 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
               address: order.pickupAddress ?? "Confirmed pickup point",
             } : null,
             lifecycle: { sellerDecisionDeadline: null, preparationDeadline: null, pickupDeadline: null },
+            deliveryOffer: offer,
           },
         };
       }));
@@ -424,6 +537,15 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
     if (!order.zoneId || !zones.includes(order.zoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
     const [store] = await db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
     if (!store?.zoneId || !zones.includes(store.zoneId)) { res.status(403).json({ error: "Pickup store is outside your service zone." }); return; }
+
+    if (await activeDeliveryForPartner(dp.id)) {
+      res.status(409).json({ error: "Finish your current delivery before accepting another order." });
+      return;
+    }
+    if (!(await acceptDeliveryOffer(orderId, dp.id))) {
+      res.status(409).json({ error: "This delivery request has expired or was offered to another partner." });
+      return;
+    }
 
     const latestAssigned = await getLatestAssignedTracking(orderId);
     if (latestAssigned && !isRejectedTracking(latestAssigned.message) && latestAssigned.deliveryPartnerId !== dp.id) {
@@ -472,13 +594,18 @@ router.post("/orders/:orderId/reject", async (req: AuthRequest, res) => {
       res.status(403).json({ error: "This order belongs to another service zone." });
       return;
     }
+    if (!(await getCurrentDeliveryOffer(orderId, dp.id))) {
+      res.status(409).json({ error: "This delivery request has expired or is no longer assigned to you." });
+      return;
+    }
+    const nextOffer = await rejectDeliveryOffer(orderId, dp.id);
     await db.insert(orderTrackingTable).values({
       orderId,
       deliveryPartnerId: dp.id,
       status: "confirmed",
       message: "Delivery partner rejected the order",
     });
-    res.json({ message: "Order rejected" });
+    res.json({ message: "Order rejected", nextOffer });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

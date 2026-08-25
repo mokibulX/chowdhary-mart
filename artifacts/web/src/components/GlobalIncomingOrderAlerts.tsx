@@ -44,8 +44,8 @@ export function GlobalIncomingOrderAlerts() {
         }
         if (user.role === "delivery_partner" && (user as any).isOnline !== false) {
           const orders = await customFetch<any[]>("/api/delivery/available-orders", { responseType: "json" });
-          const eligible = (orders ?? []).filter((order) => order.status === "confirmed" && !order.deliveryPartnerId);
-          const alerts = eligible.map((order) => ({ key: `rider-${user.id}-${order.id}-confirmed`, role: "rider" as const, order }));
+          const eligible = (orders ?? []).filter((order) => order.status === "confirmed" && order.deliveryOffer);
+          const alerts = eligible.map((order) => ({ key: `rider-${user.id}-${order.id}-${order.deliveryOffer.id}`, role: "rider" as const, order }));
           pushAlerts(alerts);
         }
       } catch {
@@ -162,7 +162,7 @@ export function GlobalIncomingOrderAlerts() {
               <p className="mt-1 text-sm text-white/70">ChowdharyMart urgent request</p>
             </div>
             <div className="text-right">
-              <Countdown createdAt={active.order.createdAt} seconds={active.role === "seller" ? 60 : 45} />
+              <Countdown createdAt={active.role === "rider" ? active.order.deliveryOffer?.offeredAt : active.order.createdAt} seconds={active.role === "seller" ? 60 : 10} />
               {queue.length > 1 && <Badge className="mt-2 bg-white text-gray-950">{queue.length - 1} queued</Badge>}
             </div>
           </div>

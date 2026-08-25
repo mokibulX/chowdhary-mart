@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation, Redirect, Link } from "wouter";
 import type { ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -54,7 +54,7 @@ import { GlobalTranslator } from "@/components/GlobalTranslator";
 import { GlobalIncomingOrderAlerts } from "@/components/GlobalIncomingOrderAlerts";
 import { DemoModeBadge } from "@/components/DemoModeBadge";
 import { Button } from "@/components/ui/button";
-import { Store as StoreIcon } from "lucide-react";
+import { ArrowLeft, CircleUserRound, DollarSign, Home as HomeIcon, Package, Store as StoreIcon, WalletCards } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -142,7 +142,7 @@ function VendorRoute({ component: Component }: { component: () => ReactElement }
 }
 
 function ApprovedVendorGate({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user, confirmLogout } = useAuth();
   if (user?.role === "admin" || (user?.role === "vendor" && (user as any)?.vendorStatus === "approved")) {
     return <>{children}</>;
   }
@@ -153,7 +153,7 @@ function ApprovedVendorGate({ children }: { children: React.ReactNode }) {
       <p className="mt-2 text-sm text-muted-foreground">
         Your shop owner registration is submitted. Admin approval hole apni product add, order manage and store edit korte parben.
       </p>
-      <Button className="mt-5" variant="outline" onClick={logout}>Sign out</Button>
+      <Button className="mt-5" variant="outline" onClick={confirmLogout}>Sign out</Button>
     </div>
   );
 }
@@ -169,17 +169,41 @@ function AdminRoute({ component: Component }: { component: () => ReactElement })
 }
 
 function DeliveryRoute({ component: Component }: { component: () => ReactElement }) {
+  const dashboard = Component === DeliveryDashboard;
   return (
     <RequireAuth roles={["delivery_partner", "admin"]}>
       <ApprovedDeliveryGate>
-        <Component />
+        {dashboard ? <Component /> : <div className="min-h-screen bg-[#f6f7f9] pb-24">
+          <header className="sticky top-0 z-40 border-b bg-white/95 px-3 py-3 shadow-sm backdrop-blur sm:px-5">
+            <div className="mx-auto flex max-w-6xl items-center gap-3">
+              <Link href="/delivery" className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-orange-50" aria-label="Back to delivery home"><ArrowLeft className="h-5 w-5" /></Link>
+              <Link href="/delivery" className="font-bold text-slate-900">cMart Partner</Link>
+              <Link href="/delivery" className="ml-auto text-sm font-semibold text-orange-600">Home</Link>
+            </div>
+          </header>
+          <Component />
+          <DeliveryMobileNav />
+        </div>}
       </ApprovedDeliveryGate>
     </RequireAuth>
   );
 }
 
+function DeliveryMobileNav() {
+  const itemClass = "flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-semibold text-slate-500 transition-colors hover:bg-orange-50 hover:text-orange-600 active:bg-orange-50 active:text-orange-600";
+  return <nav className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden" aria-label="Delivery navigation">
+    <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+      <Link href="/delivery" className={itemClass}><HomeIcon className="h-5 w-5" /><span>Home</span></Link>
+      <a href="/delivery#orders" className={itemClass}><Package className="h-5 w-5" /><span>Orders</span></a>
+      <a href="/delivery#earnings" className={itemClass}><DollarSign className="h-5 w-5" /><span>Earnings</span></a>
+      <Link href="/delivery/wallet" className={itemClass}><WalletCards className="h-5 w-5" /><span>Wallet</span></Link>
+      <Link href="/delivery/profile" className={itemClass}><CircleUserRound className="h-5 w-5" /><span>Profile</span></Link>
+    </div>
+  </nav>;
+}
+
 function ApprovedDeliveryGate({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user, confirmLogout } = useAuth();
   if (user?.role === "admin" || (user as any)?.deliveryStatus === "approved") return <>{children}</>;
   return (
     <div className="app-shell items-center justify-center bg-gray-50 p-4">
@@ -189,7 +213,7 @@ function ApprovedDeliveryGate({ children }: { children: React.ReactNode }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Admin approve korle delivery orders receive, OTP verify and live map panel use korte parben.
         </p>
-        <Button className="mt-5" variant="outline" onClick={logout}>Sign out</Button>
+        <Button className="mt-5" variant="outline" onClick={confirmLogout}>Sign out</Button>
       </div>
     </div>
   );
