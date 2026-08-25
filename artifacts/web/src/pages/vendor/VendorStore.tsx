@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Store, Clock, Star, Camera, ImagePlus, LocateFixed, MapPin } from "lucide-react";
+import { Store, Star, Camera, ImagePlus, LocateFixed, MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getBrowserLocation } from "@/lib/live-location";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
@@ -26,10 +26,6 @@ const schema = z.object({
   phone: z.string().optional().or(z.literal("")),
   logoUrl: z.string().optional().or(z.literal("")),
   bannerUrl: z.string().min(1, "Shop front photo is required"),
-  deliveryFee: z.coerce.number().min(0),
-  freeDeliveryAbove: z.coerce.number().min(0),
-  minOrderValue: z.coerce.number().min(0),
-  estimatedDeliveryMins: z.coerce.number().min(5).max(120),
   lat: z.coerce.number().optional(),
   lng: z.coerce.number().optional(),
   pickupAddress: z.string().optional().or(z.literal("")),
@@ -50,7 +46,7 @@ export default function VendorStore() {
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors, isDirty } } = useForm<FormData>({
     resolver: zodResolver(schema as any),
-    defaultValues: { isOpen: true, deliveryFee: 49, freeDeliveryAbove: 299, minOrderValue: 99, estimatedDeliveryMins: 40 },
+    defaultValues: { isOpen: true },
   });
   const isOpen = watch("isOpen");
   const watchedLat = Number(watch("lat") ?? 0);
@@ -73,10 +69,6 @@ export default function VendorStore() {
         phone: store.phone ?? "",
         logoUrl: store.logoUrl ?? "",
         bannerUrl: store.bannerUrl ?? "",
-        deliveryFee: Number(store.deliveryFee ?? 49),
-        freeDeliveryAbove: Number(store.freeDeliveryAbove ?? 299),
-        minOrderValue: Number(store.minOrderValue ?? 99),
-        estimatedDeliveryMins: store.estimatedDeliveryMins ?? 40,
         lat: Number(store.lat ?? 0),
         lng: Number(store.lng ?? 0),
         pickupAddress: (store as any).pickupAddress ?? store.address ?? "",
@@ -90,9 +82,6 @@ export default function VendorStore() {
       {
         data: {
           ...data,
-          deliveryFee: String(data.deliveryFee),
-          freeDeliveryAbove: String(data.freeDeliveryAbove),
-          minOrderValue: String(data.minOrderValue),
           lat: data.lat,
           lng: data.lng,
           pickupAddress: data.pickupAddress,
@@ -106,10 +95,6 @@ export default function VendorStore() {
             phone: savedStore.phone ?? "",
             logoUrl: savedStore.logoUrl ?? "",
             bannerUrl: savedStore.bannerUrl ?? "",
-            deliveryFee: Number(savedStore.deliveryFee ?? 49),
-            freeDeliveryAbove: Number(savedStore.freeDeliveryAbove ?? 299),
-            minOrderValue: Number(savedStore.minOrderValue ?? 99),
-            estimatedDeliveryMins: Number(savedStore.estimatedDeliveryMins ?? 40),
             lat: Number(savedStore.lat ?? 0),
             lng: Number(savedStore.lng ?? 0),
             pickupAddress: savedStore.pickupAddress ?? savedStore.address ?? "",
@@ -267,35 +252,6 @@ export default function VendorStore() {
               }}
             />
             <p className="text-xs text-muted-foreground">Rapido-style pickup point: delivery partner and admin will see this store location on live tracking.</p>
-          </CardContent>
-        </Card>
-
-        {/* Delivery settings */}
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Clock className="w-4 h-4" />Delivery Settings</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-xl border border-green-100 bg-green-50 p-3 text-sm text-green-800">
-              Discount style: customer will see delivery fee as FREE when cart reaches the free-delivery amount. Admin can also control this from Store panel.
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Delivery Fee (₹)</Label>
-                <Input type="number" {...register("deliveryFee")} data-testid="input-delivery-fee" />
-              </div>
-              <div className="space-y-1">
-                <Label>Free Delivery Above (₹)</Label>
-                <Input type="number" {...register("freeDeliveryAbove")} data-testid="input-free-delivery" />
-              </div>
-              <div className="space-y-1">
-                <Label>Min Order Value (₹)</Label>
-                <Input type="number" {...register("minOrderValue")} data-testid="input-min-order" />
-              </div>
-              <div className="space-y-1">
-                <Label>Estimated Delivery (mins)</Label>
-                <Input type="number" min={5} max={120} {...register("estimatedDeliveryMins")} data-testid="input-eta" />
-                {errors.estimatedDeliveryMins && <p className="text-xs text-red-500">{errors.estimatedDeliveryMins.message}</p>}
-              </div>
-            </div>
           </CardContent>
         </Card>
 

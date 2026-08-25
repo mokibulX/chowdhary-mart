@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { eq, ilike, and, desc, asc, inArray, sql, or } from "drizzle-orm";
 import { db, productsTable, categoriesTable, storesTable, reviewsTable } from "@workspace/db";
+import { toPublicStore } from "../lib/public-store";
 import { getActiveDeliveryZones } from "../lib/zones";
 
 const router = Router();
@@ -253,7 +254,7 @@ router.get("/:productId", async (req, res) => {
       db.select().from(storesTable).where(eq(storesTable.id, product.storeId)).limit(1).then(r => r[0]),
     ]);
 
-    res.json({ ...product, category, store });
+    res.json({ ...product, category, store: toPublicStore(store) });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

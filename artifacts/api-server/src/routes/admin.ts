@@ -1557,6 +1557,14 @@ router.patch("/stores/:storeId", async (req: AuthRequest, res) => {
     if (req.body.deliveryFee !== undefined) patch.deliveryFee = String(Number(req.body.deliveryFee || 0).toFixed(2));
     if (req.body.freeDeliveryAbove !== undefined) patch.freeDeliveryAbove = String(Number(req.body.freeDeliveryAbove || 0).toFixed(2));
     if (req.body.minOrderValue !== undefined) patch.minOrderValue = String(Number(req.body.minOrderValue || 0).toFixed(2));
+    if (req.body.estimatedDeliveryMins !== undefined) {
+      const estimatedDeliveryMins = Number(req.body.estimatedDeliveryMins);
+      if (!Number.isFinite(estimatedDeliveryMins) || estimatedDeliveryMins < 5 || estimatedDeliveryMins > 120) {
+        res.status(400).json({ error: "Estimated delivery time must be between 5 and 120 minutes." });
+        return;
+      }
+      patch.estimatedDeliveryMins = Math.round(estimatedDeliveryMins);
+    }
     if (req.body.isOpen !== undefined) patch.isOpen = Boolean(req.body.isOpen);
     if (req.body.isActive !== undefined) patch.isActive = Boolean(req.body.isActive);
     if (req.body.zoneId !== undefined) {

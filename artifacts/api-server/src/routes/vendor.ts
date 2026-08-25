@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, and, desc, sql, gte } from "drizzle-orm";
 import {
-  db, storesTable, ordersTable, orderItemsTable, productsTable,
+  db, storesTable, ordersTable, orderItemsTable, productsTable, serviceZonesTable, addressesTable,
   orderTrackingTable, usersTable, mediaLibraryTable, categoriesTable
 } from "@workspace/db";
 import { readEnv } from "@workspace/db";
@@ -16,6 +16,27 @@ const router = Router();
 router.use(requireAuth, requireRole("vendor", "admin"), requireApprovedVendor);
 
 let mediaLibraryReady: Promise<void> | null = null;
+let barcodeMasterReady: Promise<void> | null = null;
+
+function ensureBarcodeMasterTable() {
+  barcodeMasterReady ??= db.execute(sql`
+    create table if not exists barcode_product_master (
+      barcode varchar(14) primary key,
+      name varchar(255) not null,
+      brand varchar(255),
+      category varchar(255),
+      description text,
+      quantity varchar(100),
+      unit varchar(40),
+      images jsonb not null default '[]'::jsonb,
+      specifications jsonb not null default '{}'::jsonb,
+      source varchar(80) not null default 'manual',
+      created_at timestamp not null default now(),
+      updated_at timestamp not null default now()
+    )
+  `).then(() => undefined);
+  return barcodeMasterReady;
+}
 function ensureMediaLibraryTable() {
   mediaLibraryReady ??= (async () => {
     await db.execute(sql`
@@ -66,7 +87,7 @@ function cleanProductImages(images: unknown) {
   if (urls.some((url) => url.startsWith("data:image/"))) {
     throw new Error("Base64 product images are not allowed. Upload images to storage first.");
   }
-  const valid = urls.filter((url) => /^https?:\/\//i.test(url));
+  const valid = urls.filter((url) => /^https?:\/\//i.test(url) || /^\/(?:api\/)?uploads\//i.test(url));
   if (valid.length !== urls.length) throw new Error("Every product image must be a valid storage URL.");
   return Array.from(new Set(valid)).slice(0, 12);
 }
@@ -100,9 +121,20 @@ function imageValues(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(imageValues);
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
-    return [record.url, record.image_url, record.image, record.src].flatMap(imageValues);
+    return [record.url, record.image_url, record.image, record.src, ...Object.values(record)].flatMap(imageValues);
   }
   return [];
+}
+
+function barcodeUrl(template: string, barcode: string) {
+  return template.replace(/\{barcode\}/gi, encodeURIComponent(barcode));
+}
+
+function hasValidGtinCheckDigit(value: string) {
+  if (![8, 12, 13, 14].includes(value.length)) return true;
+  const body = value.slice(0, -1);
+  const expected = (10 - [...body].reverse().reduce((sum, digit, index) => sum + Number(digit) * (index % 2 === 0 ? 3 : 1), 0) % 10) % 10;
+  return expected === Number(value.at(-1));
 }
 
 function categoryRequiresExpiry(value: string) {
@@ -133,7 +165,12 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
     res.status(400).json({ error: "Please enter a valid barcode." });
     return;
   }
+  if (!hasValidGtinCheckDigit(barcode)) {
+    res.status(400).json({ error: "This EAN/UPC check digit is invalid. Please scan the complete product code and try again." });
+    return;
+  }
   try {
+    await ensureBarcodeMasterTable();
     const fields = [
       "code", "product_name", "product_name_en", "generic_name", "generic_name_en", "brands", "quantity",
       "categories", "categories_tags", "labels", "origins", "manufacturing_places", "countries", "stores",
@@ -141,11 +178,20 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       "price", "price_without_taxes", "mrp", "product_price",
       "packaging", "serving_size", "ingredients_text", "allergens", "nutriments", "nutrition_grades",
       "nova_group", "ecoscore_grade", "image_url", "image_front_url", "image_front_small_url", "image_front_thumb_url",
-      "image_ingredients_url", "image_ingredients_small_url", "image_nutrition_url", "image_nutrition_small_url",
+      "image_small_url", "image_ingredients_url", "image_ingredients_small_url", "image_nutrition_url", "image_nutrition_small_url",
       "image_packaging_url", "image_packaging_small_url", "selected_images", "expiration_date",
     ].join(",");
-    const providers = ["world.openfoodfacts.org", "world.openbeautyfacts.org", "world.openproductsfacts.org"];
+    // These are free, no-key Open Facts catalogues. A product is only
+    // auto-filled when one of them has a matching EAN; otherwise the seller
+    // can continue with the manual form below.
+    const providers = [
+      { name: "Open Food Facts", template: readEnv("OPENFOODFACTS_PRODUCT_V2_URL") || "https://world.openfoodfacts.org/api/v2/product/{barcode}.json" },
+      { name: "Open Beauty Facts", template: readEnv("OPENBEAUTYFACTS_PRODUCT_URL") || "https://world.openbeautyfacts.org/api/v2/product/{barcode}.json" },
+      { name: "Open Products Facts", template: readEnv("OPENPRODUCTSFACTS_PRODUCT_URL") || "https://world.openproductsfacts.org/api/v2/product/{barcode}.json" },
+      { name: "Open Pet Food Facts", template: readEnv("OPENPETFOODFACTS_PRODUCT_URL") || "https://world.openpetfoodfacts.org/api/v2/product/{barcode}.json" },
+    ];
     let product: Record<string, unknown> | undefined;
+    let fallbackProduct: Record<string, unknown> | undefined;
     let source = "Open Facts";
     let providerUnavailable = false;
     let providerResponded = false;
@@ -158,7 +204,7 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       .limit(1);
     if (localProduct) {
       const localSpecs = localProduct.specifications ?? {};
-      product = {
+      const localCandidate = {
         barcode_number: localProduct.sku,
         title: localProduct.name,
         description: localProduct.description,
@@ -172,8 +218,76 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
         price: localProduct.price,
         specifications: localSpecs,
       };
-      source = "cMart Catalog";
-      providerResponded = true;
+      const localImages = imageValues(localProduct.images)
+        .map((url) => url.startsWith("//") ? `https:${url}` : url.replace(/^http:\/\//i, "https://"))
+        .filter((url) => /^https:\/\//i.test(url) || /^\/(?:api\/)?uploads\//i.test(url));
+      if (localImages.length) {
+        product = localCandidate;
+        source = "cMart Catalog";
+        providerResponded = true;
+      } else {
+        // Keep image-less local records as a fallback, but still ask the
+        // barcode providers for a product image before returning them.
+        fallbackProduct = localCandidate;
+      }
+    }
+    if (!product) {
+      const cached = await db.execute(sql`
+        select barcode, name, brand, category, description, quantity, unit, images, specifications
+        from barcode_product_master where barcode = ${barcode} limit 1
+      `);
+      const row = (cached as any).rows?.[0];
+      if (row) {
+        const cachedProduct = {
+          barcode_number: row.barcode,
+          title: row.name,
+          brand: row.brand,
+          categories: row.category,
+          description: row.description,
+          quantity: row.quantity,
+          images: row.images ?? [],
+          specifications: row.specifications ?? {},
+        };
+        const cachedImages = imageValues(row.images)
+          .map((url) => url.startsWith("//") ? `https:${url}` : url.replace(/^http:\/\//i, "https://"))
+          .filter((url) => /^https:\/\//i.test(url) || /^\/(?:api\/)?uploads\//i.test(url));
+        if (cachedImages.length) {
+          product = cachedProduct;
+          source = "cMart Barcode Master";
+          providerResponded = true;
+        } else {
+          // Older lookups may have cached details before image support was
+          // added. Refresh those entries instead of returning an empty image.
+          fallbackProduct ??= cachedProduct;
+        }
+      }
+    }
+    // UPCitemdb's free Explorer endpoint needs no signup or API key and
+    // covers many non-food products that community food catalogues miss.
+    // It is rate-limited to 100 lookups per day, so cMart's own catalogues
+    // remain the first source and the Open Facts sources remain fallbacks.
+    if (!product) {
+      try {
+        const upcTemplate = readEnv("UPCITEMDB_TRIAL_LOOKUP_URL") || "https://api.upcitemdb.com/prod/trial/lookup?upc={barcode}";
+        const response = await fetch(barcodeUrl(upcTemplate, barcode), {
+          headers: { Accept: "application/json", "User-Agent": "ChowdharyMart/1.0 (free EAN product lookup)" },
+          signal: AbortSignal.timeout(7000),
+        });
+        providerResponded = true;
+        if (response.ok) {
+          const result = await response.json() as { code?: string; items?: Record<string, unknown>[] };
+          if (result.code === "OK" && Array.isArray(result.items) && result.items[0]) {
+            product = result.items[0];
+            source = "UPCitemdb Explorer";
+          }
+        } else if (response.status === 429) {
+          providerUnavailable = true;
+          req.log.warn("UPCitemdb free lookup limit reached");
+        }
+      } catch (error) {
+        providerUnavailable = true;
+        req.log.warn({ err: error }, "UPCitemdb lookup failed");
+      }
     }
     const barcodeLookupKey = readEnv("BARCODE_LOOKUP_API_KEY");
     if (!product && barcodeLookupKey) {
@@ -198,9 +312,38 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
         req.log.warn({ err: error }, "Barcode Lookup API request failed");
       }
     }
-    for (const provider of product ? [] : providers) {
+    // The current Open Facts API can search across food, beauty, pet-food
+    // and general products with one request. Keep the older catalogue calls
+    // below as fallbacks for compatibility and broader coverage.
+    if (!product) {
       try {
-        const response = await fetch(`https://${provider}/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${fields}`, {
+        const openFactsTemplate = readEnv("OPENFOODFACTS_PRODUCT_URL") || "https://world.openfoodfacts.org/api/v3/product/{barcode}";
+        const openFactsUrl = barcodeUrl(openFactsTemplate, barcode);
+        const response = await fetch(`${openFactsUrl}${openFactsUrl.includes("?") ? "&" : "?"}product_type=all&fields=${fields}`, {
+          headers: { "User-Agent": "ChowdharyMart/1.0 (free EAN product lookup)" },
+          signal: AbortSignal.timeout(7000),
+        });
+        providerResponded = true;
+        if (response.ok) {
+          const result = await response.json() as { status?: number; product?: Record<string, unknown> };
+          if (result.status === 1 && result.product) {
+            product = result.product;
+            source = "Open Facts (all product types)";
+          }
+        }
+      } catch (error) {
+        providerUnavailable = true;
+        req.log.warn({ err: error }, "Unified Open Facts lookup failed");
+      }
+    }
+    const productHasImage = product && [
+      product.image_front_url, product.image_url, product.image_front_small_url,
+      product.image_small_url, product.selected_images, product.images,
+    ].some((value) => imageValues(value).some((url) => /^https?:\/\//i.test(url)));
+    for (const provider of product && productHasImage ? [] : providers) {
+      try {
+        const providerUrl = barcodeUrl(provider.template, barcode);
+        const response = await fetch(`${providerUrl}${providerUrl.includes("?") ? "&" : "?"}fields=${fields}`, {
           headers: { "User-Agent": "ChowdharyMart/1.0 (barcode product import)" },
           signal: AbortSignal.timeout(7000),
         });
@@ -211,21 +354,28 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
         }
         const result = await response.json() as { status?: number; product?: Record<string, unknown> };
         if (result.status === 1 && result.product) {
-          product = result.product;
-          source = provider.includes("beauty") ? "Open Beauty Facts" : provider.includes("products") ? "Open Products Facts" : "Open Food Facts";
+          product = product ? { ...result.product, ...product } : result.product;
+          source = productHasImage ? source : provider.name;
           break;
         }
       } catch (error) {
         providerUnavailable = true;
-        req.log.warn({ err: error, provider }, "Barcode provider lookup failed");
+        req.log.warn({ err: error, provider: provider.name }, "Barcode provider lookup failed");
       }
     }
+    if (!product && fallbackProduct) {
+      product = fallbackProduct;
+      source = "cMart Catalog";
+      providerResponded = true;
+    }
     if (!product) {
-      if (!providerResponded || providerUnavailable) {
-        res.status(502).json({ error: "Product lookup is temporarily unavailable. Please try again." });
-        return;
-      }
-      res.status(404).json({ error: "Product not found. Please add the product details manually." });
+      res.status(404).json({
+        error: providerUnavailable || !providerResponded
+          ? "EAN service is temporarily unavailable. Please try again or add the product details manually."
+          : "This EAN is valid, but no product record was found in the connected catalogues. You can add the product details manually.",
+        ean: barcode,
+        canAddManually: true,
+      });
       return;
     }
     const name = textValue(product.title) || textValue(product.product_name) || textValue(product.product_name_en) || textValue(product.generic_name) || textValue(product.generic_name_en);
@@ -235,7 +385,7 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
     }
     const selectedImages = imageValues(product.images).concat(imageValues(product.selected_images));
     const remoteImageUrls = [
-      product.image_url, product.image_front_url, product.image_front_small_url, product.image_front_thumb_url,
+      product.image_front_url, product.image_url, product.image_front_small_url, product.image_small_url, product.image_front_thumb_url,
       product.image_ingredients_url, product.image_ingredients_small_url, product.image_nutrition_url,
       product.image_nutrition_small_url, product.image_packaging_url, product.image_packaging_small_url,
       ...selectedImages,
@@ -246,20 +396,27 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       .filter((url, index, values) => /^https:\/\//i.test(url) && values.indexOf(url) === index);
     const imageUrls: string[] = [];
     for (const remoteUrl of remoteImageUrls.slice(0, 6)) {
+      let stored = false;
       try {
         const imageResponse = await fetch(remoteUrl, { signal: AbortSignal.timeout(5000), headers: { "User-Agent": "ChowdharyMart/1.0 (barcode image import)" } });
         const responseMime = String(imageResponse.headers.get("content-type") ?? "").split(";")[0].toLowerCase();
         const mime = responseMime === "image/jpg" ? "image/jpeg" : responseMime;
         const contentLength = Number(imageResponse.headers.get("content-length") ?? 0);
-        if (!imageResponse.ok || !mime.startsWith("image/") || contentLength > 5 * 1024 * 1024) continue;
-        const buffer = Buffer.from(await imageResponse.arrayBuffer());
-        if (!buffer.length || buffer.length > 5 * 1024 * 1024) continue;
-        const stored = await storePublicImage(req, buffer, mime, "barcode-products", req.user!.userId);
-        imageUrls.push(stored.imageUrl);
+        if (imageResponse.ok && mime.startsWith("image/") && contentLength <= 5 * 1024 * 1024) {
+          const buffer = Buffer.from(await imageResponse.arrayBuffer());
+          if (buffer.length && buffer.length <= 5 * 1024 * 1024) {
+            const saved = await storePublicImage(req, buffer, mime, "barcode-products", req.user!.userId);
+            imageUrls.push(saved.imageUrl);
+            stored = true;
+          }
+        }
       } catch (error) {
         req.log.warn({ err: error, remoteUrl }, "Could not copy barcode image into storage");
-        imageUrls.push(remoteUrl);
       }
+      // Keep a valid provider URL as a last-resort fallback. This prevents a
+      // storage/content-type issue from turning an available product photo
+      // into an empty image panel.
+      if (!stored && !imageUrls.includes(remoteUrl)) imageUrls.push(remoteUrl);
     }
     const nutriments = product.nutriments && typeof product.nutriments === "object" ? product.nutriments as Record<string, unknown> : {};
     const nutrition = Object.fromEntries(Object.entries(nutriments)
@@ -320,6 +477,20 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
       ExpiryRequired: String(expiryRequired),
     }).filter(([, value]) => value !== "" && value !== undefined));
     const catalogMrp = textValue(product.mrp) || textValue(product.product_price) || textValue(product.price_without_taxes);
+    await db.execute(sql`
+      insert into barcode_product_master
+        (barcode, name, brand, category, description, quantity, unit, images, specifications, source, updated_at)
+      values
+        (${barcodeNumber}, ${name}, ${textValue(product.brand) || textValue(product.brands) || null},
+         ${categoryText || null}, ${textValue(product.description) || null}, ${quantityText || null},
+         ${quantityText.match(/[a-zA-Z]+/)?.[0] || null}, ${JSON.stringify(imageUrls)}::jsonb,
+         ${JSON.stringify(specifications)}::jsonb, ${source}, now())
+      on conflict (barcode) do update set
+        name = excluded.name, brand = excluded.brand, category = excluded.category,
+        description = excluded.description, quantity = excluded.quantity, unit = excluded.unit,
+        images = excluded.images, specifications = excluded.specifications,
+        source = excluded.source, updated_at = now()
+    `);
     res.json({
       barcode: barcodeNumber,
       barcodeNumber,
@@ -402,10 +573,6 @@ router.patch("/store", async (req: AuthRequest, res) => {
       bannerUrl,
       isOpen,
       phone,
-      estimatedDeliveryMins,
-      deliveryFee,
-      freeDeliveryAbove,
-      minOrderValue,
       lat,
       lng,
       pickupAddress,
@@ -420,10 +587,6 @@ router.patch("/store", async (req: AuthRequest, res) => {
     if (bannerUrl !== undefined) updates.bannerUrl = bannerUrl;
     if (isOpen !== undefined) updates.isOpen = Boolean(isOpen);
     if (phone !== undefined) updates.phone = phone;
-    if (estimatedDeliveryMins !== undefined) updates.estimatedDeliveryMins = Number(estimatedDeliveryMins);
-    if (deliveryFee !== undefined) updates.deliveryFee = String(deliveryFee);
-    if (freeDeliveryAbove !== undefined) updates.freeDeliveryAbove = String(freeDeliveryAbove);
-    if (minOrderValue !== undefined) updates.minOrderValue = String(minOrderValue);
     if (lat !== undefined && Number.isFinite(Number(lat))) updates.lat = Number(lat);
     if (lng !== undefined && Number.isFinite(Number(lng))) updates.lng = Number(lng);
     const nextAddress = pickupAddress ?? address;
@@ -469,10 +632,44 @@ router.get("/orders", async (req: AuthRequest, res) => {
     const enriched = await Promise.all(orders.map(async (rawOrder) => {
       const order = await expireOrderIfNeeded(rawOrder);
       const lifecycle = await lifecycleMeta(order);
+      const [customer, savedAddress] = await Promise.all([
+        db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, email: usersTable.email })
+          .from(usersTable).where(eq(usersTable.id, order.userId)).limit(1),
+        order.addressId ? db.select().from(addressesTable).where(eq(addressesTable.id, order.addressId)).limit(1) : Promise.resolve([]),
+      ]);
+      const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+      const productIds = items.map((item) => item.productId).filter((id): id is number => id !== null);
+      const products = productIds.length ? await db.select().from(productsTable).where(sql`${productsTable.id} in (${sql.join(productIds.map((id) => sql`${id}`), sql`, `)})`) : [];
+      const productMap = new Map(products.map((product) => [product.id, product]));
       return {
         ...order,
         store,
-        items: await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id)),
+        customer: customer[0] ?? null,
+        customerAddress: savedAddress[0] ?? order.addressSnapshot ?? null,
+        items: items.map((item) => {
+          const product = item.productId ? productMap.get(item.productId) : undefined;
+          const specifications = product?.specifications && typeof product.specifications === "object" ? product.specifications : {};
+          return {
+            ...item,
+            productName: item.name,
+            productImage: item.imageUrl,
+            productDetails: product ? {
+              id: product.id,
+              description: product.description,
+              brand: specifications.Brand ?? null,
+              category: specifications.Category ?? null,
+              sku: product.sku,
+              weight: product.weight,
+              unit: product.unit,
+              mrp: product.mrp,
+              images: product.images,
+              stockAtOrder: Number(product.stock) + Number(item.qty),
+              specifications,
+            } : null,
+            brandName: specifications.Brand ?? "Chowdhary Mart",
+            stockAvailableAtOrder: product ? Number(product.stock) + Number(item.qty) : null,
+          };
+        }),
         lifecycle,
         tracking: { pickupOtp: lifecycle.pickupOtp },
       };
@@ -609,9 +806,28 @@ router.post("/products", async (req: AuthRequest, res) => {
     }
 
     const { name, description, categoryId, brandId, price, mrp, images, weight, unit, sku, specifications, stock, isAvailable, isFeatured } = req.body;
+    const productName = textValue(name);
+    const normalizedCategoryId = Number(categoryId);
+    const normalizedPrice = Number(price);
+    const normalizedMrp = Number(mrp);
+    const normalizedStock = Number(stock ?? 0);
+    if (productName.length < 2) throw new Error("Product name is required.");
+    if (!Number.isInteger(normalizedCategoryId) || normalizedCategoryId < 1) throw new Error("A valid category is required.");
+    if (!Number.isFinite(normalizedPrice) || normalizedPrice < 0.01) throw new Error("A valid price is required.");
+    if (!Number.isFinite(normalizedMrp) || normalizedMrp < 0.01) throw new Error("A valid MRP is required.");
+    if (!Number.isInteger(normalizedStock) || normalizedStock < 0) throw new Error("A valid stock quantity is required.");
+    const [category] = await db.select({ id: categoriesTable.id }).from(categoriesTable)
+      .where(eq(categoriesTable.id, normalizedCategoryId)).limit(1);
+    if (!category) throw new Error("The selected category no longer exists. Please choose another category.");
+    // A deleted/archived zone can leave an old store reference behind. Products
+    // must remain insertable; only attach a zone that still exists.
+    const [storeZone] = store.zoneId
+      ? await db.select({ id: serviceZonesTable.id }).from(serviceZonesTable)
+        .where(eq(serviceZonesTable.id, store.zoneId)).limit(1)
+      : [];
     const productImages = cleanProductImages(images);
-    const preparedSpecifications = await prepareProductSpecifications(categoryId, specifications, isAvailable ?? true);
-    const discountPercent = mrp && price ? (((Number(mrp) - Number(price)) / Number(mrp)) * 100).toFixed(2) : "0";
+    const preparedSpecifications = await prepareProductSpecifications(normalizedCategoryId, specifications, isAvailable ?? true);
+    const discountPercent = normalizedMrp > 0 ? (((normalizedMrp - normalizedPrice) / normalizedMrp) * 100).toFixed(2) : "0";
     const normalizedSku = textValue(sku);
     if (normalizedSku) {
       const [duplicate] = await db.select({ id: productsTable.id }).from(productsTable)
@@ -624,20 +840,20 @@ router.post("/products", async (req: AuthRequest, res) => {
 
     const [product] = await db.insert(productsTable).values({
       storeId: store.id,
-      zoneId: store.zoneId,
-      name,
-      description,
-      categoryId,
+      name: productName,
+      description: textValue(description),
+      categoryId: normalizedCategoryId,
       brandId,
-      price,
-      mrp,
+      price: normalizedPrice.toFixed(2),
+      mrp: normalizedMrp.toFixed(2),
       discountPercent,
       images: productImages,
-      weight,
-      unit,
+      weight: textValue(weight),
+      unit: textValue(unit),
       sku: normalizedSku || null,
       specifications: preparedSpecifications,
-      stock: stock ?? 0,
+      stock: normalizedStock,
+      zoneId: storeZone?.id ?? null,
       isAvailable: isAvailable ?? true,
       isFeatured: isFeatured ?? false,
     }).returning();
@@ -645,7 +861,9 @@ router.post("/products", async (req: AuthRequest, res) => {
     res.status(201).json(product);
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
+    const message = err instanceof Error ? err.message : "Internal server error";
+    const validationError = /required|invalid|expired|barcode|image|category|price|mrp|store/i.test(message);
+    res.status(validationError ? 400 : 500).json({ error: validationError ? message : "Internal server error" });
   }
 });
 
@@ -684,7 +902,9 @@ router.patch("/products/:productId", async (req: AuthRequest, res) => {
     res.json(product);
   } catch (err) {
     req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
+    const message = err instanceof Error ? err.message : "Internal server error";
+    const validationError = /required|invalid|expired|barcode|image|category|price|mrp|store/i.test(message);
+    res.status(validationError ? 400 : 500).json({ error: validationError ? message : "Internal server error" });
   }
 });
 

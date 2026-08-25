@@ -21,14 +21,15 @@ export default function AdminStores() {
     const deliveryFee = row?.querySelector<HTMLInputElement>('[name="deliveryFee"]')?.value ?? store.deliveryFee ?? "0";
     const freeDeliveryAbove = row?.querySelector<HTMLInputElement>('[name="freeDeliveryAbove"]')?.value ?? store.freeDeliveryAbove ?? "0";
     const minOrderValue = row?.querySelector<HTMLInputElement>('[name="minOrderValue"]')?.value ?? store.minOrderValue ?? "0";
+    const estimatedDeliveryMins = row?.querySelector<HTMLInputElement>('[name="estimatedDeliveryMins"]')?.value ?? store.estimatedDeliveryMins ?? "40";
     try {
       await customFetch(`/api/admin/stores/${store.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ deliveryFee, freeDeliveryAbove, minOrderValue }),
+        body: JSON.stringify({ deliveryFee, freeDeliveryAbove, minOrderValue, estimatedDeliveryMins }),
       });
       qc.invalidateQueries({ queryKey: getListAdminStoresQueryKey() });
       qc.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() });
-      toast({ title: "Store fees updated", description: "Delivery fee and free-delivery discount rule saved." });
+      toast({ title: "Store delivery rules updated", description: "Delivery fee, discount rule and ETA saved." });
     } catch (error) {
       toast({ title: "Fee update failed", description: (error as Error).message, variant: "destructive" });
     }
@@ -146,12 +147,13 @@ export default function AdminStores() {
                 <div className="mb-2 flex items-center gap-2 text-sm font-bold text-green-800">
                   <BadgePercent className="h-4 w-4" /> Delivery fee discount control
                 </div>
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   <Input name="deliveryFee" type="number" defaultValue={Number(store.deliveryFee ?? 0)} placeholder="Delivery fee" />
                   <Input name="freeDeliveryAbove" type="number" defaultValue={Number(store.freeDeliveryAbove ?? 0)} placeholder="Free above" />
                   <Input name="minOrderValue" type="number" defaultValue={Number(store.minOrderValue ?? 0)} placeholder="Min order" />
+                  <Input name="estimatedDeliveryMins" type="number" min={5} max={120} defaultValue={Number(store.estimatedDeliveryMins ?? 40)} placeholder="ETA (mins)" />
                 </div>
-                <p className="mt-2 text-xs text-green-700">Customer cart will show delivery fee as FREE after the free-above amount.</p>
+                <p className="mt-2 text-xs text-green-700">Admin controls the delivery fee, free-delivery threshold, minimum order and ETA shown to customers.</p>
                 <Button size="sm" className="mt-3" onClick={() => saveFees(store)}>
                   <Save className="mr-2 h-4 w-4" /> Save fee rule
                 </Button>

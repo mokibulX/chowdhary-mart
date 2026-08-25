@@ -8,6 +8,7 @@ import {
   productsTable,
   storesTable,
 } from "@workspace/db";
+import { toPublicStore } from "../lib/public-store";
 
 export const HOMEPAGE_PERMISSIONS = [
   "homepage.view",
@@ -173,7 +174,10 @@ export async function getHomepageSections(zoneId?: number) {
       if (seen.has(product.id)) return false;
       seen.add(product.id);
       return true;
-    }).slice(0, section.productLimit);
+    }).slice(0, section.productLimit).map((product) => ({
+      ...product,
+      store: toPublicStore(product.store),
+    }));
     payload.push({
       id: section.slug,
       databaseId: section.id,

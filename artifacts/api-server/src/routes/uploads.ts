@@ -65,7 +65,9 @@ function publicBaseUrl(req: AuthRequest) {
 }
 
 async function uploadLocal(req: AuthRequest, storagePath: string, buffer: Buffer) {
-  const uploadRoot = path.resolve(process.cwd(), "uploads");
+  // Keep the write location identical to the public static route in app.ts.
+  // The API may run from either the repository root or artifacts/api-server.
+  const uploadRoot = path.resolve(workspaceRoot(), "uploads");
   const target = path.join(uploadRoot, storagePath);
   if (!target.startsWith(uploadRoot)) throw new Error("Invalid upload path.");
   await mkdir(path.dirname(target), { recursive: true });

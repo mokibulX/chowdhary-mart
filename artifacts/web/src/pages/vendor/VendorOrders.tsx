@@ -103,27 +103,26 @@ export default function VendorOrders() {
   };
 
   const logAndPrint = async (order: any, type: PrintType, duplicate = false) => {
+    const popup = window.open("", "_blank", "width=420,height=720");
+    if (!popup) {
+      toast({ title: "Popup blocked", description: "Allow popup to print bill.", variant: "destructive" });
+      return;
+    }
+    popup.document.write(buildPrintHtml(order, type, paperSize, duplicate));
+    popup.document.close();
+    popup.focus();
     try {
       await customFetch(`/api/vendor/orders/${order.id}/print`, {
         method: "POST",
         body: JSON.stringify({ printType: type, paperSize, duplicate }),
         responseType: "json",
       });
-      const popup = window.open("", "_blank", "width=420,height=720");
-      if (!popup) {
-        toast({ title: "Popup blocked", description: "Allow popup to print bill.", variant: "destructive" });
-        return;
-      }
-      popup.document.write(buildPrintHtml(order, type, paperSize, duplicate));
-      popup.document.close();
-      popup.focus();
-      setTimeout(() => popup.print(), 250);
       refresh();
-      toast({ title: type === "customer_bill" ? "Bill ready" : "Slip ready", description: `${paperSize} print preview opened.` });
     } catch (error) {
-      const message = (error as { data?: { error?: string } })?.data?.error ?? "Print failed";
-      toast({ title: message, variant: "destructive" });
+      console.warn("Print log failed", error);
     }
+    setTimeout(() => popup.print(), 250);
+    toast({ title: type === "customer_bill" ? "Bill ready" : "Slip ready", description: `${paperSize} print preview opened.` });
   };
 
   return (
@@ -224,8 +223,11 @@ export default function VendorOrders() {
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-3">
                 <Info label="Order ID" value={`#${selectedOrder.orderNumber}`} />
+                <Info label="Customer" value={maskIfClosed(selectedOrder, selectedOrder.customer?.name ?? selectedOrder.addressSnapshot?.name)} />
+                <Info label="Customer phone" value={maskIfClosed(selectedOrder, selectedOrder.customer?.phone ?? selectedOrder.customerAddress?.phone)} />
                 <Info label="Invoice" value={selectedOrder.invoiceNumber ?? "Will generate"} />
-                <Info label="Deadline" value="40 minutes" />
+                <Info label="Delivery address" value={maskAddressIfClosed(selectedOrder, selectedOrder.customerAddress ?? selectedOrder.addressSnapshot)} />
+                <Info label="Deadline" value={`${selectedOrder.estimatedDeliveryMins ?? 40} minutes`} />
                 <Info label="Payment" value={`${selectedOrder.paymentMethod} / ${selectedOrder.paymentStatus}`} />
                 <Info label="Status" value={STATUS_LABEL[selectedOrder.status] ?? selectedOrder.status} />
                 <Info label="Pickup OTP" value={selectedOrder.tracking?.pickupOtp ?? "After accept"} />
@@ -233,8 +235,8 @@ export default function VendorOrders() {
 
               <div className="rounded-xl border bg-white p-4">
                 <h3 className="mb-2 font-semibold">Customer fulfilment info</h3>
-                <p className="text-sm">{maskIfClosed(selectedOrder, selectedOrder.addressSnapshot?.name)} · {maskIfClosed(selectedOrder, selectedOrder.addressSnapshot?.phone)}</p>
-                <p className="text-sm text-muted-foreground">{maskAddressIfClosed(selectedOrder, selectedOrder.addressSnapshot)}</p>
+                <p className="text-sm">{maskIfClosed(selectedOrder, selectedOrder.customer?.name ?? selectedOrder.addressSnapshot?.name)} · {maskIfClosed(selectedOrder, selectedOrder.customer?.phone ?? selectedOrder.customerAddress?.phone ?? selectedOrder.addressSnapshot?.phone)}</p>
+                <p className="text-sm text-muted-foreground">{maskAddressIfClosed(selectedOrder, selectedOrder.customerAddress ?? selectedOrder.addressSnapshot)}</p>
                 <p className="mt-2 text-xs text-muted-foreground">Exact customer details are hidden after delivery/cancellation.</p>
               </div>
 
@@ -317,6 +319,13 @@ export default function VendorOrders() {
 
 function OrderItemRow({ item, detailed = false }: { item: any; detailed?: boolean }) {
   const variant = [item.variantName, item.size && `Size ${item.size}`, (item.colour || item.color) && `Color ${item.colour ?? item.color}`, item.weight && `${item.weight} ${item.unit ?? ""}`].filter(Boolean).join(" · ") || "Standard";
+  const details = item.productDetails ?? {};
+  const detailLine = detailed ? [
+    details.brand && `Brand: ${details.brand}`,
+    details.category && `Category: ${details.category}`,
+    details.sku && `EAN/SKU: ${details.sku}`,
+    details.weight && `Pack: ${details.weight}${details.unit ? ` ${details.unit}` : ""}`,
+  ].filter(Boolean).join(" · ") : "";
   return (
     <div className="grid grid-cols-[54px_1fr_auto] gap-3 rounded-lg border bg-white p-2">
       <div className="h-14 w-14 overflow-hidden rounded-md bg-gray-50">
@@ -325,7 +334,11 @@ function OrderItemRow({ item, detailed = false }: { item: any; detailed?: boolea
       <div className="min-w-0 text-sm">
         <p className="line-clamp-1 font-semibold">{item.productName ?? item.name}</p>
         <p className="text-xs text-muted-foreground">{variant}</p>
-        {detailed && <p className="text-xs text-muted-foreground">Brand: {item.brandName ?? "Chowdhary Mart"} · Stock at order: {item.stockAvailableAtOrder ?? "-"}</p>}
+        {detailed && <>
+          <p className="mt-1 text-xs text-muted-foreground">{detailLine || `Brand: ${item.brandName ?? "Chowdhary Mart"}`} </p>
+          {details.description && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{details.description}</p>}
+          <p className="text-xs text-muted-foreground">Stock at order: {item.stockAvailableAtOrder ?? "-"} · MRP: Rs.{Number(details.mrp ?? item.mrp ?? 0).toFixed(0)}</p>
+        </>}
       </div>
       <div className="text-right text-sm">
         <p className="font-bold">Rs.{Number(item.itemTotal ?? item.total ?? 0).toFixed(0)}</p>
@@ -363,33 +376,44 @@ function buildReceiptBody(order: any, type: PrintType, duplicate: boolean) {
   const subtotal = Number(order.subtotal ?? 0);
   const coupon = Number(order.couponDiscount ?? 0);
   const delivery = Number(order.deliveryFee ?? 0);
+  const platformFee = Number(order.platformFee ?? 0);
   const total = Number(order.total ?? 0);
   const saved = Math.max(0, mrpTotal - subtotal + coupon);
+  const summaryLines = [
+    `<div class="line"><span>Subtotal</span><b>Rs.${subtotal.toFixed(0)}</b></div>`,
+    delivery > 0 ? `<div class="line"><span>Delivery Charge</span><b>Rs.${delivery.toFixed(0)}</b></div>` : "",
+    coupon > 0 ? `<div class="line"><span>Coupon Discount</span><b>-Rs.${coupon.toFixed(0)}</b></div>` : "",
+    platformFee > 0 ? `<div class="line"><span>Handling Charge</span><b>Rs.${platformFee.toFixed(0)}</b></div>` : "",
+    `<div class="line total"><span>Grand Total</span><b>Rs.${total.toFixed(0)}</b></div>`,
+  ].filter(Boolean).join("");
   const rows = (order.items ?? []).map((item: any, index: number) => {
     const name = item.productName ?? item.name;
     const variant = [item.variantName, item.size, item.colour ?? item.color, item.weight && `${item.weight} ${item.unit ?? ""}`].filter(Boolean).join(" / ");
     if (type === "customer_bill") {
-      return `<tr><td>${index + 1}</td><td><b>${escapeHtml(name)}</b><br/><small>Variant: ${escapeHtml(variant || "Standard")}</small></td><td class="right">${item.quantity ?? item.qty}</td><td class="right">Rs.${Number(item.sellingPrice ?? item.price ?? 0).toFixed(0)}</td><td class="right">Rs.${Number(item.discountAmount ?? 0).toFixed(0)}</td><td class="right">Rs.${Number(item.taxAmount ?? 0).toFixed(0)}</td><td class="right"><b>Rs.${Number(item.itemTotal ?? item.total ?? 0).toFixed(0)}</b></td></tr>`;
+      return `<tr><td>${index + 1}</td><td><b>${escapeHtml(name)}</b>${variant ? `<br/><small>${escapeHtml(variant)}</small>` : ""}</td><td class="right">${item.quantity ?? item.qty}</td><td class="right">Rs.${Number(item.sellingPrice ?? item.price ?? 0).toFixed(0)}</td><td class="right"><b>Rs.${Number(item.itemTotal ?? item.total ?? 0).toFixed(0)}</b></td></tr>`;
     }
-    return `<div class="check">[ ] <b>${escapeHtml(name)}</b><br/><small>${variant ? `Variant: ${escapeHtml(variant)} - ` : ""}Qty ${item.quantity ?? item.qty}</small></div>`;
+    const details = item.productDetails ?? {};
+    const mainDetails = [details.brand && `Brand: ${details.brand}`, details.category && `Category: ${details.category}`, details.sku && `EAN/SKU: ${details.sku}`, details.weight && `Pack: ${details.weight}${details.unit ? ` ${details.unit}` : ""}`].filter(Boolean).join(" | ");
+    return `<div class="check">[ ] <b>${escapeHtml(name)}</b><br/><small>${variant ? `Variant: ${escapeHtml(variant)} - ` : ""}Qty ${item.quantity ?? item.qty}${mainDetails ? ` - ${escapeHtml(mainDetails)}` : ""}</small></div>`;
   }).join("");
   const duplicateLabel = duplicate ? `<div class="duplicate">DUPLICATE COPY</div>` : "";
   const cancelled = order.status === "cancelled" ? `<div class="watermark">CANCELLED</div>` : "";
   if (type !== "customer_bill") {
-    return `${duplicateLabel}${cancelled}<div class="brand"><h2>CHOWDHARY MART</h2><p>${type === "packing_slip" ? "PACKING SLIP" : "PREPARATION SLIP"}</p></div><div class="box"><b>Order:</b> ${escapeHtml(order.orderNumber)}<br/><b>Time:</b> ${new Date(order.createdAt).toLocaleString("en-IN")}<br/><b>Shop:</b> ${escapeHtml(shop.name ?? "Seller store")}</div><hr/>${rows}<hr/><div class="box"><b>Customer:</b> ${escapeHtml(maskIfClosed(order, customer.name))}<br/><b>Area:</b> ${escapeHtml(customer.city ?? "")} ${escapeHtml(customer.pincode ?? "")}<br/><b>Instruction:</b> ${escapeHtml(order.notes ?? "No special instruction")}</div>${type === "packing_slip" ? `<div class="otp">Pickup OTP: ${order.tracking?.pickupOtp ?? "After accept"}</div>` : ""}`;
+    const customerName = order.customer?.name ?? customer.name;
+    const customerPhone = order.customer?.phone ?? customer.phone;
+    return `${duplicateLabel}${cancelled}<div class="brand"><h2>CHOWDHARY MART</h2><p>${type === "packing_slip" ? "PACKING SLIP" : "PREPARATION SLIP"}</p></div><div class="box"><b>Order ID:</b> ${escapeHtml(order.orderNumber)}<br/><b>Time:</b> ${new Date(order.createdAt).toLocaleString("en-IN")}<br/><b>Shop:</b> ${escapeHtml(shop.name ?? "Seller store")}</div><hr/>${rows}<hr/><div class="box"><b>Customer:</b> ${escapeHtml(maskIfClosed(order, customerName))}<br/><b>Phone:</b> ${escapeHtml(maskIfClosed(order, customerPhone))}<br/><b>Area:</b> ${escapeHtml(customer.city ?? "")} ${escapeHtml(customer.pincode ?? "")}<br/><b>Instruction:</b> ${escapeHtml(order.notes ?? "No special instruction")}</div>${type === "packing_slip" ? `<div class="otp">Pickup OTP: ${order.tracking?.pickupOtp ?? "After accept"}</div>` : ""}`;
   }
   const cashToCollect = order.paymentMethod === "cod" ? Number(order.total ?? 0) : 0;
   return `${duplicateLabel}${cancelled}
-    <div class="brand"><div class="logo">CM</div><h2>CHOWDHARY MART</h2><p>TAX INVOICE / CUSTOMER RECEIPT</p></div>
+    <div class="brand"><div class="logo">CM</div><h2>CHOWDHARY MART</h2><p>CUSTOMER BILL</p></div>
     <div class="shop"><b>${escapeHtml(shop.name ?? "Seller store")}</b><br/>${escapeHtml(shop.address ?? "Local store")}<br/>${shop.phone ? `Mobile: ${escapeHtml(shop.phone)}<br/>` : ""}${shop.gstin ? `GSTIN: ${escapeHtml(shop.gstin)}<br/>` : ""}${shop.fssai ? `FSSAI: ${escapeHtml(shop.fssai)}<br/>` : ""}</div>
     <div class="meta"><span>Invoice: <b>${escapeHtml(order.invoiceNumber ?? "Pending")}</b></span><span>Order: <b>${escapeHtml(order.orderNumber)}</b></span><span>Date: ${new Date(order.createdAt).toLocaleString("en-IN")}</span><span>Payment: <b>${escapeHtml(order.paymentMethod)} / ${escapeHtml(order.paymentStatus)}</b></span></div>
     <div class="badge">${order.paymentMethod === "cod" ? "CASH ON DELIVERY" : "PAID ONLINE"}</div>
-    <div class="box"><b>Customer</b><br/>${escapeHtml(maskIfClosed(order, customer.name))}<br/>Phone: ${escapeHtml(maskIfClosed(order, customer.phone))}<br/>Address: ${escapeHtml(maskAddressIfClosed(order, customer))}<br/>Instruction: ${escapeHtml(order.notes ?? "No special instruction")}</div>
-    <table><thead><tr><th>Sl.</th><th>Item</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">Disc</th><th class="right">Tax</th><th class="right">Amount</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="summary"><div class="line"><span>MRP Total</span><b>Rs.${mrpTotal.toFixed(0)}</b></div><div class="line"><span>Product Discount</span><b>-Rs.${Math.max(0, mrpTotal - subtotal).toFixed(0)}</b></div><div class="line"><span>Coupon Discount</span><b>-Rs.${coupon.toFixed(0)}</b></div><div class="line"><span>Subtotal</span><b>Rs.${subtotal.toFixed(0)}</b></div><div class="line"><span>Delivery Charge</span><b>Rs.${delivery.toFixed(0)}</b></div><div class="line"><span>Platform/Handling</span><b>Rs.${Number(order.platformFee ?? 0).toFixed(0)}</b></div><div class="line total"><span>Grand Total</span><b>Rs.${total.toFixed(0)}</b></div><div class="line collect"><span>${cashToCollect ? "CASH TO COLLECT" : "PAID AMOUNT"}</span><b>Rs.${cashToCollect ? cashToCollect.toFixed(0) : total.toFixed(0)}</b></div></div>
+    <div class="box"><b>Customer</b><br/>${escapeHtml(maskIfClosed(order, order.customer?.name ?? customer.name))}<br/>Phone: ${escapeHtml(maskIfClosed(order, order.customer?.phone ?? customer.phone))}<br/>Address: ${escapeHtml(maskAddressIfClosed(order, order.customerAddress ?? customer))}<br/>Instruction: ${escapeHtml(order.notes ?? "No special instruction")}</div>
+    <table><thead><tr><th>Sl.</th><th>Item</th><th class="right">Qty</th><th class="right">Rate</th><th class="right">Amount</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="summary">${summaryLines}<div class="line collect"><span>${cashToCollect ? "CASH TO COLLECT" : "PAID AMOUNT"}</span><b>Rs.${cashToCollect ? cashToCollect.toFixed(0) : total.toFixed(0)}</b></div></div>
     ${saved > 0 ? `<div class="saving">YOU SAVED Rs.${saved.toFixed(0)}</div>` : ""}
-    <div class="qr">QR: CM-${escapeHtml(order.orderNumber)}</div>
-    <p class="center">Thank you for shopping with<br/><b>ChowdharyMart</b><br/><small>Damage items return only. Support: support@chowdharymart.local</small></p>`;
+    <p class="center">Thank you for shopping with<br/><b>Chowdhary Mart</b></p>`;
 }
 
 function buildPrintHtml(order: any, type: PrintType, paper: string, duplicate: boolean) {

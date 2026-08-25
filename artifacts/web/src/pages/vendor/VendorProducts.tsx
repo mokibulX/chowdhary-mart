@@ -109,15 +109,46 @@ function normalizeSizes(value: string | string[] | undefined | null) {
   return Array.from(new Set(source.map((item) => item.trim()).filter(Boolean)));
 }
 
+function normalizeProductImageUrl(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("//")) return `https:${raw}`;
+  if (/^https?:\/\//i.test(raw)) {
+    // Local development uploads are served by the HTTP API server. Do not
+    // rewrite them to HTTPS, otherwise 127.0.0.1:5000 image previews fail.
+    if (/^http:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|10\.|192\.168\.)/i.test(raw)) return raw;
+    return raw.replace(/^http:\/\//i, "https://");
+  }
+  if (/^\/(?:api\/)?uploads\//i.test(raw)) return raw;
+  return "";
+}
+
+function hasValidEanCheckDigit(value: string) {
+  if (![8, 12, 13, 14].includes(value.length)) return true;
+  const body = value.slice(0, -1);
+  const expected = (10 - [...body].reverse().reduce((sum, digit, index) => sum + Number(digit) * (index % 2 === 0 ? 3 : 1), 0) % 10) % 10;
+  return expected === Number(value.at(-1));
+}
+
 function categoryRequiresExpiry(name = "") {
   return /(food|grocery|beverage|drink|snack|chocolate|dairy|milk|cosmetic|beauty|medicine|supplement|pet food)/i.test(name);
 }
 
 function BarcodeResultCard({ product }: { product: any }) {
   const specs = product.specifications && typeof product.specifications === "object" ? product.specifications : {};
-  const rawImages = Array.isArray(product.images) ? product.images : [product.imageUrl, product.mainImage, product.image_url, product.image_front_url];
-  const images: string[] = Array.from(new Set<string>(rawImages.filter((url: unknown): url is string => typeof url === "string" && Boolean(url.trim())).map((url: string) => url.trim()))).slice(0, 12);
-  const image = images[0] ?? "";
+  const rawImages = [
+    ...(Array.isArray(product.images) ? product.images : []),
+    product.image_front_url,
+    product.image_url,
+    product.image_front_small_url,
+    product.image_small_url,
+    product.imageUrl,
+    product.mainImage,
+    product.selected_images,
+  ];
+  const images: string[] = Array.from(new Set<string>(rawImages.map(normalizeProductImageUrl).filter(Boolean))).slice(0, 12);
+  const [selectedImage, setSelectedImage] = useState(images[0] ?? "");
+  useEffect(() => setSelectedImage(images[0] ?? ""), [product]);
   const value = (item: unknown) => String(item ?? "").trim() || "Not available";
   const detailEntries = Object.entries(specs)
     .filter(([label, item]) => !["Nutrition", "Source", "ExpiryRequired", "MFGDate", "ExpiryDate", "Store pricing", "Reviews", "Specifications"].includes(label) && String(item ?? "").trim())
@@ -126,8 +157,8 @@ function BarcodeResultCard({ product }: { product: any }) {
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="w-28 shrink-0">
-          <div className="h-28 w-28 overflow-hidden rounded-lg border bg-white">{image ? <img src={image} alt={product.name || "Scanned product"} referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">Image not available</div>}</div>
-          {images.length > 1 && <div className="mt-1 grid grid-cols-4 gap-1">{images.slice(0, 4).map((url: string, index: number) => <div key={`${url}-${index}`} className="h-6 overflow-hidden rounded border bg-white"><img src={url} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /></div>)}</div>}
+          <div className="h-28 w-28 overflow-hidden rounded-lg border bg-white">{selectedImage ? <img src={selectedImage} alt={product.name || "Product"} loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={() => setSelectedImage("")} /> : <div className="flex h-full items-center justify-center px-2 text-center text-xs text-muted-foreground">Product image unavailable</div>}</div>
+          {images.length > 1 && <div className="mt-1 flex gap-1">{images.map((url: string, index: number) => <button type="button" key={`${url}-${index}`} className={`h-7 w-7 overflow-hidden rounded border bg-white ${selectedImage === url ? "border-emerald-600 ring-1 ring-emerald-300" : ""}`} onClick={() => setSelectedImage(url)} aria-label={`Show product image ${index + 1}`}><img src={url} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-contain" onError={(event) => { event.currentTarget.parentElement?.remove(); }} /></button>)}</div>}
         </div>
         <div className="min-w-0 flex-1"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Company product found</p><h3 className="mt-1 text-lg font-bold break-words">{value(product.name)}</h3><p className="text-sm text-muted-foreground">{value(product.brand || specs.Brand)}</p></div>
       </div>
@@ -154,6 +185,7 @@ export default function VendorProducts() {
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [productStep, setProductStep] = useState(0);
   const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const [barcodeProduct, setBarcodeProduct] = useState<any | null>(null);
   const [importedSpecifications, setImportedSpecifications] = useState<Record<string, unknown>>({});
 
@@ -244,6 +276,11 @@ export default function VendorProducts() {
   };
 
   const onSubmit = (data: FormData) => {
+    if (imageUploading) {
+      toast({ title: "Image is still uploading", description: "Please wait until the product photo finishes uploading.", variant: "destructive" });
+      setProductStep(2);
+      return;
+    }
     const sellerPrice = Number(data.price);
     const productMrp = Number(data.mrp);
     if (!data.name?.trim()) {
@@ -362,6 +399,10 @@ export default function VendorProducts() {
       toast({ title: "Invalid barcode", description: "Please enter a valid barcode.", variant: "destructive" });
       return;
     }
+    if (!hasValidEanCheckDigit(barcode)) {
+      toast({ title: "Invalid EAN/UPC", description: "The final check digit is incorrect. Scan the complete code from the product package and try again.", variant: "destructive" });
+      return;
+    }
     setBarcodeLoading(true);
     try {
       const found = await customFetch<any>(`/api/vendor/barcode/${barcode}`, { responseType: "json" });
@@ -391,14 +432,26 @@ export default function VendorProducts() {
       if (found.mrp && Number(found.mrp) > 0) {
         setValue("mrp", Number(found.mrp), { shouldDirty: true, shouldValidate: true });
       }
-      const returnedImages = Array.isArray(found.images) ? found.images : [found.imageUrl, found.mainImage, found.image_url, found.image_front_url];
-      const images: string[] = Array.from(new Set<string>(returnedImages.filter((url: unknown): url is string => typeof url === "string" && /^(https?:\/\/|\/api\/)/i.test(url)).map((url: string) => url.trim()))).slice(0, 12);
-      if (images.length) setImageUrls(images);
+      const returnedImages = [
+        ...(Array.isArray(found.images) ? found.images : []),
+        found.image_front_url,
+        found.image_url,
+        found.image_front_small_url,
+        found.image_small_url,
+        found.imageUrl,
+        found.mainImage,
+        found.selected_images,
+      ];
+      const images: string[] = Array.from(new Set<string>(returnedImages.map(normalizeProductImageUrl).filter(Boolean))).slice(0, 12);
+      // Replace the current media list so a new barcode cannot keep stale
+      // images from the previous product. Valid imported URLs are preserved.
+      setImageUrls(images);
       setValue("expiryRequired", Boolean(found.expiryRequired), { shouldDirty: true });
       toast({ title: "Product details imported", description: `${images.length} company image(s) and available product details added. Review or edit everything before saving.` });
     } catch (err) {
       const description = getFriendlyErrorMessage(err, "Product not found. Please add the product details manually.");
-      toast({ title: description.includes("not found") ? "Product not found" : "Barcode lookup failed", description, variant: "destructive" });
+      const noCatalogRecord = /no product record|not found in the connected catalogues/i.test(description);
+      toast({ title: noCatalogRecord ? "EAN not in catalogue" : description.includes("not found") ? "Product not found" : "EAN lookup failed", description, variant: noCatalogRecord ? undefined : "destructive" });
     } finally {
       setBarcodeLoading(false);
     }
@@ -468,15 +521,17 @@ export default function VendorProducts() {
   };
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []).filter(file => file.type.startsWith("image/"));
+    event.target.value = "";
     if (!files.length) return;
 
+    setImageUploading(true);
     Promise.all(files.map((file) => uploadImageFile(file, "seller-products"))).then((uploads) => {
       const urls = uploads.map((item) => item.imageUrl).filter(Boolean);
       setImageUrls(prev => [...prev, ...urls]);
       toast({ title: `${urls.length} photo uploaded`, description: "Storage URL saved for this product." });
     }).catch((error) => {
       toast({ title: "Photo upload failed", description: getFriendlyErrorMessage(error, "Please try another image."), variant: "destructive" });
-    });
+    }).finally(() => setImageUploading(false));
   };
   const addLibraryImage = (url: string) => {
     if (!url) return;
@@ -680,8 +735,8 @@ export default function VendorProducts() {
                   <div className="mb-2 flex items-start gap-2">
                     <ScanBarcode className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
                     <div>
-                      <Label htmlFor="product-barcode" className="font-bold text-blue-950">Add product by barcode</Label>
-                      <p className="text-xs text-blue-700">A valid barcode imports available details, pack size and images. Review the result and set the price yourself.</p>
+                      <Label htmlFor="product-barcode" className="font-bold text-blue-950">Add product by EAN number</Label>
+                      <p className="text-xs text-blue-700">Enter the product EAN to import its name, brand, details and available product images. Set the selling price yourself.</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap justify-end gap-2">
@@ -689,7 +744,7 @@ export default function VendorProducts() {
                       id="product-barcode"
                       inputMode="numeric"
                       maxLength={14}
-                      placeholder="Scan or enter 8-14 digit barcode"
+                      placeholder="Enter 8-14 digit EAN number"
                       {...register("barcode", { onChange: (event) => { event.target.value = event.target.value.replace(/\D/g, "").slice(0, 14); } })}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {

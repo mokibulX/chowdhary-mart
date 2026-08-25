@@ -489,11 +489,6 @@ export default function ProductDetail() {
             )}
             <span className="text-3xl font-bold">Rs.{Number(product.price).toFixed(0)}</span>
           </div>
-          <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
-            <p className="font-semibold">Customer price breakdown</p>
-            <p className="mt-1">Product price: Rs.{Number(product.price).toFixed(2)} · Platform fee and distance-based delivery are calculated after you select your delivery location.</p>
-          </div>
-
           {product.description && <p className={`text-sm leading-relaxed text-muted-foreground ${showFullDetails ? "" : "line-clamp-3"}`}>{product.description}</p>}
           {((product.description && product.description.length > 180) || specs.length > 0) && (
             <Button type="button" variant="outline" size="sm" onClick={() => setShowFullDetails((value) => !value)}>

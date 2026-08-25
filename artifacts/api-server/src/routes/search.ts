@@ -82,7 +82,7 @@ async function readLocalUploadImage(urlText: string) {
     ? new URL(urlText)
     : new URL(urlText, "http://local-commerce.test");
   if (!parsed.pathname.startsWith("/uploads/")) return null;
-  const uploadRoot = path.resolve(process.cwd(), "uploads");
+  const uploadRoot = path.resolve(path.basename(process.cwd()) === "api-server" ? path.resolve(process.cwd(), "..", "..") : process.cwd(), "uploads");
   const relative = decodeURIComponent(parsed.pathname.replace(/^\/uploads\/+/, ""));
   const target = path.resolve(uploadRoot, relative);
   if (!target.startsWith(uploadRoot)) return null;

@@ -61,6 +61,8 @@ type Props = {
 const SERVICE_RADIUS_KM = 5;
 const SERVICE_ZONE_DEFAULT_ZOOM = 18;
 const FALLBACK_TILE_MAX_ZOOM = 18;
+// All location pickers share the Admin service-area road/building map.
+const USE_SHARED_LEAFLET_MAP = true;
 
 function env(name: string) {
   const values = import.meta.env as Record<string, string | undefined>;
@@ -287,7 +289,7 @@ export function PickupLocationPicker({
   }, [initialPolygonKey]);
 
   useEffect(() => {
-    if (!active || !polygonMode || !mapRef.current) return;
+    if (!active || !USE_SHARED_LEAFLET_MAP || !mapRef.current) return;
     const center = fallbackCenter ?? selected ?? storePoint ?? defaultDeliveryPoint;
     const instance = L.map(mapRef.current, {
       zoomControl: false,
@@ -312,11 +314,23 @@ export function PickupLocationPicker({
         crossOrigin: true,
       }).addTo(instance);
     });
-    instance.on("click", (event) => addPolygonPoint({ lat: event.latlng.lat, lng: event.latlng.lng }));
+    instance.on("click", (event) => {
+      const point = { lat: event.latlng.lat, lng: event.latlng.lng };
+      if (polygonMode) addPolygonPoint(point);
+      else {
+        setFallbackCenter(point);
+        void buildLocation(point);
+        onLocationChange?.(point);
+      }
+    });
     leafletMap.current = instance;
     setFallbackMap(false);
     setGoogleTilesReady(true);
     setLeafletReady(true);
+    if (!polygonMode) {
+      if (initial) setMarkerPosition(center);
+      else if (locateFirst) void locateMe();
+    }
     window.setTimeout(() => instance.invalidateSize(), 0);
     window.setTimeout(() => instance.invalidateSize(), 250);
     window.setTimeout(() => instance.invalidateSize(), 1000);
@@ -339,11 +353,11 @@ export function PickupLocationPicker({
 
   useEffect(() => {
     const instance = leafletMap.current;
-    if (!instance || !leafletReady || !polygonMode) return;
+    if (!instance || !leafletReady) return;
     leafletGeometry.current?.removeFrom(instance);
     const group = L.layerGroup().addTo(instance);
     leafletGeometry.current = group;
-    if (polygonClosed && polygonPoints.length >= 3) {
+    if (polygonMode && polygonClosed && polygonPoints.length >= 3) {
       const world = [[85, -180], [85, 180], [-85, 180], [-85, -180]] as L.LatLngExpression[];
       L.polygon([world, polygonPoints.map((point) => [point.lat, point.lng] as L.LatLngExpression)], {
         fillColor: "#111827",
@@ -351,7 +365,7 @@ export function PickupLocationPicker({
         stroke: false,
         interactive: false,
       }).addTo(group);
-    } else {
+    } else if (polygonMode) {
       if (polygonPoints.length >= 2) {
         L.polyline(polygonPoints.map((point) => [point.lat, point.lng] as L.LatLngExpression), {
           color: "#2563eb",
@@ -384,6 +398,49 @@ export function PickupLocationPicker({
         });
       });
     }
+    if (!polygonMode) {
+      const selectedPoint = selected ?? initial ?? null;
+      if (selectedPoint && validCoordinate(selectedPoint.lat, selectedPoint.lng)) {
+        L.marker([selectedPoint.lat, selectedPoint.lng], {
+          icon: L.divIcon({
+            className: "cm-location-native-marker",
+            iconSize: [34, 46],
+            iconAnchor: [17, 43],
+            html: `<span style="display:block;width:30px;height:40px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#ff5a00;border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,.3)"><i style="display:block;width:8px;height:8px;margin:13px auto;border-radius:50%;background:white"></i></span>`,
+          }),
+          title: "Selected delivery point",
+          interactive: false,
+        }).addTo(group);
+      }
+      if (storePoint && validCoordinate(storePoint.lat, storePoint.lng)) {
+        L.circleMarker([storePoint.lat, storePoint.lng], {
+          radius: 8,
+          color: "#ffffff",
+          weight: 3,
+          fillColor: "#16a34a",
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(group);
+      }
+      serviceZones.forEach((zone) => {
+        const geometry = zone.boundaryGeometry;
+        const raw = geometry?.type === "Polygon" ? geometry.coordinates?.[0] : geometry?.coordinates ?? geometry?.points ?? geometry?.vertices;
+        if (!Array.isArray(raw) || raw.length < 3) return;
+        const points: Array<[number, number]> = raw.map((item: any) => Array.isArray(item)
+          ? [Number(item[1]), Number(item[0])]
+          : [Number(item.lat ?? item.latitude), Number(item.lng ?? item.longitude)]);
+        if (points.every((item) => validCoordinate(Number(item[0]), Number(item[1])))) {
+          L.polygon(points, {
+            color: "#16a34a",
+            weight: 1.5,
+            opacity: 0.55,
+            fillColor: "#22c55e",
+            fillOpacity: 0.08,
+            interactive: false,
+          }).addTo(group);
+        }
+      });
+    }
     if (liveGpsPoint && validCoordinate(liveGpsPoint.lat, liveGpsPoint.lng)) {
       L.circle([liveGpsPoint.lat, liveGpsPoint.lng], {
         radius: 35,
@@ -404,7 +461,7 @@ export function PickupLocationPicker({
       }).addTo(group);
     }
     return () => { group.removeFrom(instance); };
-  }, [leafletReady, polygonMode, polygonPoints, polygonClosed, liveGpsPoint]);
+  }, [leafletReady, polygonMode, polygonPoints, polygonClosed, liveGpsPoint, selected, initial, serviceZones, storePoint]);
 
   const loadServiceability = async (point: { lat: number; lng: number }) => {
     if (suppliedServiceZones) return suppliedServiceZones.some((zone) => zone.insideServiceZone);
@@ -471,6 +528,11 @@ export function PickupLocationPicker({
   };
 
   const setMarkerPosition = (point: { lat: number; lng: number }) => {
+    if (leafletMap.current) {
+      setFallbackCenter(point);
+      void buildLocation(point);
+      return;
+    }
     if (!window.google?.maps || !map.current) return;
     if (!marker.current) {
       marker.current = new window.google.maps.Marker({
@@ -544,15 +606,15 @@ export function PickupLocationPicker({
       if (map.current && polygonMode) {
         map.current.setCenter(point);
         onLocationChange?.(point);
-      } else if (leafletMap.current && polygonMode) {
+      } else if (leafletMap.current) {
         leafletMap.current.setView([point.lat, point.lng], SERVICE_ZONE_DEFAULT_ZOOM, { animate: true });
         onLocationChange?.(point);
-      }
-      else if (map.current) setMarkerPosition(point);
+        if (!polygonMode) setMarkerPosition(point);
+      } else if (map.current) setMarkerPosition(point);
       else await buildLocation(point);
       if (!polygonMode) onLocationChange?.(point);
       if (map.current) map.current.setZoom(polygonMode ? SERVICE_ZONE_DEFAULT_ZOOM : 20);
-      else if (leafletMap.current && polygonMode) leafletMap.current.setZoom(SERVICE_ZONE_DEFAULT_ZOOM);
+      else if (leafletMap.current) leafletMap.current.setZoom(SERVICE_ZONE_DEFAULT_ZOOM);
       if (typeof navigator !== "undefined" && navigator.geolocation) {
         if (gpsWatchId.current !== null) navigator.geolocation.clearWatch(gpsWatchId.current);
         gpsWatchId.current = navigator.geolocation.watchPosition(
@@ -597,8 +659,12 @@ export function PickupLocationPicker({
       if (map.current && polygonMode) {
         map.current.setCenter(point);
         map.current.setZoom(SERVICE_ZONE_DEFAULT_ZOOM);
-      } else if (leafletMap.current && polygonMode) {
+      } else if (leafletMap.current) {
         leafletMap.current.setView([point.lat, point.lng], SERVICE_ZONE_DEFAULT_ZOOM, { animate: true });
+        if (!polygonMode) {
+          setMarkerPosition(point);
+          onLocationChange?.(point);
+        }
       } else if (map.current) {
         setMarkerPosition(point);
         map.current.setZoom(20);
@@ -693,7 +759,7 @@ export function PickupLocationPicker({
   };
 
   useEffect(() => {
-    if (!active || !mapRef.current || polygonMode) return;
+    if (!active || !mapRef.current || polygonMode || USE_SHARED_LEAFLET_MAP) return;
     let cancelled = false;
     let resizeObserver: ResizeObserver | null = null;
     let googleErrorObserver: MutationObserver | null = null;
@@ -880,7 +946,7 @@ export function PickupLocationPicker({
   }, [active, polygonMode]);
 
   useEffect(() => {
-    if (!map.current) return;
+    if (USE_SHARED_LEAFLET_MAP || !map.current) return;
     map.current.setMapTypeId(is3D ? "satellite" : "roadmap");
     map.current.setTilt(is3D ? 45 : 0);
     map.current.setOptions({
@@ -1176,7 +1242,7 @@ export function PickupLocationPicker({
             </div>
           </div>
         )}
-        {!polygonMode && <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-full drop-shadow-2xl">
+        {!polygonMode && !USE_SHARED_LEAFLET_MAP && <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-full drop-shadow-2xl">
           <svg width="30" height="46" viewBox="0 0 30 46" aria-hidden="true">
             <path d="M15 44 C15 44 26 26 26 15 C26 8.4 21.1 3 15 3 C8.9 3 4 8.4 4 15 C4 26 15 44 15 44Z" fill="#ff5a00" stroke="white" strokeWidth="3" />
             <circle cx="15" cy="15" r="4.6" fill="white" />
@@ -1209,9 +1275,9 @@ export function PickupLocationPicker({
           <Button size="icon" className="rounded-full bg-white text-slate-900 shadow-xl hover:bg-white" onClick={() => setFullscreen((value) => !value)} aria-label={fullscreen ? "Exit fullscreen map" : "Open fullscreen map"}>
             {fullscreen ? <X className="h-5 w-5" /> : <Expand className="h-5 w-5" />}
           </Button>
-          {(showFallbackSurface || polygonMode) && <>
-            <Button size="icon" className="rounded-full bg-white text-slate-900 shadow-xl hover:bg-white" onClick={() => polygonMode && leafletMap.current ? leafletMap.current.zoomIn() : setFallbackZoom((value) => Math.min(FALLBACK_TILE_MAX_ZOOM, value + 1))} aria-label="Zoom in map"><Plus className="h-5 w-5" /></Button>
-            <Button size="icon" className="rounded-full bg-white text-slate-900 shadow-xl hover:bg-white" onClick={() => polygonMode && leafletMap.current ? leafletMap.current.zoomOut() : setFallbackZoom((value) => Math.max(4, value - 1))} aria-label="Zoom out map"><Minus className="h-5 w-5" /></Button>
+          {(showFallbackSurface || polygonMode || USE_SHARED_LEAFLET_MAP) && <>
+            <Button size="icon" className="rounded-full bg-white text-slate-900 shadow-xl hover:bg-white" onClick={() => leafletMap.current ? leafletMap.current.zoomIn() : setFallbackZoom((value) => Math.min(FALLBACK_TILE_MAX_ZOOM, value + 1))} aria-label="Zoom in map"><Plus className="h-5 w-5" /></Button>
+            <Button size="icon" className="rounded-full bg-white text-slate-900 shadow-xl hover:bg-white" onClick={() => leafletMap.current ? leafletMap.current.zoomOut() : setFallbackZoom((value) => Math.max(4, value - 1))} aria-label="Zoom out map"><Minus className="h-5 w-5" /></Button>
           </>}
           <Button size="icon" className={`rounded-full shadow-xl hover:bg-white ${is3D ? "bg-blue-600 text-white hover:text-slate-900" : "bg-white text-slate-900"}`} onClick={() => setIs3D((value) => !value)} aria-label={is3D ? "Switch to 2D map" : "Switch to 3D satellite map"}>
             <Layers className="h-5 w-5" />

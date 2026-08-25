@@ -2,6 +2,7 @@ import { Router } from "express";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db, storesTable, bannersTable } from "@workspace/db";
 import { getActiveDeliveryZones, isInsideZone } from "../lib/zones";
+import { toPublicStore } from "../lib/public-store";
 
 const router = Router();
 
@@ -39,12 +40,13 @@ router.get("/", async (req, res) => {
       .where(and(...conditions))
       .orderBy(desc(storesTable.rating))
       .limit(limit);
-    res.json(hasLocation
+    const eligibleStores = hasLocation
       ? stores.filter((store) => {
           const zone = eligibleZones.find((item) => item.id === store.zoneId);
           return Boolean(zone && isInsideZone(zone, Number(store.lat), Number(store.lng)));
         })
-      : stores);
+      : stores;
+    res.json(eligibleStores.map(toPublicStore));
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -60,7 +62,7 @@ router.get("/:storeId", async (req, res) => {
       res.status(404).json({ error: "Store not found" });
       return;
     }
-    res.json(store);
+    res.json(toPublicStore(store));
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

@@ -50,6 +50,19 @@ app.use("/uploads", express.static(path.resolve(workspaceRoot, "uploads"), {
     res.setHeader("access-control-allow-origin", "*");
   },
 }));
+// Serve files created by older local runs, which wrote to artifacts/api-server/uploads.
+// New uploads always use workspaceRoot/uploads above.
+const legacyUploadRoot = path.resolve(process.cwd(), "uploads");
+if (legacyUploadRoot !== path.resolve(workspaceRoot, "uploads") && existsSync(legacyUploadRoot)) {
+  app.use("/uploads", express.static(legacyUploadRoot, {
+    immutable: true,
+    maxAge: "30d",
+    setHeaders(res) {
+      res.setHeader("cross-origin-resource-policy", "cross-origin");
+      res.setHeader("access-control-allow-origin", "*");
+    },
+  }));
+}
 app.use(express.json({
   limit: process.env.REQUEST_JSON_LIMIT ?? "8mb",
   verify: (req, _res, buf) => {
