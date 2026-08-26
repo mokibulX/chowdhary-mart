@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { eq, desc, and, inArray, isNull, sql } from "drizzle-orm";
 import { db, ordersTable, deliveryPartnersTable, liveLocationsTable, orderTrackingTable, storesTable, activeDeliveryLocationsTable, deliveryTrackingHistoryTable, serviceZonesTable } from "@workspace/db";
 import { requireApprovedDeliveryPartner, requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
-import { riderZoneIds, isInsideZone } from "../lib/zones";
+import { riderZoneIds, isInsideZone, distanceKm } from "../lib/zones";
 import { createAndPushNotification } from "../lib/push-service";
 import { deliveryOtp, expireOrderIfNeeded, lifecycleMeta, pickupOtp } from "../lib/order-lifecycle";
 import { testMode } from "../lib/test-mode";
@@ -496,6 +496,9 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
       .filter(({ offer }) => Number(offer?.deliveryPartnerId) === dp.id)
       .map(({ order, offer }) => {
         const store = storeMap.get(order.storeId);
+        const pickupDistanceKm = store && dp.currentLat != null && dp.currentLng != null
+          ? distanceKm(Number(dp.currentLat), Number(dp.currentLng), Number(store.lat), Number(store.lng))
+          : null;
         return {
           ...order,
           store,
@@ -504,6 +507,8 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
             orderId: order.id,
             status: order.status,
             estimatedMins: order.estimatedDeliveryMins ?? 40,
+            pickupDistanceKm: pickupDistanceKm == null ? null : Number(pickupDistanceKm.toFixed(2)),
+            distanceKm: pickupDistanceKm == null ? null : Number(pickupDistanceKm.toFixed(2)),
             storeLocation: store ? { lat: store.lat, lng: store.lng, label: store.name, address: store.address } : null,
             customerLocation: order.pickupLatitude && order.pickupLongitude ? {
               lat: Number(order.pickupLatitude),

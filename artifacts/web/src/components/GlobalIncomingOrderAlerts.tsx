@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { customFetch } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,14 @@ export function GlobalIncomingOrderAlerts() {
   const [reason, setReason] = useState("");
   const seenRef = useRef<Set<string>>(new Set(readSeenKeys()));
   const active = queue[0] ?? null;
+  const isDeliveryPartner = user?.role === "delivery_partner";
+  const { data: deliveryStatus } = useQuery({
+    queryKey: ["/api/delivery/dashboard-summary", "incoming-alert-status", user?.id],
+    queryFn: () => customFetch<any>("/api/delivery/dashboard-summary", { responseType: "json" }),
+    enabled: isDeliveryPartner,
+    refetchInterval: isDeliveryPartner ? 4000 : false,
+    staleTime: 2000,
+  });
 
   useEffect(() => {
     if (!user || !["vendor", "delivery_partner"].includes(user.role)) {
@@ -42,7 +51,10 @@ export function GlobalIncomingOrderAlerts() {
           const alerts = (orders ?? []).map((order) => ({ key: `seller-${user.id}-${order.id}-pending`, role: "seller" as const, order }));
           pushAlerts(alerts);
         }
-        if (user.role === "delivery_partner" && (user as any).isOnline !== false) {
+        const partnerIsOnline = deliveryStatus
+          ? deliveryStatus.currentStatus !== "offline"
+          : (user as any).isOnline === true;
+        if (user.role === "delivery_partner" && partnerIsOnline) {
           const orders = await customFetch<any[]>("/api/delivery/available-orders", { responseType: "json" });
           const eligible = (orders ?? []).filter((order) => order.status === "confirmed" && order.deliveryOffer);
           const alerts = eligible.map((order) => ({ key: `rider-${user.id}-${order.id}-${order.deliveryOffer.id}`, role: "rider" as const, order }));
@@ -63,13 +75,19 @@ export function GlobalIncomingOrderAlerts() {
         return [...current, ...fresh.filter((item) => !keys.has(item.key))];
       });
     };
-    poll();
+    if (user.role === "delivery_partner" && deliveryStatus?.currentStatus === "offline") {
+      setQueue([]);
+      setRejecting(false);
+      setReason("");
+    } else {
+      poll();
+    }
     const timer = window.setInterval(poll, 4000);
     return () => {
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [user?.id, user?.role, (user as any)?.isOnline]);
+  }, [user?.id, user?.role, (user as any)?.isOnline, deliveryStatus?.currentStatus]);
 
   useAlertEffects(Boolean(active));
 
@@ -81,23 +99,22 @@ export function GlobalIncomingOrderAlerts() {
 
   const accept = async () => {
     if (!active) return;
+    const incoming = active;
     setBusy(true);
+    closeActive();
+    setLocation(incoming.role === "seller" ? "/vendor/orders" : "/rider/home");
     try {
-      if (active.role === "seller") {
-        await customFetch(`/api/vendor/orders/${active.order.id}/status`, {
+      if (incoming.role === "seller") {
+        await customFetch(`/api/vendor/orders/${incoming.order.id}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status: "confirmed", preparationMins: 12 }),
           responseType: "json",
         });
         toast({ title: "Order accepted", description: "Delivery partner matching started." });
-        closeActive();
-        setLocation("/vendor/orders");
         return;
       }
-      await customFetch(`/api/delivery/orders/${active.order.id}/accept`, { method: "POST", responseType: "json" });
+      await customFetch(`/api/delivery/orders/${incoming.order.id}/accept`, { method: "POST", responseType: "json" });
       toast({ title: "Delivery accepted", description: "Pickup navigation is ready." });
-      closeActive();
-      setLocation("/rider/home");
     } catch (error) {
       const message = (error as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
         ?? (error as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -241,6 +258,7 @@ function RiderAlertBody({ order }: { order: any }) {
   const tracking = order.liveTracking ?? order.tracking ?? {};
   const earning = order.deliveryPartnerEarning ?? tracking.payout?.delivery ?? order.deliveryFee ?? 0;
   const cod = order.paymentMethod === "cod" ? Number(order.total ?? 0) : 0;
+  const pickupDistance = tracking.pickupDistanceKm ?? tracking.distanceKm;
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border bg-white p-3">
@@ -249,9 +267,9 @@ function RiderAlertBody({ order }: { order: any }) {
         <p className="text-sm text-muted-foreground">{order.store?.address ?? tracking.storeLocation?.address ?? "Shop area"}</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <Metric label="Pickup ETA" value="8 min" />
+        <Metric label="Pickup ETA" value={pickupDistance == null ? "GPS unavailable" : `${Math.max(1, Math.ceil(Number(pickupDistance) * 4))} min`} />
         <Metric label="Delivery ETA" value={`${tracking.estimatedMins ?? 40} min`} />
-        <Metric label="Distance" value={`${Number(tracking.distanceKm ?? 3.2).toFixed(1)} km`} />
+        <Metric label="Distance to shop" value={pickupDistance == null ? "GPS unavailable" : `${Number(pickupDistance).toFixed(2)} km`} />
         <Metric label="Earning" value={`Rs.${Number(earning).toFixed(0)}`} strong />
         <Metric label="Packages" value={`${order.items?.length ?? 1}`} />
         <Metric label="COD" value={cod ? `Rs.${cod.toFixed(0)}` : "No"} />
@@ -331,11 +349,13 @@ function useAlertEffects(active: boolean) {
     if ("vibrate" in navigator) navigator.vibrate([240, 120, 240, 120, 420]);
     timer = window.setInterval(playTone, 2200);
     const originalTitle = document.title;
+    document.documentElement.classList.add("cm-order-alert-flash");
     document.title = "New order · ChowdharyMart";
     return () => {
       window.clearInterval(timer);
       if (audioContext) void audioContext.close().catch(() => undefined);
       if ("vibrate" in navigator) navigator.vibrate(0);
+      document.documentElement.classList.remove("cm-order-alert-flash");
       document.title = originalTitle;
     };
   }, [active]);

@@ -41,6 +41,7 @@ export default function DeliveryDashboard() {
   const [lastGpsAt, setLastGpsAt] = useState<string | null>(null);
   const [lastAccuracy, setLastAccuracy] = useState<number | undefined>();
   const [onlineBusy, setOnlineBusy] = useState(false);
+  const [onlineOverride, setOnlineOverride] = useState<boolean | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [orderFilter, setOrderFilter] = useState<"active" | "completed" | "cancelled">("active");
   const [livePoint, setLivePoint] = useState<{ lat: number; lng: number } | null>(null);
@@ -62,8 +63,14 @@ export default function DeliveryDashboard() {
   }, [dashboardSummary?.currentLocation?.lat, dashboardSummary?.currentLocation?.lng]);
 
   const refresh = () => qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
-  const currentStatus = dashboardSummary?.currentStatus ?? ((user as any)?.isOnline ? "online" : "offline");
+  const serverStatus = dashboardSummary?.currentStatus ?? ((user as any)?.isOnline ? "online" : "offline");
+  const currentStatus = onlineOverride === null ? serverStatus : onlineOverride ? "online" : "offline";
   const userOnline = currentStatus !== "offline";
+  useEffect(() => {
+    if (onlineOverride === null || !dashboardSummary?.currentStatus) return;
+    const serverOnline = dashboardSummary.currentStatus !== "offline";
+    if (serverOnline === onlineOverride) setOnlineOverride(null);
+  }, [dashboardSummary?.currentStatus, onlineOverride]);
   useEffect(() => {
     if (userOnline) setAutoGps(true);
   }, [userOnline]);
@@ -78,6 +85,13 @@ export default function DeliveryDashboard() {
   const currentSessionSeconds = dashboardSummary?.currentOnlineStartedAt
     ? Math.max(0, Math.floor((clock - new Date(dashboardSummary.currentOnlineStartedAt).getTime()) / 1000))
     : 0;
+  const currentSessionSecondsToday = dashboardSummary?.currentOnlineStartedAt
+    ? Math.max(0, Math.floor((clock - Math.max(new Date(dashboardSummary.currentOnlineStartedAt).getTime(), indiaMidnightMs(new Date(clock)))) / 1000))
+    : 0;
+  // Some older active sessions have a start time but no persisted session row.
+  // The live part is clamped to India's current day so a session crossing midnight
+  // never carries yesterday's time into today's counter.
+  const onlineSecondsToday = Math.max(Number(dashboardSummary?.onlineSecondsToday ?? 0), currentSessionSecondsToday);
   useEffect(() => {
     if (!dashboardSummary?.currentOnlineStartedAt) return undefined;
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
@@ -143,6 +157,7 @@ export default function DeliveryDashboard() {
         body: JSON.stringify({ online: goingOnline }),
         responseType: "json",
       });
+      setOnlineOverride(goingOnline);
       if (!goingOnline) setAutoGps(false);
       await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
       await qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
@@ -312,7 +327,7 @@ export default function DeliveryDashboard() {
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <SummaryCard label="Today's earnings" value={`₹${Number(dashboardSummary?.earningsToday ?? 0).toFixed(0)}`} detail={`${dashboardSummary?.earningsWeek ?? 0} this week`} />
           <SummaryCard label="Today's orders" value={String(dashboardSummary?.ordersToday ?? 0)} detail={`${dashboardSummary?.ordersWeek ?? 0} this week`} />
-          <SummaryCard label="Online time" value={formatDuration(dashboardSummary?.onlineSecondsToday ?? 0)} detail={userOnline ? "Live now" : "Today"} />
+          <SummaryCard label="Online time" value={formatDuration(onlineSecondsToday)} detail={userOnline ? "Live now" : "Today"} />
           <SummaryCard label="Wallet balance" value={`₹${Number((user as any)?.walletBalance ?? dashboardSummary?.walletBalance ?? 0).toFixed(0)}`} detail="Available to withdraw" />
         </section>
 
@@ -334,7 +349,7 @@ export default function DeliveryDashboard() {
           <div className="grid grid-cols-2 divide-x divide-y rounded-xl border bg-slate-50">
             <ProgressMetric label="Earnings" value={`₹${Number(dashboardSummary?.earningsToday ?? 0).toFixed(0)}`} />
             <ProgressMetric label="Trips" value={String(dashboardSummary?.ordersToday ?? 0)} />
-            <ProgressMetric label="Online time" value={formatDuration(dashboardSummary?.onlineSecondsToday ?? 0)} />
+            <ProgressMetric label="Online time" value={formatDuration(onlineSecondsToday)} />
             <ProgressMetric label="Wallet" value={`₹${Number((user as any)?.walletBalance ?? dashboardSummary?.walletBalance ?? 0).toFixed(0)}`} />
           </div>
         </section>
@@ -554,6 +569,19 @@ function formatDuration(seconds: number) {
   return hours ? `${hours}h ${minutes}m` : `${minutes}m ${secs}s`;
 }
 
+function indiaMidnightMs(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const day = Number(parts.find((part) => part.type === "day")?.value);
+  return Date.UTC(year, month - 1, day) - (5.5 * 60 * 60 * 1000);
+}
+
 function SummaryCard({ label, value, detail, accent }: { label: string; value: string; detail: string; accent?: boolean }) {
   return <div className={`rounded-lg border bg-white p-4 shadow-sm ${accent ? "border-emerald-300" : ""}`}><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-2 text-2xl font-bold ${accent ? "text-emerald-700" : ""}`}>{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>;
 }
@@ -579,13 +607,18 @@ function RiderMapPreview({ location, currentOrder }: { location: { lat: number; 
     mapRef.current = map;
     customFetch<any[]>("/api/delivery/my-zones", { responseType: "json" }).then((zones) => {
       setAssignedZones(zones ?? []);
-      (zones ?? []).forEach((zone) => {
-        const rings = boundaryToLeafletRings(zone.boundaryGeometry);
-        if (!rings.length) return;
-        const layer = L.polygon(rings as L.LatLngExpression[][], { color: "#f97316", weight: 3, opacity: 0.95, fillColor: "#fb923c", fillOpacity: 0.2 }).addTo(map);
-        layer.bindTooltip(zone.name ?? zone.code ?? "Assigned service zone", { sticky: true, direction: "center" });
-        zoneRefs.current.push(layer);
-      });
+      const rings = (zones ?? []).flatMap((zone) => boundaryToLeafletRings(zone.boundaryGeometry));
+      if (rings.length) {
+        const world = [[85, -180], [85, 180], [-85, 180], [-85, -180]] as L.LatLngExpression[];
+        const mask = L.polygon([world, ...rings] as L.LatLngExpression[][], {
+          fillColor: "#111827",
+          fillOpacity: 0.52,
+          stroke: false,
+          fillRule: "evenodd",
+          interactive: false,
+        }).addTo(map);
+        zoneRefs.current.push(mask);
+      }
     }).catch(() => undefined);
     riderRef.current = L.circleMarker([location.lat, location.lng], { radius: 9, color: "#fff", weight: 4, fillColor: "#2563eb", fillOpacity: 1 }).addTo(map).bindTooltip("Your live location", { permanent: true, direction: "top", offset: [0, -8] });
     const store = currentOrder?.store;
