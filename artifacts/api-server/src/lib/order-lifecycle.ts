@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, orderItemsTable, ordersTable, orderTrackingTable, productsTable } from "@workspace/db";
 import { createAndPushNotification } from "./push-service";
 
-export const SELLER_DECISION_MS = 60_000;
+export const SELLER_DECISION_MS = 5 * 60_000;
 export const SELLER_PREPARATION_MS = 10 * 60_000;
 export const RIDER_PICKUP_MS = 5 * 60_000;
 
@@ -21,8 +21,10 @@ export async function expireOrderIfNeeded(order: typeof ordersTable.$inferSelect
   const riderAccepted = tracking.find((item) => item.message?.includes("Delivery partner accepted"));
   const now = Date.now();
   let reason = "";
+  // Keep the pending order visible throughout the seller's five-minute
+  // decision window. Refreshing the page does not shorten that window.
   if (order.status === "pending" && now > new Date(order.createdAt).getTime() + SELLER_DECISION_MS) {
-    reason = "Seller did not respond within 1 minute";
+    reason = "Seller did not respond within 5 minutes";
   } else if (["confirmed", "preparing"].includes(order.status) && sellerAccepted && now > new Date(sellerAccepted.updatedAt).getTime() + SELLER_PREPARATION_MS) {
     reason = "Seller did not mark the order ready within 10 minutes";
   } else if (["confirmed", "preparing", "packed"].includes(order.status) && riderAccepted && now > new Date(riderAccepted.updatedAt).getTime() + RIDER_PICKUP_MS) {

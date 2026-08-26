@@ -622,7 +622,9 @@ router.get("/orders", async (req: AuthRequest, res) => {
 
     const { status } = req.query;
     const conditions = [eq(ordersTable.storeId, store.id)];
-    if (store.zoneId) conditions.push(eq(ordersTable.zoneId, store.zoneId));
+    // Store ownership is the seller's order boundary. Do not require a zone
+    // match here: historical orders may predate zone assignment and must still
+    // remain visible in the seller's order history.
     if (status) conditions.push(eq(ordersTable.status, status as typeof ordersTable.$inferSelect["status"]));
 
     const orders = await db.select().from(ordersTable)
