@@ -17,6 +17,7 @@ import { createAndPushNotification } from "../lib/push-service";
 import { deliveryOtp } from "../lib/order-lifecycle";
 import { calculateOrderPricing, ensurePricingSchema, getPricingSettings } from "../lib/pricing";
 import { DEFAULT_LOCATION } from "../lib/default-location";
+import { cancelDeliveryOffers } from "../lib/delivery-offers";
 
 const router = Router();
 
@@ -461,6 +462,9 @@ router.post("/:orderId/cancel", async (req: AuthRequest, res) => {
       orderId,
       status: "cancelled",
       message: `Cancelled: ${reason}`,
+    });
+    void cancelDeliveryOffers(orderId).catch((offerError) => {
+      req.log.warn({ err: offerError, orderId }, "Cancelled order offers could not be released");
     });
 
     // Refund wallet if used

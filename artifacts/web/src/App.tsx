@@ -63,6 +63,13 @@ const queryClient = new QueryClient({
   },
 });
 
+function canonicalRole(value: unknown) {
+  const role = String(value ?? "").trim().toLowerCase();
+  if (role === "seller") return "vendor";
+  if (role === "rider" || role === "delivery") return "delivery_partner";
+  return role;
+}
+
 function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
@@ -83,10 +90,11 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: s
     return null;
   }
 
-  if (roles && !roles.includes(user.role)) {
-    if (user.role === "delivery_partner") setLocation("/delivery");
-    else if (user.role === "vendor") setLocation("/vendor");
-    else if (user.role === "admin") setLocation("/admin/dashboard");
+  const role = canonicalRole(user.role);
+  if (roles && !roles.includes(role)) {
+    if (role === "delivery_partner") setLocation("/delivery");
+    else if (role === "vendor") setLocation("/vendor");
+    else if (role === "admin") setLocation("/admin/dashboard");
     else setLocation("/");
     return null;
   }
@@ -106,8 +114,9 @@ function DeliveryPartnerCustomerBlock({ children }: { children: React.ReactNode 
       </div>
     );
   }
-  if (user?.role === "delivery_partner") return <Redirect to="/delivery" />;
-  if (user?.role === "vendor") return <Redirect to="/vendor" />;
+  const role = canonicalRole(user?.role);
+  if (role === "delivery_partner") return <Redirect to="/delivery" />;
+  if (role === "vendor") return <Redirect to="/vendor" />;
   return <>{children}</>;
 }
 
@@ -145,7 +154,8 @@ function VendorRoute({ component: Component }: { component: () => ReactElement }
 
 function ApprovedVendorGate({ children }: { children: React.ReactNode }) {
   const { user, confirmLogout } = useAuth();
-  if (user?.role === "admin" || (user?.role === "vendor" && (user as any)?.vendorStatus === "approved")) {
+  const role = canonicalRole(user?.role);
+  if (role === "admin" || (role === "vendor" && (user as any)?.vendorStatus === "approved")) {
     return <>{children}</>;
   }
   return (
@@ -206,7 +216,7 @@ function DeliveryMobileNav() {
 
 function ApprovedDeliveryGate({ children }: { children: React.ReactNode }) {
   const { user, confirmLogout } = useAuth();
-  if (user?.role === "admin" || (user as any)?.deliveryStatus === "approved") return <>{children}</>;
+  if (canonicalRole(user?.role) === "admin" || (user as any)?.deliveryStatus === "approved") return <>{children}</>;
   return (
     <div className="app-shell items-center justify-center bg-gray-50 p-4">
       <div className="mx-auto max-w-xl rounded-xl border bg-white p-8 text-center shadow-sm">

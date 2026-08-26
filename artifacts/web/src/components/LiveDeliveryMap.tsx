@@ -240,6 +240,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
 
   const status = String(tracking?.status ?? "pending");
   const isDelivered = status === "delivered";
+  const isCancelled = status === "cancelled";
   const beforePickup = ["pending", "confirmed", "preparing", "packed"].includes(status);
   const storeLocation = tracking?.storeLocation as Point | undefined;
   const customerLocation = tracking?.customerLocation as Point | undefined;
@@ -249,7 +250,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
   const customer = pointFrom(customerLocation);
   const partner = pointFrom(rawPartner);
   const origin = isDelivered ? null : partner;
-  const destination = beforePickup ? store : customer;
+  const destination = isCancelled || beforePickup ? store : customer;
   const etaMins = isDelivered ? 0 : Math.max(1, Number(tracking?.estimatedMins ?? 40));
   const distanceKm = Number(tracking?.distanceKm ?? 0);
   const speed = Number(tracking?.speed ?? rawPartner?.["speed"] ?? partnerInfo?.location?.speed ?? 0);
@@ -257,7 +258,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
   const heading = Number(tracking?.riderHeading ?? rawPartner?.["heading"] ?? partnerInfo?.location?.heading ?? 0);
   const riderStatus = isDelivered ? "delivered" : status === "arriving" ? "arriving" : ["picked_up", "on_the_way"].includes(status) ? "delivering" : partnerInfo?.status ?? "waiting";
   const lastUpdated = tracking?.lastLocationUpdatedAt ?? rawPartner?.["updatedAt"] ?? partnerInfo?.location?.updatedAt;
-  const title = isDelivered ? "Order delivered" : beforePickup ? "Rider heading to seller" : `Arriving in ${etaMins} mins`;
+  const title = isDelivered ? "Order delivered" : isCancelled ? "Returning to seller" : beforePickup ? "Rider heading to seller" : `Arriving in ${etaMins} mins`;
   const googleKeyMissing = !(getEnv("MAPS_API_KEY") || getEnv("GOOGLE_MAPS_API_KEY"));
   const routeUnavailable = !origin || !destination;
   const shouldShowFallbackMap = fallbackMap || googleKeyMissing || Boolean(error && !ready);

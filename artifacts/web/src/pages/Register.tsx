@@ -58,7 +58,10 @@ export default function Register() {
 
   useEffect(() => {
     if (user) {
-      setLocation("/");
+      if (user.role === "vendor" || user.role === "seller") setLocation("/vendor");
+      else if (["delivery_partner", "rider", "delivery"].includes(user.role)) setLocation("/delivery");
+      else if (user.role === "admin") setLocation("/admin/dashboard");
+      else setLocation("/");
       return;
     }
     if (requestedRole === "vendor") setLocation("/seller/register");
@@ -150,7 +153,9 @@ export default function Register() {
       });
       login(res.token);
       authToast({ title: "Welcome to Chowdhary Mart!", description: `Account created for ${res.user.name}` });
-      setLocation("/");
+      if (res.user.role === "vendor" || res.user.role === "seller") setLocation("/vendor");
+      else if (["delivery_partner", "rider", "delivery"].includes(res.user.role)) setLocation("/delivery");
+      else setLocation("/");
     } catch (err) {
       authToast({ title: "Registration failed", description: getFriendlyErrorMessage(err, "Could not create account. Please check the details."), variant: "destructive" });
     } finally {

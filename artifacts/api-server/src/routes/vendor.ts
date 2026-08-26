@@ -10,7 +10,7 @@ import { sellerZoneIds } from "../lib/zones";
 import { createAndPushNotification } from "../lib/push-service";
 import { expireOrderIfNeeded, lifecycleMeta } from "../lib/order-lifecycle";
 import { storePublicImage } from "./uploads";
-import { advanceDeliveryOffer } from "../lib/delivery-offers";
+import { advanceDeliveryOffer, cancelDeliveryOffers } from "../lib/delivery-offers";
 
 const router = Router();
 
@@ -743,6 +743,10 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     if (isAccept) {
       void advanceDeliveryOffer(orderId).catch((offerError) => {
         req.log.warn({ err: offerError, orderId }, "Delivery partner offer could not be started");
+      });
+    } else if (isReject) {
+      void cancelDeliveryOffers(orderId).catch((offerError) => {
+        req.log.warn({ err: offerError, orderId }, "Cancelled delivery offers could not be released");
       });
     }
 

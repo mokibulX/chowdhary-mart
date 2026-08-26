@@ -36,10 +36,12 @@ const roleContent: Record<LoginRole, { heading: string; subtitle: string; icon: 
 };
 
 function routeForRole(role: string) {
-  if (role === "admin") return "/admin/dashboard";
-  if (role === "vendor") return "/seller/dashboard";
-  if (role === "delivery_partner") return "/rider/home";
-  return "/customer/home";
+  const normalized = String(role || "").trim().toLowerCase();
+  if (normalized === "admin") return "/admin/dashboard";
+  if (normalized === "vendor" || normalized === "seller") return "/vendor";
+  if (["delivery_partner", "rider", "delivery"].includes(normalized)) return "/delivery";
+  if (normalized === "customer") return "/customer/home";
+  return "/login";
 }
 
 function splitIdentifier(identifier: string) {

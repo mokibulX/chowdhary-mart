@@ -70,6 +70,12 @@ async function partnerForOffer(orderId: number) {
           and (active_o.status in ('packed', 'picked_up', 'on_the_way', 'arriving')
             or (active_o.status = 'confirmed' and active_ot.message ilike '%accepted%'))
           and coalesce(active_ot.message, '') not ilike '%rejected%'
+          and not exists (
+            select 1 from order_tracking newer_ot
+            where newer_ot.order_id = active_ot.order_id
+              and newer_ot.delivery_partner_id = active_ot.delivery_partner_id
+              and newer_ot.updated_at > active_ot.updated_at
+          )
       )
     limit 100
   `);
@@ -154,4 +160,13 @@ export async function rejectDeliveryOffer(orderId: number, partnerId: number) {
     where order_id = ${orderId} and delivery_partner_id = ${partnerId} and status = 'offered'
   `);
   return advanceDeliveryOffer(orderId);
+}
+
+export async function cancelDeliveryOffers(orderId: number) {
+  await ensureDeliveryOffersTable();
+  await db.execute(sql`
+    update delivery_order_offers
+    set status = 'rejected', responded_at = now()
+    where order_id = ${orderId} and status in ('offered', 'accepted')
+  `);
 }

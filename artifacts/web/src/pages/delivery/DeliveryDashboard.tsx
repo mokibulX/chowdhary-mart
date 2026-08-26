@@ -149,6 +149,10 @@ export default function DeliveryDashboard() {
   const activeOrders = (orders ?? []).filter((order: any) => ["packed", "picked_up", "on_the_way"].includes(order.status));
   const waitingOrders = (orders ?? []).filter((order: any) => ["confirmed", "preparing"].includes(order.status));
   const currentOrder = activeOrders[0] ?? waitingOrders[0];
+  const currentTracking = currentOrder ? {
+    ...((currentOrder as any).liveTracking ?? (currentOrder as any).tracking ?? {}),
+    partnerLocation: livePoint ?? (currentOrder as any).liveTracking?.partnerLocation,
+  } : null;
   const visibleOrders = (orders ?? []).filter((order: any) => orderFilter === "completed"
     ? order.status === "delivered"
     : orderFilter === "cancelled"
@@ -259,7 +263,7 @@ export default function DeliveryDashboard() {
       void getPartnerLocation()
         .then((location) => customFetch("/api/delivery/location", { method: "PATCH", body: JSON.stringify(location), responseType: "json" }))
         .catch(() => undefined);
-      await refresh();
+      void refresh();
     } catch (error) {
       const message = (error as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
         ?? (error as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -568,7 +572,7 @@ export default function DeliveryDashboard() {
                           <Button className="w-full sm:w-auto" size="sm" onClick={() => markStatus(order)} disabled={busyOrderId === order.id}>
                             <CheckCircle className="mr-2 h-4 w-4" /> {ACTION_LABEL[order.status]}
                           </Button>
-                          {order.status === "packed" && (
+                          {["packed", "picked_up", "on_the_way"].includes(order.status) && (
                             <Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={() => cancelAssignment(order.id)} disabled={busyOrderId === order.id}>
                               <X className="mr-2 h-4 w-4" /> Unable to continue
                             </Button>
@@ -591,7 +595,7 @@ export default function DeliveryDashboard() {
                 </Button>
               </div>
               {currentOrder ? (
-                <LiveDeliveryMap tracking={(currentOrder as any).liveTracking ?? (currentOrder as any).tracking} compact role="partner" />
+                <LiveDeliveryMap tracking={currentTracking} compact role="partner" />
               ) : (
                 <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
                   Accept an order to see its live route map here.

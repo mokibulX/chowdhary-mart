@@ -14,6 +14,7 @@ import {
   ensureDeliveryOffersTable,
   getCurrentDeliveryOffer,
   rejectDeliveryOffer,
+  cancelDeliveryOffers,
 } from "../lib/delivery-offers";
 
 const router = Router();
@@ -78,6 +79,12 @@ async function activeDeliveryForPartner(partnerId: number) {
       and (o.status in ('packed', 'picked_up', 'on_the_way', 'arriving')
         or (o.status = 'confirmed' and ot.message ilike '%accepted%'))
       and coalesce(ot.message, '') not ilike '%rejected%'
+      and not exists (
+        select 1 from order_tracking newer_ot
+        where newer_ot.order_id = ot.order_id
+          and newer_ot.delivery_partner_id = ot.delivery_partner_id
+          and newer_ot.updated_at > ot.updated_at
+      )
     limit 1
   `);
   return Boolean((rows as any).rows?.length);
@@ -450,6 +457,9 @@ router.get("/orders", async (req: AuthRequest, res) => {
           status: order.status,
           estimatedMins: order.estimatedDeliveryMins ?? 40,
           storeLocation: store ? { lat: store.lat, lng: store.lng, label: store.name, address: store.address } : null,
+          partnerLocation: dp.currentLat != null && dp.currentLng != null
+            ? { lat: Number(dp.currentLat), lng: Number(dp.currentLng), label: "Delivery partner" }
+            : null,
           customerLocation: order.pickupLatitude && order.pickupLongitude ? {
             lat: Number(order.pickupLatitude),
             lng: Number(order.pickupLongitude),
@@ -513,6 +523,9 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
             pickupDistanceKm: pickupDistanceKm == null ? null : Number(pickupDistanceKm.toFixed(2)),
             distanceKm: pickupDistanceKm == null ? null : Number(pickupDistanceKm.toFixed(2)),
             storeLocation: store ? { lat: store.lat, lng: store.lng, label: store.name, address: store.address } : null,
+            partnerLocation: dp.currentLat != null && dp.currentLng != null
+              ? { lat: Number(dp.currentLat), lng: Number(dp.currentLng), label: "Delivery partner" }
+              : null,
             customerLocation: order.pickupLatitude && order.pickupLongitude ? {
               lat: Number(order.pickupLatitude),
               lng: Number(order.pickupLongitude),
@@ -533,28 +546,35 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
 // POST /api/delivery/orders/:orderId/accept
 router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
   try {
-    const dp = await getDP(req.user!.userId);
-    if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
     const orderId = Number(req.params.orderId);
-    const [rawOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+    const [{ dp }, { rawOrder }] = await Promise.all([
+      getDP(req.user!.userId).then((value) => ({ dp: value })),
+      db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1).then(([value]) => ({ rawOrder: value })),
+    ]);
+    if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
     const order = rawOrder ? await expireOrderIfNeeded(rawOrder) : null;
     if (!order) { res.status(404).json({ error: "Order not found" }); return; }
     if (order.status !== "confirmed") { res.status(409).json({ error: "This delivery request is no longer available." }); return; }
     if (!dp.isVerified || !dp.isOnline) { res.status(403).json({ error: "Delivery partner must be approved and online." }); return; }
-    const zones = await riderZoneIds(req.user!.userId);
-    const [store] = await db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
+    const [{ zones }, { store }] = await Promise.all([
+      riderZoneIds(req.user!.userId).then((value) => ({ zones: value })),
+      db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1).then(([value]) => ({ store: value })),
+    ]);
     const effectiveZoneId = order.zoneId ?? order.shopZoneId ?? store?.zoneId ?? null;
     if (!effectiveZoneId || !zones.includes(effectiveZoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
     if (store?.zoneId && !zones.includes(store.zoneId)) { res.status(403).json({ error: "Pickup store is outside your service zone." }); return; }
 
-    if (await activeDeliveryForPartner(dp.id)) {
+    const [activeDelivery, latestAssigned] = await Promise.all([
+      activeDeliveryForPartner(dp.id),
+      getLatestAssignedTracking(orderId),
+    ]);
+    if (activeDelivery) {
       res.status(409).json({ error: "Finish your current delivery before accepting another order." });
       return;
     }
 
     // Check the assignment immediately before claiming the offer. This keeps
     // two partners from turning the same request into competing deliveries.
-    const latestAssigned = await getLatestAssignedTracking(orderId);
     if (latestAssigned && !isRejectedTracking(latestAssigned.message) && latestAssigned.deliveryPartnerId !== dp.id) {
       res.status(409).json({ error: "This order has already been accepted by another delivery partner." });
       return;
@@ -587,6 +607,45 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/delivery/orders/:orderId/cancel-assignment
+router.post("/orders/:orderId/cancel-assignment", async (req: AuthRequest, res) => {
+  try {
+    const dp = await getDP(req.user!.userId);
+    const orderId = Number(req.params.orderId);
+    const reason = String(req.body?.reason ?? "Delivery partner could not continue").trim();
+    if (!dp) { res.status(404).json({ error: "Delivery partner not found" }); return; }
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    if (!(await assertDeliveryAssignment(orderId, dp.id))) {
+      res.status(403).json({ error: "This order is not assigned to this delivery partner." }); return;
+    }
+    if (!["confirmed", "preparing", "packed", "picked_up", "on_the_way", "arriving"].includes(order.status)) {
+      res.status(400).json({ error: "This delivery can no longer be cancelled." }); return;
+    }
+
+    const [updated] = await db.update(ordersTable)
+      .set({ status: "confirmed", updatedAt: new Date() })
+      .where(eq(ordersTable.id, orderId))
+      .returning();
+    await db.insert(orderTrackingTable).values({
+      orderId,
+      deliveryPartnerId: dp.id,
+      status: "confirmed",
+      message: `Delivery partner rejected assignment: ${reason}`,
+      lat: dp.currentLat,
+      lng: dp.currentLng,
+    });
+    await cancelDeliveryOffers(orderId);
+    void advanceDeliveryOffer(orderId).catch((offerError) => {
+      req.log.warn({ err: offerError, orderId }, "Replacement delivery offer could not be started");
+    });
+    res.json({ ...updated, message: "Assignment cancelled. The order is being offered to another partner." });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not cancel delivery assignment" });
   }
 });
 

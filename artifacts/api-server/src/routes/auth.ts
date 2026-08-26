@@ -171,7 +171,10 @@ async function validateBankDetails(body: Record<string, unknown>) {
 }
 
 function normalizeRole(value: unknown) {
-  return String(value ?? "").trim().toLowerCase();
+  const role = String(value ?? "").trim().toLowerCase();
+  if (role === "seller") return "vendor";
+  if (role === "rider" || role === "delivery") return "delivery_partner";
+  return role;
 }
 
 function resolvePublicRole(value: unknown): PublicRole | null {
