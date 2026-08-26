@@ -618,7 +618,6 @@ router.get("/orders", async (req: AuthRequest, res) => {
   try {
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(200).json([]); return; }
-    if (!(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "You cannot view another service zone." }); return; }
 
     const { status } = req.query;
     const conditions = [eq(ordersTable.storeId, store.id)];
@@ -728,8 +727,7 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
       message: isAccept ? "Seller accepted and confirmed the order" : isReady ? "Seller marked the order ready for pickup" : `Seller rejected the order: ${String(reason).trim()}`,
     });
 
-    try {
-      await createAndPushNotification({
+    void createAndPushNotification({
         userId: targetOrder.userId,
         type: isAccept ? "order_confirmed" : isReady ? "order_ready" : "order_rejected",
         title: isAccept ? "Order confirmed" : isReady ? "Order ready for pickup" : "Order rejected by seller",
@@ -738,17 +736,14 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
           : isReady ? `Order #${targetOrder.orderNumber} is packed and waiting for the delivery partner.`
           : `Order #${targetOrder.orderNumber} was rejected. Reason: ${String(reason).trim()}`,
         data: { orderId, orderNumber: targetOrder.orderNumber, status },
+      }).catch((notificationError) => {
+        req.log.warn({ err: notificationError, orderId }, "Customer order notification failed");
       });
-    } catch (notificationError) {
-      req.log.warn({ err: notificationError, orderId }, "Customer order notification failed");
-    }
 
     if (isAccept) {
-      try {
-        await advanceDeliveryOffer(orderId);
-      } catch (offerError) {
+      void advanceDeliveryOffer(orderId).catch((offerError) => {
         req.log.warn({ err: offerError, orderId }, "Delivery partner offer could not be started");
-      }
+      });
     }
 
     res.json({ ...order, store });

@@ -107,6 +107,7 @@ function DeliveryPartnerCustomerBlock({ children }: { children: React.ReactNode 
     );
   }
   if (user?.role === "delivery_partner") return <Redirect to="/delivery" />;
+  if (user?.role === "vendor") return <Redirect to="/vendor" />;
   return <>{children}</>;
 }
 
@@ -122,7 +123,7 @@ function CustomerRoute({ component: Component }: { component: () => ReactElement
 
 function ProtectedCustomerRoute({ component: Component }: { component: () => ReactElement }) {
   return (
-    <RequireAuth roles={["customer", "vendor", "admin"]}>
+    <RequireAuth roles={["customer", "admin"]}>
       <CustomerLayout>
         <Component />
       </CustomerLayout>

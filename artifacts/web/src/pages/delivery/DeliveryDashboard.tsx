@@ -221,21 +221,27 @@ export default function DeliveryDashboard() {
   };
 
   const toggleOnline = async () => {
+    if (onlineBusy) return;
+    const goingOnline = !userOnline;
+    // Reflect the user's action immediately. The server remains authoritative;
+    // a failed request rolls this optimistic state back below.
+    setOnlineOverride(goingOnline);
+    if (!goingOnline) setAutoGps(false);
     setOnlineBusy(true);
     try {
-      const goingOnline = !userOnline;
       await customFetch("/api/delivery/toggle-online", {
         method: "PATCH",
         body: JSON.stringify({ online: goingOnline }),
         responseType: "json",
       });
-      setOnlineOverride(goingOnline);
-      if (!goingOnline) setAutoGps(false);
-      await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
-      await qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
-      await qc.invalidateQueries({ queryKey: ["/api/delivery/dashboard-summary"] });
       toast({ title: goingOnline ? "You are online" : "You are offline" });
+      void Promise.all([
+        qc.invalidateQueries({ queryKey: getGetMeQueryKey() }),
+        qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() }),
+        qc.invalidateQueries({ queryKey: ["/api/delivery/dashboard-summary"] }),
+      ]);
     } catch (error) {
+      setOnlineOverride(!goingOnline);
       toast({ title: "Availability update failed", description: (error as { data?: { error?: string } })?.data?.error ?? "Please try again.", variant: "destructive" });
     } finally {
       setOnlineBusy(false);

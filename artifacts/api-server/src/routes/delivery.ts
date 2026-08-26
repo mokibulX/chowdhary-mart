@@ -573,17 +573,15 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
       lng: dp.currentLng,
     });
 
-    try {
-      await createAndPushNotification({
+    void createAndPushNotification({
         userId: order.userId,
         type: "rider_assigned",
         title: "Delivery partner assigned",
         body: `A delivery partner accepted order #${order.orderNumber} and is heading to the shop.`,
         data: { orderId, status: order.status },
+      }).catch((notificationError) => {
+        req.log.warn({ err: notificationError, orderId }, "Rider assignment notification failed");
       });
-    } catch (notificationError) {
-      req.log.warn({ err: notificationError, orderId }, "Rider assignment notification failed");
-    }
 
     res.json({ ...order, riderZoneId: order.zoneId ?? dp.currentZoneId, assignedDeliveryPartnerId: dp.id });
   } catch (err) {
@@ -611,14 +609,17 @@ router.post("/orders/:orderId/reject", async (req: AuthRequest, res) => {
       res.status(409).json({ error: "This delivery request has expired or is no longer assigned to you." });
       return;
     }
-    const nextOffer = await rejectDeliveryOffer(orderId, dp.id);
     await db.insert(orderTrackingTable).values({
       orderId,
       deliveryPartnerId: dp.id,
       status: "confirmed",
       message: "Delivery partner rejected the order",
     });
-    res.json({ message: "Order rejected", nextOffer });
+    // Start the next-partner rotation after the rejection is acknowledged.
+    void rejectDeliveryOffer(orderId, dp.id).catch((offerError) => {
+      req.log.warn({ err: offerError, orderId }, "Next delivery offer could not be started");
+    });
+    res.json({ message: "Order rejected" });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -811,9 +812,12 @@ router.patch("/toggle-online", async (req: AuthRequest, res) => {
     await ensureOnlineSessionTable();
     const nextOnline = typeof req.body?.online === "boolean" ? req.body.online : !dp.isOnline;
     const location = req.body?.location;
-    if (!nextOnline && await activeDeliveryForPartner(dp.id)) {
-      res.status(409).json({ error: "Finish or cancel the active delivery before going offline." });
-      return;
+    if (!nextOnline) {
+      const activeDelivery = await activeDeliveryForPartner(dp.id);
+      if (activeDelivery) {
+        res.status(409).json({ error: "Finish or cancel the active delivery before going offline." });
+        return;
+      }
     }
     if (nextOnline) {
       const updated = await db.execute(sql`
@@ -837,8 +841,7 @@ router.patch("/toggle-online", async (req: AuthRequest, res) => {
       await db.delete(activeDeliveryLocationsTable).where(eq(activeDeliveryLocationsTable.deliveryPartnerId, dp.id));
     }
     const [updated] = await db.select().from(deliveryPartnersTable).where(eq(deliveryPartnersTable.id, dp.id)).limit(1);
-    const activeDelivery = await activeDeliveryForPartner(dp.id);
-    res.json({ message: `Now ${nextOnline ? "online" : "offline"}`, isOnline: updated?.isOnline ?? nextOnline, currentStatus: currentDeliveryStatus(updated?.isOnline ?? nextOnline, activeDelivery), partner: updated });
+    res.json({ message: `Now ${nextOnline ? "online" : "offline"}`, isOnline: updated?.isOnline ?? nextOnline, currentStatus: currentDeliveryStatus(updated?.isOnline ?? nextOnline, false), partner: updated });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

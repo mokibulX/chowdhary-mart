@@ -64,6 +64,11 @@ async function clearStoredToken() {
   await Preferences.remove({ key: TOKEN_KEY });
 }
 
+function isUnauthorizedError(error: unknown) {
+  const value = error as { status?: number; response?: { status?: number; data?: { status?: number } } } | null;
+  return [value?.status, value?.response?.status, value?.response?.data?.status].includes(401);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem(TOKEN_KEY));
   const [, setLocation] = useLocation();
@@ -88,8 +93,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    if (error && token) {
-      // Invalid token
+    if (error && token && isUnauthorizedError(error)) {
+      // Only an explicit authentication failure invalidates the local
+      // session. Network errors and temporary API failures must not log out
+      // a user during refresh or while another feature is loading.
       void clearStoredToken();
       setToken(null);
       setLocation("/login");
@@ -121,7 +128,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user: user ?? null, token, login, logout, confirmLogout, isLoading }}>
+    <AuthContext.Provider value={{
+      user: user ?? null,
+      token,
+      login,
+      logout,
+      confirmLogout,
+      // Keep protected routes mounted while the session check is temporarily
+      // unavailable. A 401 is handled above; other failures are retryable.
+      isLoading: isLoading || Boolean(token && error && !isUnauthorizedError(error)),
+    }}>
       {children}
     </AuthContext.Provider>
   );

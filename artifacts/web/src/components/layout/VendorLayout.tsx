@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const NAV = [
-  { href: "/", label: "Shop Home", icon: Home },
+  { href: "/vendor", label: "Seller Home", icon: Home },
   { href: "/vendor", label: "Dashboard", icon: LayoutDashboard },
   { href: "/vendor/orders", label: "Orders", icon: ShoppingBag },
   { href: "/vendor/stock", label: "Stock", icon: Boxes },
@@ -51,7 +51,7 @@ export function VendorLayout({ children }: { children: ReactNode }) {
             <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => window.history.back()}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <Link href="/">
+            <Link href="/vendor">
               <div className="flex min-w-0 items-center gap-2">
                 <img src="/app-logo.png" alt="Chowdhary Mart" className="h-9 w-9 rounded-xl object-cover" />
                 <div className="min-w-0">
@@ -94,12 +94,12 @@ export function VendorLayout({ children }: { children: ReactNode }) {
           <Button variant="ghost" size="sm" className="mb-3 w-full justify-start text-muted-foreground" onClick={() => window.history.back()}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
           </Button>
-          <Link href="/">
+          <Link href="/vendor">
             <Button variant="outline" size="sm" className="mb-3 w-full justify-start">
-              <Home className="mr-2 h-4 w-4" /> Shop Home
+              <Home className="mr-2 h-4 w-4" /> Seller Home
             </Button>
           </Link>
-          <Link href="/">
+          <Link href="/vendor">
           <div className="flex items-center gap-2 text-lg font-bold text-primary">
             <img src="/app-logo.png" alt="Chowdhary Mart" className="h-10 w-10 rounded-xl object-cover" />
             Chowdhary Mart

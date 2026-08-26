@@ -51,8 +51,16 @@ export default function VendorOrders() {
   const [customReason, setCustomReason] = useState("");
 
   const params = filter !== "all" ? { status: filter } : {};
-  const { data: orders, isLoading } = useListVendorOrders(params, {
-    query: { enabled: !!user, queryKey: getListVendorOrdersQueryKey(params), refetchInterval: 5000 },
+  const { data: orders, isLoading, isError, refetch } = useListVendorOrders(params, {
+    query: {
+      enabled: !!user,
+      queryKey: getListVendorOrdersQueryKey(params),
+      refetchInterval: 5000,
+      refetchOnWindowFocus: true,
+      // A transient polling failure must not make the seller's order history
+      // disappear from the screen. React Query keeps the last good response.
+      placeholderData: (previousData) => previousData,
+    },
   });
   const updateStatus = useUpdateOrderStatus();
 
@@ -143,6 +151,11 @@ export default function VendorOrders() {
 
       {isLoading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-32" />)}</div>
+      ) : isError && !orders?.length ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-center text-red-700">
+          <p className="font-semibold">Unable to load orders right now.</p>
+          <Button className="mt-3" variant="outline" onClick={() => void refetch()}>Try again</Button>
+        </div>
       ) : !orders?.length ? (
         <div className="py-16 text-center text-muted-foreground">
           <Package className="mx-auto mb-3 h-12 w-12 opacity-30" />

@@ -27,7 +27,9 @@ export function GlobalIncomingOrderAlerts() {
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
-  const seenRef = useRef<Set<string>>(new Set(readSeenKeys()));
+  // Keep deduplication in memory only. A pending order must be eligible to
+  // alert again after a refresh if the previous action did not succeed.
+  const seenRef = useRef<Set<string>>(new Set());
   const active = queue[0] ?? null;
   const isDeliveryPartner = user?.role === "delivery_partner";
   const { data: deliveryStatus } = useQuery({
@@ -50,6 +52,8 @@ export function GlobalIncomingOrderAlerts() {
           const orders = await customFetch<any[]>("/api/vendor/orders?status=pending", { responseType: "json" });
           const alerts = (orders ?? []).map((order) => ({ key: `seller-${user.id}-${order.id}-pending`, role: "seller" as const, order }));
           pushAlerts(alerts);
+          const currentKeys = new Set(alerts.map((alert) => alert.key));
+          setQueue((current) => current.filter((item) => item.role !== "seller" || currentKeys.has(item.key)));
         }
         const partnerIsOnline = deliveryStatus
           ? deliveryStatus.currentStatus !== "offline"
@@ -59,6 +63,8 @@ export function GlobalIncomingOrderAlerts() {
           const eligible = (orders ?? []).filter((order) => order.status === "confirmed" && order.deliveryOffer);
           const alerts = eligible.map((order) => ({ key: `rider-${user.id}-${order.id}-${order.deliveryOffer.id}`, role: "rider" as const, order }));
           pushAlerts(alerts);
+          const currentKeys = new Set(alerts.map((alert) => alert.key));
+          setQueue((current) => current.filter((item) => item.role !== "rider" || currentKeys.has(item.key)));
         }
       } catch {
         // Listener failures are intentionally quiet; existing pages still show their own errors.
@@ -69,7 +75,6 @@ export function GlobalIncomingOrderAlerts() {
       const fresh = alerts.filter((alert) => !seenRef.current.has(alert.key));
       if (!fresh.length) return;
       fresh.forEach((alert) => seenRef.current.add(alert.key));
-      persistSeenKeys(seenRef.current);
       setQueue((current) => {
         const keys = new Set(current.map((item) => item.key));
         return [...current, ...fresh.filter((item) => !keys.has(item.key))];
@@ -97,26 +102,10 @@ export function GlobalIncomingOrderAlerts() {
     setReason("");
   };
 
-  useEffect(() => {
-    if (!active || active.role !== "rider") return;
-    const offeredAt = active.order.deliveryOffer?.offeredAt;
-    const elapsed = offeredAt ? Date.now() - new Date(offeredAt).getTime() : 0;
-    const remaining = Math.max(0, 10_000 - elapsed);
-    const timer = window.setTimeout(() => {
-      setQueue((current) => current.filter((item) => item.key !== active.key));
-      setRejecting(false);
-      setReason("");
-      setBusy(false);
-    }, remaining + 50);
-    return () => window.clearTimeout(timer);
-  }, [active?.key, active?.role, active?.order?.deliveryOffer?.offeredAt]);
-
   const accept = async () => {
     if (!active) return;
     const incoming = active;
     setBusy(true);
-    closeActive();
-    setLocation(incoming.role === "seller" ? "/vendor/orders" : "/rider/home");
     try {
       if (incoming.role === "seller") {
         await customFetch(`/api/vendor/orders/${incoming.order.id}/status`, {
@@ -125,16 +114,19 @@ export function GlobalIncomingOrderAlerts() {
           responseType: "json",
         });
         toast({ title: "Order accepted", description: "Delivery partner matching started." });
+        closeActive();
+        setLocation("/vendor/orders");
         return;
       }
       await customFetch(`/api/delivery/orders/${incoming.order.id}/accept`, { method: "POST", responseType: "json" });
       toast({ title: "Delivery accepted", description: "Pickup navigation is ready." });
+      closeActive();
+      setLocation("/rider/home");
     } catch (error) {
       const message = (error as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
         ?? (error as { response?: { data?: { error?: string } } })?.response?.data?.error
         ?? "Action failed. Please try again.";
       toast({ title: message, variant: "destructive" });
-      if (message.toLowerCase().includes("already")) closeActive();
     } finally {
       setBusy(false);
     }
@@ -382,20 +374,4 @@ function useAlertEffects(active: boolean) {
       document.title = originalTitle;
     };
   }, [active]);
-}
-
-function readSeenKeys() {
-  try {
-    return JSON.parse(sessionStorage.getItem("cm-incoming-alert-seen") || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function persistSeenKeys(keys: Set<string>) {
-  try {
-    sessionStorage.setItem("cm-incoming-alert-seen", JSON.stringify(Array.from(keys).slice(-80)));
-  } catch {
-    // Ignore storage pressure.
-  }
 }
