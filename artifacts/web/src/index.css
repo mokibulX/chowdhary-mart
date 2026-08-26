@@ -23,22 +23,6 @@ html.is-offline body::before {
   box-shadow: 0 12px 30px rgba(0,0,0,.25);
 }
 
-@keyframes cm-order-alert-flash {
-  0%, 100% { opacity: 0; }
-  8%, 22% { opacity: .28; }
-  14%, 30% { opacity: 0; }
-}
-
-html.cm-order-alert-flash::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 9998;
-  pointer-events: none;
-  background: #ff6b00;
-  animation: cm-order-alert-flash 3.2s ease-out 1;
-}
-
 @keyframes lch-category-orbit {
   to {
     transform: rotate(360deg);

@@ -97,6 +97,20 @@ export function GlobalIncomingOrderAlerts() {
     setReason("");
   };
 
+  useEffect(() => {
+    if (!active || active.role !== "rider") return;
+    const offeredAt = active.order.deliveryOffer?.offeredAt;
+    const elapsed = offeredAt ? Date.now() - new Date(offeredAt).getTime() : 0;
+    const remaining = Math.max(0, 10_000 - elapsed);
+    const timer = window.setTimeout(() => {
+      setQueue((current) => current.filter((item) => item.key !== active.key));
+      setRejecting(false);
+      setReason("");
+      setBusy(false);
+    }, remaining + 50);
+    return () => window.clearTimeout(timer);
+  }, [active?.key, active?.role, active?.order?.deliveryOffer?.offeredAt]);
+
   const accept = async () => {
     if (!active) return;
     const incoming = active;
@@ -166,7 +180,7 @@ export function GlobalIncomingOrderAlerts() {
   if (!active) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex h-[100dvh] items-stretch justify-center overflow-y-auto bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[1000] isolate flex h-[100dvh] items-stretch justify-center overflow-y-auto bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true">
       <div className="relative flex h-[100dvh] min-h-0 w-full max-w-md flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-[24px]">
         <div className="relative overflow-hidden bg-gray-950 px-4 pb-5 pt-5 text-white">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(249,115,22,.55),transparent_30%),radial-gradient(circle_at_80%_15%,rgba(34,197,94,.3),transparent_25%)]" />
@@ -345,7 +359,7 @@ function useAlertEffects(active: boolean) {
           osc.type = "sine";
           osc.frequency.setValueAtTime(frequency, at);
           gain.gain.setValueAtTime(0.0001, at);
-          gain.gain.exponentialRampToValueAtTime(0.055, at + 0.025);
+          gain.gain.exponentialRampToValueAtTime(0.14, at + 0.025);
           gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
           osc.connect(gain);
           gain.connect(audioContext!.destination);
@@ -358,15 +372,13 @@ function useAlertEffects(active: boolean) {
     };
     playTone();
     if ("vibrate" in navigator) navigator.vibrate([240, 120, 240, 120, 420]);
-    timer = window.setInterval(playTone, 2200);
+    timer = window.setInterval(playTone, 1800);
     const originalTitle = document.title;
-    document.documentElement.classList.add("cm-order-alert-flash");
     document.title = "New order · ChowdharyMart";
     return () => {
       window.clearInterval(timer);
       if (audioContext) void audioContext.close().catch(() => undefined);
       if ("vibrate" in navigator) navigator.vibrate(0);
-      document.documentElement.classList.remove("cm-order-alert-flash");
       document.title = originalTitle;
     };
   }, [active]);

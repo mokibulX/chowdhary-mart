@@ -265,6 +265,10 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
   try {
     await ensureAdminUsersColumns();
     await ensureDeliveryReviewColumns();
+    // The dashboard reads the complete orders row. Keep legacy Render databases
+    // in sync before Drizzle generates that SELECT, otherwise missing pricing
+    // columns turn the whole dashboard request into a 500 response.
+    await ensurePricingSchema();
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
     const [counts, allOrders] = await Promise.all([
@@ -296,7 +300,8 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
       `),
       db.select().from(ordersTable),
     ]);
-    const summary = (counts as any)[0] ?? {};
+    const countResult = counts as any;
+    const summary = (Array.isArray(countResult) ? countResult[0] : countResult?.rows?.[0]) ?? {};
 
     const todayOrders = allOrders.filter(o => new Date(o.createdAt) >= today);
     const completed = allOrders.filter(o => o.status === "delivered");

@@ -370,7 +370,7 @@ export default function DeliveryDashboard() {
       </header>
 
       <main id="top" className="app-content mx-auto max-w-6xl space-y-4 overflow-x-hidden px-3 pb-24 pt-4 sm:space-y-6 sm:px-4 sm:py-6">
-        <section className="order-first overflow-hidden rounded-2xl border bg-white p-2 shadow-sm sm:hidden">
+        <section className="relative z-0 order-first isolate overflow-hidden rounded-2xl border bg-white p-2 shadow-sm sm:hidden">
           <div className="flex items-center justify-between px-2 pb-2 pt-1"><div><h2 className="font-black">Live area map</h2><p className="text-xs text-muted-foreground">Nearby shops and your current location</p></div><Button size="sm" variant="outline" className="rounded-full" onClick={updateGpsOnce} disabled={updateLocation.isPending}><LocateFixed className="mr-1 h-4 w-4" /> Locate</Button></div>
           <RiderMapPreview location={livePoint} currentOrder={currentOrder} />
         </section>
@@ -721,7 +721,7 @@ function RiderMapPreview({ location, currentOrder }: { location: { lat: number; 
   }, [location?.lat, location?.lng, selectedShop?.id]);
   if (!location) return <div className="flex h-72 items-center justify-center rounded-xl bg-slate-100 px-6 text-center text-sm text-muted-foreground">Tap Locate or enable Live GPS to show your position on the map.</div>;
   return <>
-    <div ref={setContainer} className="h-72 w-full overflow-hidden rounded-xl bg-slate-100" />
+    <div ref={setContainer} className="relative z-0 h-72 w-full overflow-hidden rounded-xl bg-slate-100" />
     {assignedZones.length > 0 && <p className="px-1 pt-2 text-xs font-semibold text-orange-700">Highlighted zone: {assignedZones.map((zone) => zone.name ?? zone.code).join(", ")}</p>}
     {!currentOrder && <div className="mt-2 space-y-2">
       <p className="px-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Nearby seller shops</p>

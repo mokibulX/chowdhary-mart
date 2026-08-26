@@ -58,6 +58,12 @@ async function partnerForOffer(orderId: number) {
         where old.order_id = o.id and old.delivery_partner_id = dp.id
       )
       and not exists (
+        select 1 from delivery_order_offers active_offer
+        where active_offer.delivery_partner_id = dp.id
+          and active_offer.status = 'offered'
+          and active_offer.expires_at > now()
+      )
+      and not exists (
         select 1 from order_tracking active_ot
         join orders active_o on active_o.id = active_ot.order_id
         where active_ot.delivery_partner_id = dp.id
