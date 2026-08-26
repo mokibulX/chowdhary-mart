@@ -241,7 +241,9 @@ router.get("/:productId/related", async (req, res) => {
 router.get("/:productId", async (req, res) => {
   try {
     const id = Number(req.params.productId);
-    const [product] = await db.select().from(productsTable).where(eq(productsTable.id, id)).limit(1);
+    const [product] = await db.select().from(productsTable)
+      .where(and(eq(productsTable.id, id), eq(productsTable.isAvailable, true), sql`${productsTable.stock} > 0`))
+      .limit(1);
     if (!product) {
       res.status(404).json({ error: "Product not found" });
       return;

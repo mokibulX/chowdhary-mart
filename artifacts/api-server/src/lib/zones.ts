@@ -163,9 +163,15 @@ export async function riderZoneIds(userId: number) {
     eq(riderZoneAssignmentsTable.status, "approved"),
     isNull(riderZoneAssignmentsTable.removedAt),
   ));
-  const assignedIds = assignments.length ? assignments.map((item) => item.zoneId) : [];
+  const assignedIds = assignments.map((item) => item.zoneId);
   const [dp] = await db.select().from(deliveryPartnersTable).where(eq(deliveryPartnersTable.userId, userId)).limit(1);
-  const ids = assignedIds.length ? assignedIds : (dp?.currentZoneId ? [dp.currentZoneId] : []);
+  // A rider may have an approved historical assignment while the admin has
+  // moved their active operating zone. Keep both sources so the current zone
+  // is not accidentally excluded just because another assignment exists.
+  const ids = Array.from(new Set([
+    ...assignedIds,
+    ...(dp?.currentZoneId ? [dp.currentZoneId] : []),
+  ]));
   if (!ids.length) return [];
   const active = await db.select({ id: serviceZonesTable.id }).from(serviceZonesTable).where(and(
     inArray(serviceZonesTable.id, ids),

@@ -709,6 +709,10 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     const [order] = await db.update(ordersTable)
       .set({
         status: status as typeof ordersTable.$inferInsert["status"],
+        // Keep legacy orders routable when they were created before zone
+        // assignment was enforced. New orders already carry this value.
+        zoneId: targetOrder.zoneId ?? store.zoneId ?? null,
+        shopZoneId: targetOrder.shopZoneId ?? store.zoneId ?? null,
         cancellationReason: isReject ? String(reason).trim() : null,
         cancelledAt: isReject ? new Date() : null,
         updatedAt: new Date(),
@@ -891,6 +895,19 @@ router.patch("/products/:productId", async (req: AuthRequest, res) => {
     if (!store) { res.status(404).json({ error: "Store not found" }); return; }
     const [existing] = await db.select().from(productsTable).where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id))).limit(1);
     if (!existing || (store.zoneId && existing.zoneId && existing.zoneId !== store.zoneId)) { res.status(404).json({ error: "Product not found in your zone" }); return; }
+    if (Object.keys(req.body ?? {}).length === 1 && req.body.stock !== undefined) {
+      const normalizedStock = Number(req.body.stock);
+      if (!Number.isInteger(normalizedStock) || normalizedStock < 0) {
+        res.status(400).json({ error: "A valid stock quantity is required." });
+        return;
+      }
+      const [product] = await db.update(productsTable)
+        .set({ stock: normalizedStock, updatedAt: new Date() })
+        .where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id)))
+        .returning();
+      res.json(product);
+      return;
+    }
     const normalizedSku = textValue(sku);
     if (normalizedSku && normalizedSku !== textValue(existing.sku)) {
       const [duplicate] = await db.select({ id: productsTable.id }).from(productsTable)

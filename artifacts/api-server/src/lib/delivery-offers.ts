@@ -45,9 +45,13 @@ async function partnerForOffer(orderId: number) {
     join orders o on o.id = ${orderId}
     join stores s on s.id = o.store_id
     where dp.is_online = true and dp.is_verified = true
-      and (dp.current_zone_id = o.zone_id or exists (
+      and coalesce(o.zone_id, o.shop_zone_id, s.zone_id) is not null
+      and (dp.current_zone_id = coalesce(o.zone_id, o.shop_zone_id, s.zone_id) or exists (
         select 1 from rider_zone_assignments rza
-        where rza.rider_id = dp.user_id and rza.zone_id = o.zone_id and rza.status = 'approved'
+        where rza.rider_id = dp.user_id
+          and rza.zone_id = coalesce(o.zone_id, o.shop_zone_id, s.zone_id)
+          and rza.status = 'approved'
+          and rza.removed_at is null
       ))
       and not exists (
         select 1 from delivery_order_offers old

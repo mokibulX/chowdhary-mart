@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowLeft, Home, LayoutDashboard, Package, ShoppingBag, Store, LogOut, Menu, Wallet } from "lucide-react";
+import { ArrowLeft, Home, LayoutDashboard, Package, ShoppingBag, Store, LogOut, Menu, Wallet, Boxes } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -9,6 +9,7 @@ const NAV = [
   { href: "/", label: "Shop Home", icon: Home },
   { href: "/vendor", label: "Dashboard", icon: LayoutDashboard },
   { href: "/vendor/orders", label: "Orders", icon: ShoppingBag },
+  { href: "/vendor/stock", label: "Stock", icon: Boxes },
   { href: "/vendor/products", label: "Products", icon: Package },
   { href: "/vendor/store", label: "Store Settings", icon: Store },
   { href: "/vendor/wallet", label: "Wallet", icon: Wallet },

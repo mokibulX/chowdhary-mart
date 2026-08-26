@@ -34,6 +34,7 @@ import PrivacySettings from "@/pages/PrivacySettings";
 import VendorDashboard from "@/pages/vendor/VendorDashboard";
 import VendorOrders from "@/pages/vendor/VendorOrders";
 import VendorProducts from "@/pages/vendor/VendorProducts";
+import VendorStock from "@/pages/vendor/VendorStock";
 import VendorStore from "@/pages/vendor/VendorStore";
 
 import AdminDashboard from "@/pages/admin/AdminDashboard";
@@ -250,6 +251,7 @@ function Router() {
       <Route path="/vendor">{() => <VendorRoute component={VendorDashboard} />}</Route>
       <Route path="/vendor/orders">{() => <VendorRoute component={VendorOrders} />}</Route>
       <Route path="/vendor/products">{() => <VendorRoute component={VendorProducts} />}</Route>
+      <Route path="/vendor/stock">{() => <VendorRoute component={VendorStock} />}</Route>
       <Route path="/vendor/store">{() => <VendorRoute component={VendorStore} />}</Route>
       <Route path="/vendor/wallet">{() => <VendorRoute component={Wallet} />}</Route>
 

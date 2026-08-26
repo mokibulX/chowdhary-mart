@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Bell, Bike, Camera, CheckCircle, CircleUserRound, DollarSign, Gift, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, WalletCards, X } from "lucide-react";
 import { LiveDeliveryMap } from "@/components/LiveDeliveryMap";
 import { getBrowserLocation, watchBrowserLocation } from "@/lib/live-location";
+import { resolveRuntimeApiUrl } from "@/lib/mobile-runtime";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const NEXT_STATUS: Record<string, string> = {
@@ -62,7 +63,7 @@ export default function DeliveryDashboard() {
     if (point && Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))) setLivePoint({ lat: Number(point.lat), lng: Number(point.lng) });
   }, [dashboardSummary?.currentLocation?.lat, dashboardSummary?.currentLocation?.lng]);
 
-  const refresh = () => qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey() });
+  const refresh = () => qc.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey(), refetchType: "active" });
   const serverStatus = dashboardSummary?.currentStatus ?? ((user as any)?.isOnline ? "online" : "offline");
   const currentStatus = onlineOverride === null ? serverStatus : onlineOverride ? "online" : "offline";
   const userOnline = currentStatus !== "offline";
@@ -74,6 +75,77 @@ export default function DeliveryDashboard() {
   useEffect(() => {
     if (userOnline) setAutoGps(true);
   }, [userOnline]);
+  useEffect(() => {
+    if (!userOnline || user?.role !== "delivery_partner") return undefined;
+    let sent = false;
+    let hiddenAt: number | null = null;
+    let warningTimer = 0;
+    let offlineTimer = 0;
+    let warningShown = false;
+    const markOffline = () => {
+      if (sent) return;
+      sent = true;
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      const request = {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ online: false }),
+        keepalive: true,
+      } as RequestInit;
+      void fetch(resolveRuntimeApiUrl("/api/delivery/toggle-online"), request).catch(() => undefined);
+    };
+    const onBack = () => markOffline();
+    const showBackgroundWarning = () => {
+      if (warningShown || sent) return;
+      warningShown = true;
+      const title = "You are still online";
+      const body = "You have been away for 25 minutes. Return to the app within 5 minutes to stay online.";
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body, tag: "cmart-online-timeout" });
+      }
+      if (document.visibilityState === "visible") toast({ title, description: body, variant: "destructive" });
+    };
+    const scheduleBackgroundTimeout = () => {
+      window.clearTimeout(warningTimer);
+      window.clearTimeout(offlineTimer);
+      hiddenAt = Date.now();
+      warningShown = false;
+      warningTimer = window.setTimeout(showBackgroundWarning, 25 * 60 * 1000);
+      offlineTimer = window.setTimeout(() => {
+        showBackgroundWarning();
+        markOffline();
+      }, 30 * 60 * 1000);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        scheduleBackgroundTimeout();
+        return;
+      }
+      if (hiddenAt !== null) {
+        const awayFor = Date.now() - hiddenAt;
+        if (awayFor >= 30 * 60 * 1000) {
+          showBackgroundWarning();
+          markOffline();
+        } else if (awayFor >= 25 * 60 * 1000) {
+          showBackgroundWarning();
+        }
+      }
+      hiddenAt = null;
+      window.clearTimeout(warningTimer);
+      window.clearTimeout(offlineTimer);
+    };
+    window.addEventListener("popstate", onBack);
+    window.addEventListener("cm-app-back", onBack);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("popstate", onBack);
+      window.removeEventListener("cm-app-back", onBack);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearTimeout(warningTimer);
+      window.clearTimeout(offlineTimer);
+    };
+  }, [toast, user?.id, user?.role, userOnline]);
   const activeOrders = (orders ?? []).filter((order: any) => ["packed", "picked_up", "on_the_way"].includes(order.status));
   const waitingOrders = (orders ?? []).filter((order: any) => ["confirmed", "preparing"].includes(order.status));
   const currentOrder = activeOrders[0] ?? waitingOrders[0];
@@ -174,11 +246,14 @@ export default function DeliveryDashboard() {
   const acceptOrder = async (orderId: number) => {
     setBusyOrderId(orderId);
     try {
-      const location = await getPartnerLocation();
+      // Accept must not wait for a slow or denied GPS permission. The server
+      // already knows the partner's last location; refresh it after acceptance.
       await customFetch(`/api/delivery/orders/${orderId}/accept`, { method: "POST", responseType: "json" });
-      await customFetch("/api/delivery/location", { method: "PATCH", body: JSON.stringify(location), responseType: "json" });
       toast({ title: "Order accepted", description: "Pickup task added to your route." });
-      refresh();
+      void getPartnerLocation()
+        .then((location) => customFetch("/api/delivery/location", { method: "PATCH", body: JSON.stringify(location), responseType: "json" }))
+        .catch(() => undefined);
+      await refresh();
     } catch (error) {
       const message = (error as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
         ?? (error as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -194,7 +269,7 @@ export default function DeliveryDashboard() {
     try {
       await customFetch(`/api/delivery/orders/${orderId}/reject`, { method: "POST", body: JSON.stringify({ reason: "Rejected from rider dashboard" }), responseType: "json" });
       toast({ title: "Order rejected" });
-      refresh();
+      await refresh();
     } catch {
       toast({ title: "Could not reject order", variant: "destructive" });
     } finally {
@@ -294,7 +369,7 @@ export default function DeliveryDashboard() {
         </div>
       </header>
 
-      <main id="top" className="app-content mx-auto max-w-6xl space-y-4 px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6">
+      <main id="top" className="app-content mx-auto max-w-6xl space-y-4 overflow-x-hidden px-3 pb-24 pt-4 sm:space-y-6 sm:px-4 sm:py-6">
         <section className="order-first overflow-hidden rounded-2xl border bg-white p-2 shadow-sm sm:hidden">
           <div className="flex items-center justify-between px-2 pb-2 pt-1"><div><h2 className="font-black">Live area map</h2><p className="text-xs text-muted-foreground">Nearby shops and your current location</p></div><Button size="sm" variant="outline" className="rounded-full" onClick={updateGpsOnce} disabled={updateLocation.isPending}><LocateFixed className="mr-1 h-4 w-4" /> Locate</Button></div>
           <RiderMapPreview location={livePoint} currentOrder={currentOrder} />

@@ -333,14 +333,25 @@ function useAlertEffects(active: boolean) {
       try {
         const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
         audioContext = audioContext ?? new AudioCtor();
-        const osc = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-        osc.frequency.value = 880;
-        gain.gain.value = 0.045;
-        osc.connect(gain);
-        gain.connect(audioContext.destination);
-        osc.start();
-        osc.stop(audioContext.currentTime + 0.16);
+        if (audioContext.state === "suspended") void audioContext.resume();
+
+        // A short two-tone chime is easier to notice than a harsh single beep,
+        // while keeping the volume safe for a phone or laptop speaker.
+        const start = audioContext.currentTime;
+        [[660, 0], [880, 0.18], [660, 0.36]].forEach(([frequency, offset]) => {
+          const osc = audioContext!.createOscillator();
+          const gain = audioContext!.createGain();
+          const at = start + offset;
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(frequency, at);
+          gain.gain.setValueAtTime(0.0001, at);
+          gain.gain.exponentialRampToValueAtTime(0.055, at + 0.025);
+          gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
+          osc.connect(gain);
+          gain.connect(audioContext!.destination);
+          osc.start(at);
+          osc.stop(at + 0.17);
+        });
       } catch {
         // Browser audio policy may block sound until user interaction.
       }

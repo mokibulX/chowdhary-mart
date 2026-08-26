@@ -490,7 +490,10 @@ router.get("/available-orders", async (req: AuthRequest, res) => {
     const activeOrders = await Promise.all(orders.map(expireOrderIfNeeded));
     const available = activeOrders
       .filter((order) => order.status === "confirmed")
-      .filter((order) => Boolean(order.zoneId) && zones.includes(order.zoneId!));
+      .filter((order) => {
+        const effectiveZoneId = order.zoneId ?? order.shopZoneId ?? storeMap.get(order.storeId)?.zoneId ?? null;
+        return Boolean(effectiveZoneId) && zones.includes(effectiveZoneId!);
+      });
     const offers = await Promise.all(available.map(async (order) => ({ order, offer: await advanceDeliveryOffer(order.id) })));
     res.json(offers
       .filter(({ offer }) => Number(offer?.deliveryPartnerId) === dp.id)
@@ -539,22 +542,25 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
     if (order.status !== "confirmed") { res.status(409).json({ error: "This delivery request is no longer available." }); return; }
     if (!dp.isVerified || !dp.isOnline) { res.status(403).json({ error: "Delivery partner must be approved and online." }); return; }
     const zones = await riderZoneIds(req.user!.userId);
-    if (!order.zoneId || !zones.includes(order.zoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
     const [store] = await db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
-    if (!store?.zoneId || !zones.includes(store.zoneId)) { res.status(403).json({ error: "Pickup store is outside your service zone." }); return; }
+    const effectiveZoneId = order.zoneId ?? order.shopZoneId ?? store?.zoneId ?? null;
+    if (!effectiveZoneId || !zones.includes(effectiveZoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
+    if (store?.zoneId && !zones.includes(store.zoneId)) { res.status(403).json({ error: "Pickup store is outside your service zone." }); return; }
 
     if (await activeDeliveryForPartner(dp.id)) {
       res.status(409).json({ error: "Finish your current delivery before accepting another order." });
       return;
     }
-    if (!(await acceptDeliveryOffer(orderId, dp.id))) {
-      res.status(409).json({ error: "This delivery request has expired or was offered to another partner." });
-      return;
-    }
 
+    // Check the assignment immediately before claiming the offer. This keeps
+    // two partners from turning the same request into competing deliveries.
     const latestAssigned = await getLatestAssignedTracking(orderId);
     if (latestAssigned && !isRejectedTracking(latestAssigned.message) && latestAssigned.deliveryPartnerId !== dp.id) {
       res.status(409).json({ error: "This order has already been accepted by another delivery partner." });
+      return;
+    }
+    if (!(await acceptDeliveryOffer(orderId, dp.id))) {
+      res.status(409).json({ error: "This delivery request has expired or was offered to another partner." });
       return;
     }
 
@@ -595,7 +601,9 @@ router.post("/orders/:orderId/reject", async (req: AuthRequest, res) => {
     const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
     if (!order) { res.status(404).json({ error: "Order not found" }); return; }
     const zones = await riderZoneIds(req.user!.userId);
-    if (!order.zoneId || !zones.includes(order.zoneId)) {
+    const [store] = await db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
+    const effectiveZoneId = order.zoneId ?? order.shopZoneId ?? store?.zoneId ?? null;
+    if (!effectiveZoneId || !zones.includes(effectiveZoneId)) {
       res.status(403).json({ error: "This order belongs to another service zone." });
       return;
     }
@@ -626,7 +634,9 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     const { status, pickupOtp: enteredPickupOtp, otp } = req.body as { status: "picked_up" | "on_the_way" | "delivered"; pickupOtp?: string; otp?: string };
     const [targetOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
     const zones = await riderZoneIds(req.user!.userId);
-    if (!targetOrder || !targetOrder.zoneId || !zones.includes(targetOrder.zoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
+    const [targetStore] = targetOrder ? await db.select().from(storesTable).where(eq(storesTable.id, targetOrder.storeId)).limit(1) : [];
+    const effectiveZoneId = targetOrder?.zoneId ?? targetOrder?.shopZoneId ?? targetStore?.zoneId ?? null;
+    if (!targetOrder || !effectiveZoneId || !zones.includes(effectiveZoneId)) { res.status(403).json({ error: "This order belongs to another service zone." }); return; }
     if (!(await assertDeliveryAssignment(orderId, dp.id))) {
       res.status(403).json({ error: "This order is not assigned to this delivery partner." });
       return;
@@ -642,7 +652,7 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
       res.status(400).json({ error: "Invalid customer delivery OTP." }); return;
     }
 
-    const update: Partial<typeof ordersTable.$inferInsert> = { status, riderZoneId: targetOrder.zoneId ?? dp.currentZoneId ?? null, updatedAt: new Date() };
+    const update: Partial<typeof ordersTable.$inferInsert> = { status, riderZoneId: effectiveZoneId ?? dp.currentZoneId ?? null, updatedAt: new Date() };
     if (status === "delivered") update.deliveredAt = new Date();
 
     const [order] = await db.update(ordersTable)

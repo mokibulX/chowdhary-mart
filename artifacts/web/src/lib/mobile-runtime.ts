@@ -87,6 +87,7 @@ export async function initMobileRuntime() {
       return;
     }
     if (window.location.pathname !== "/" && canGoBack) {
+      window.dispatchEvent(new CustomEvent("cm-app-back"));
       window.history.back();
       return;
     }

@@ -509,7 +509,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
         .cm-rider-bike svg { height:23px; width:23px; }
       `}</style>
 
-      <div className={`relative bg-slate-100 ${fullscreen ? "h-[100dvh] min-h-[100dvh]" : compact ? "h-[330px]" : "h-[76dvh] min-h-[560px] sm:h-[700px]"}`}>
+      <div className={`relative min-w-0 overflow-hidden bg-slate-100 ${fullscreen ? "h-[100dvh] min-h-[100dvh]" : compact ? "h-[500px] min-h-[500px] sm:h-[430px] sm:min-h-[430px]" : "h-[76dvh] min-h-[560px] sm:h-[700px]"}`}>
         <div ref={mapRef} className="h-full w-full" />
         {shouldShowFallbackMap && (
           <FallbackRouteMap
@@ -536,7 +536,7 @@ export function LiveDeliveryMap({ tracking, compact = false, role = "customer", 
           </Button>
         </div>
 
-        <div className={`absolute left-3 right-3 z-10 rounded-3xl bg-white/95 p-4 shadow-2xl backdrop-blur ${fullscreen ? "bottom-3 max-h-[38dvh] overflow-y-auto" : "bottom-3"}`}>
+        <div className={`absolute left-3 right-3 z-10 max-h-[58%] overflow-y-auto rounded-3xl bg-white/95 p-4 shadow-2xl backdrop-blur ${fullscreen ? "bottom-3 max-h-[38dvh]" : "bottom-3"}`}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <Badge className="mb-2 bg-blue-100 text-blue-700 hover:bg-blue-100">
