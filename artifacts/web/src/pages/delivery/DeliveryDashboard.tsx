@@ -258,7 +258,26 @@ export default function DeliveryDashboard() {
     try {
       // Accept must not wait for a slow or denied GPS permission. The server
       // already knows the partner's last location; refresh it after acceptance.
-      await customFetch(`/api/delivery/orders/${orderId}/accept`, { method: "POST", responseType: "json" });
+      const accepted = await customFetch<any>(`/api/delivery/orders/${orderId}/accept`, { method: "POST", responseType: "json" });
+      qc.setQueryData<any[]>(getListDeliveryOrdersQueryKey(), (current = []) => {
+        const existing = current.find((order) => Number(order.id) === orderId);
+        const next = {
+          ...existing,
+          ...accepted,
+          store: accepted?.store ?? existing?.store,
+          liveTracking: {
+            ...(existing?.liveTracking ?? {}),
+            ...(accepted?.liveTracking ?? {}),
+            status: accepted?.status ?? existing?.status,
+            lifecycle: {
+              ...(existing?.liveTracking?.lifecycle ?? {}),
+              ...(accepted?.liveTracking?.lifecycle ?? {}),
+              assignedDeliveryPartnerId: accepted?.assignedDeliveryPartnerId,
+            },
+          },
+        };
+        return [next, ...current.filter((order) => Number(order.id) !== orderId)];
+      });
       toast({ title: "Order accepted", description: "Pickup task added to your route." });
       void getPartnerLocation()
         .then((location) => customFetch("/api/delivery/location", { method: "PATCH", body: JSON.stringify(location), responseType: "json" }))

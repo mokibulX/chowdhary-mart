@@ -603,7 +603,35 @@ router.post("/orders/:orderId/accept", async (req: AuthRequest, res) => {
         req.log.warn({ err: notificationError, orderId }, "Rider assignment notification failed");
       });
 
-    res.json({ ...order, riderZoneId: order.zoneId ?? dp.currentZoneId, assignedDeliveryPartnerId: dp.id });
+    res.json({
+      ...order,
+      store,
+      riderZoneId: order.zoneId ?? dp.currentZoneId,
+      assignedDeliveryPartnerId: dp.id,
+      liveTracking: {
+        orderId: order.id,
+        status: order.status,
+        estimatedMins: order.estimatedDeliveryMins ?? 40,
+        storeLocation: store ? { lat: store.lat, lng: store.lng, label: store.name, address: store.address } : null,
+        partnerLocation: dp.currentLat != null && dp.currentLng != null
+          ? { lat: Number(dp.currentLat), lng: Number(dp.currentLng), label: "Delivery partner" }
+          : null,
+        customerLocation: order.pickupLatitude && order.pickupLongitude ? {
+          lat: Number(order.pickupLatitude),
+          lng: Number(order.pickupLongitude),
+          label: "Customer pickup location",
+          address: order.pickupAddress ?? "Confirmed pickup point",
+        } : null,
+        pickupOtp: pickupOtp(order.id),
+        deliveryOtp: deliveryOtp(order.id),
+        lifecycle: {
+          sellerDecisionDeadline: null,
+          preparationDeadline: null,
+          pickupDeadline: new Date(Date.now() + 5 * 60_000).toISOString(),
+          assignedDeliveryPartnerId: dp.id,
+        },
+      },
+    });
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });

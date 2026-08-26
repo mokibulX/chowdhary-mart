@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { customFetch } from "@workspace/api-client-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getListDeliveryOrdersQueryKey } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,8 @@ const RIDER_REASONS = ["Pickup too far", "Delivery distance too far", "Low earni
 export function GlobalIncomingOrderAlerts() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [queue, setQueue] = useState<IncomingAlert[]>([]);
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -36,7 +38,7 @@ export function GlobalIncomingOrderAlerts() {
     queryKey: ["/api/delivery/dashboard-summary", "incoming-alert-status", user?.id],
     queryFn: () => customFetch<any>("/api/delivery/dashboard-summary", { responseType: "json" }),
     enabled: isDeliveryPartner,
-    refetchInterval: isDeliveryPartner ? 4000 : false,
+    refetchInterval: isDeliveryPartner ? 2000 : false,
     staleTime: 2000,
   });
 
@@ -87,7 +89,7 @@ export function GlobalIncomingOrderAlerts() {
     } else {
       poll();
     }
-    const timer = window.setInterval(poll, 4000);
+    const timer = window.setInterval(poll, 2000);
     return () => {
       stopped = true;
       window.clearInterval(timer);
@@ -118,10 +120,31 @@ export function GlobalIncomingOrderAlerts() {
         setLocation("/vendor/orders");
         return;
       }
-      await customFetch(`/api/delivery/orders/${incoming.order.id}/accept`, { method: "POST", responseType: "json" });
+      const accepted = await customFetch<any>(`/api/delivery/orders/${incoming.order.id}/accept`, { method: "POST", responseType: "json" });
+      // Put the accepted task in the delivery page cache immediately. The
+      // polling request still refreshes it, but the route should not wait for
+      // a navigation or the next 5-second interval to become visible.
+      queryClient.setQueryData<any[]>(getListDeliveryOrdersQueryKey(), (current = []) => {
+        const acceptedOrder = {
+          ...incoming.order,
+          ...accepted,
+          store: accepted?.store ?? incoming.order.store,
+          liveTracking: {
+            ...(incoming.order.liveTracking ?? {}),
+            ...(accepted?.liveTracking ?? {}),
+            status: accepted?.status ?? incoming.order.status,
+            lifecycle: {
+              ...(incoming.order.liveTracking?.lifecycle ?? {}),
+              ...(accepted?.liveTracking?.lifecycle ?? {}),
+              assignedDeliveryPartnerId: accepted?.assignedDeliveryPartnerId,
+            },
+          },
+        };
+        return [acceptedOrder, ...current.filter((order) => Number(order.id) !== Number(incoming.order.id))];
+      });
       toast({ title: "Delivery accepted", description: "Pickup navigation is ready." });
       closeActive();
-      setLocation("/rider/home");
+      if (location !== "/delivery") setLocation("/delivery");
     } catch (error) {
       const message = (error as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
         ?? (error as { response?: { data?: { error?: string } } })?.response?.data?.error
