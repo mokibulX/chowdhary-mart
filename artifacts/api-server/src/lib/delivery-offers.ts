@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { createAndPushNotification } from "./push-service";
 
-const OFFER_SECONDS = 10;
+const OFFER_SECONDS = 20;
 let ready: Promise<void> | null = null;
 
 export async function ensureDeliveryOffersTable() {

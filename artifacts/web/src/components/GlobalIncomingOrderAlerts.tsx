@@ -233,7 +233,7 @@ export function GlobalIncomingOrderAlerts() {
               <p className="mt-1 text-sm text-white/70">ChowdharyMart urgent request</p>
             </div>
             <div className="text-right">
-              <Countdown createdAt={active.role === "rider" ? active.order.deliveryOffer?.offeredAt : active.order.createdAt} seconds={active.role === "seller" ? 60 : 10} />
+              <Countdown createdAt={active.role === "rider" ? active.order.deliveryOffer?.offeredAt : active.order.createdAt} seconds={active.role === "seller" ? 60 : 20} />
               {queue.length > 1 && <Badge className="mt-2 bg-white text-gray-950">{queue.length - 1} queued</Badge>}
             </div>
           </div>

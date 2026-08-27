@@ -40,6 +40,7 @@ export default function DeliveryDashboard() {
   const [busyOrderId, setBusyOrderId] = useState<number | null>(null);
   const [otpByOrder, setOtpByOrder] = useState<Record<number, string>>({});
   const [pickupOtpByOrder, setPickupOtpByOrder] = useState<Record<number, string>>({});
+  const [addressConfirmedByOrder, setAddressConfirmedByOrder] = useState<Record<number, boolean>>({});
   const [gpsError, setGpsError] = useState("");
   const [lastGpsAt, setLastGpsAt] = useState<string | null>(null);
   const [lastAccuracy, setLastAccuracy] = useState<number | undefined>();
@@ -356,6 +357,10 @@ export default function DeliveryDashboard() {
     const expectedPickupOtp = String((order as any).liveTracking?.pickupOtp ?? order.tracking?.pickupOtp ?? "");
     const enteredPickupOtp = pickupOtpByOrder[order.id] ?? "";
     const enteredDeliveryOtp = otpByOrder[order.id] ?? "";
+    if (status === "on_the_way" && !addressConfirmedByOrder[order.id]) {
+      toast({ title: "Confirm delivery address", description: "Review the customer address and confirm it before starting delivery.", variant: "destructive" });
+      return;
+    }
     if (status === "picked_up" && enteredPickupOtp !== expectedPickupOtp && !isDemoOtp(enteredPickupOtp)) {
       toast({ title: "Pickup OTP required", description: "Seller-er kach theke pickup OTP niye enter korun.", variant: "destructive" });
       return;
@@ -629,6 +634,13 @@ export default function DeliveryDashboard() {
                       )}
                       {NEXT_STATUS[order.status] && (
                         <>
+                          {order.status === "picked_up" && !addressConfirmedByOrder[order.id] && (
+                            <Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={() => setAddressConfirmedByOrder((current) => ({ ...current, [order.id]: true }))} disabled={busyOrderId === order.id}>
+                              <MapPin className="mr-2 h-4 w-4" /> Confirm delivery address
+                            </Button>
+                          )}
+                          {order.status === "picked_up" && !addressConfirmedByOrder[order.id] ? null : (
+                            <>
                           {NEXT_STATUS[order.status] === "picked_up" && (
                             <Input
                               className="h-9 w-full sm:w-36"
@@ -656,6 +668,8 @@ export default function DeliveryDashboard() {
                             <Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={() => cancelAssignment(order.id)} disabled={busyOrderId === order.id}>
                               <X className="mr-2 h-4 w-4" /> Unable to continue
                             </Button>
+                          )}
+                            </>
                           )}
                         </>
                       )}
