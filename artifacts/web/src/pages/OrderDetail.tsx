@@ -38,6 +38,9 @@ export default function OrderDetail() {
   if (!order) return <div className="text-center py-16 text-muted-foreground">Order not found.</div>;
 
   const canCancel = !["delivered", "cancelled"].includes(order.status);
+  const returnRequestAvailable = Boolean((order as any).returnRequestAvailable)
+    || (!["delivered", "cancelled", "returned"].includes(order.status)
+      && Date.now() - new Date(order.createdAt).getTime() >= 60 * 60_000);
   const tracking = (order as any).tracking;
   const currentStep = TRACKING_STEPS.indexOf(order.status);
 
@@ -187,6 +190,16 @@ export default function OrderDetail() {
         <Button variant="destructive" className="w-full" onClick={() => setCancelOpen(true)} data-testid="btn-cancel">
           <X className="w-4 h-4 mr-2" />Cancel Order
         </Button>
+      )}
+
+      {returnRequestAvailable && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="font-semibold text-amber-950">Return request available</p>
+          <p className="mt-1 text-sm text-amber-900">This order has not been delivered within 1 hour. You can submit a return request for the delayed delivery.</p>
+          <Link href={`/returns?orderId=${id}`}>
+            <Button className="mt-3 bg-amber-600 text-white hover:bg-amber-700">Request a return</Button>
+          </Link>
+        </div>
       )}
 
       <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>

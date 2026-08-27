@@ -420,7 +420,11 @@ export default function DeliveryDashboard() {
       <main id="top" className="app-content mx-auto max-w-6xl space-y-4 overflow-x-hidden px-3 pb-24 pt-4 sm:space-y-6 sm:px-4 sm:py-6">
         <section className="relative z-0 order-first isolate overflow-hidden rounded-2xl border bg-white p-2 shadow-sm sm:hidden">
           <div className="flex items-center justify-between px-2 pb-2 pt-1"><div><h2 className="font-black">Live area map</h2><p className="text-xs text-muted-foreground">Nearby shops and your current location</p></div><Button size="sm" variant="outline" className="rounded-full" onClick={updateGpsOnce} disabled={updateLocation.isPending}><LocateFixed className="mr-1 h-4 w-4" /> Locate</Button></div>
-          <RiderMapPreview location={livePoint} currentOrder={currentOrder} />
+          {currentOrder ? (
+            <LiveDeliveryMap tracking={currentTracking} compact role="partner" />
+          ) : (
+            <RiderMapPreview location={livePoint} currentOrder={currentOrder} />
+          )}
         </section>
         <section className="rounded-2xl bg-slate-950 p-4 text-white shadow-sm sm:hidden">
           <div className="flex items-center gap-3">

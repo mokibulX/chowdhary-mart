@@ -3281,8 +3281,10 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
       const order = state.orders.find((item: MockRecord) => item.id === Number(body.orderId) && item.userId === user.id);
       if (!order) makeMockError(404, "Order not found", method, path);
       const returnReason = String(body.reason ?? "").toLowerCase();
-      if (!returnReason.includes("damage") && !returnReason.includes("damaged") && !returnReason.includes("broken") && !returnReason.includes("leaked")) {
-        makeMockError(400, "Only damaged items are eligible for return", method, path);
+      const lateDelivery = returnReason.includes("delivery") || returnReason.includes("1 hour") || returnReason.includes("late");
+      const damagedItem = returnReason.includes("damage") || returnReason.includes("damaged") || returnReason.includes("broken") || returnReason.includes("leaked");
+      if (!lateDelivery && !damagedItem) {
+        makeMockError(400, "Only delayed or damaged orders are eligible for return", method, path);
       }
       const product = (order.items ?? []).find((item: MockRecord) => item.productId === Number(body.productId)) ?? order.items?.[0];
       if (!product) makeMockError(400, "Select a product for return", method, path);

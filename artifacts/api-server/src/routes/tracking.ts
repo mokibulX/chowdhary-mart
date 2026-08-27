@@ -49,6 +49,7 @@ router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
     ]);
 
     const latestTracking = timeline[0];
+    const partnerCompletedOrder = req.user!.role === "delivery_partner" && order.status === "delivered";
     if (req.user!.role === "customer" && order.userId !== req.user!.userId) {
       res.status(404).json({ error: "Order not found" });
       return;
@@ -98,7 +99,9 @@ router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
     }
 
     const storeCoords = locationOrNull(store?.lat, store?.lng);
-    const customerCoords = locationOrNull(order.pickupLatitude, order.pickupLongitude) ?? locationOrNull(address?.lat, address?.lng);
+    const customerCoords = partnerCompletedOrder
+      ? null
+      : locationOrNull(order.pickupLatitude, order.pickupLongitude) ?? locationOrNull(address?.lat, address?.lng);
     const partnerCoords = latestLiveLocation
       ? locationOrNull(latestLiveLocation.lat, latestLiveLocation.lng)
       : deliveryPartnerInfo?.location
@@ -129,14 +132,14 @@ router.get("/:orderId", requireAuth, async (req: AuthRequest, res) => {
     res.json({
       orderId,
       status: order.status,
-      deliveryPartner: deliveryPartnerInfo,
+      deliveryPartner: partnerCompletedOrder ? null : deliveryPartnerInfo,
       storeLocation,
       customerLocation,
-      partnerLocation,
-      route: [storeLocation, partnerLocation, customerLocation].filter(Boolean),
+      partnerLocation: partnerCompletedOrder ? null : partnerLocation,
+      route: [storeLocation, partnerCompletedOrder ? null : partnerLocation, customerLocation].filter(Boolean),
       distanceKm: distance === null ? null : Number(distance.toFixed(1)),
       estimatedMins: eta,
-      deliveryOtp: String(1000 + (order.id % 9000)),
+      deliveryOtp: partnerCompletedOrder ? null : String(1000 + (order.id % 9000)),
       riderHeading: latestLiveLocation?.heading ?? 0,
       speed: latestLiveLocation?.speed ?? 0,
       lastLocationUpdatedAt: latestLiveLocation?.updatedAt ?? latestTracking?.updatedAt,

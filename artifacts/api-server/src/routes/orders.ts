@@ -6,7 +6,7 @@ import {
   addressesTable, usersTable, couponUsesTable, couponsTable,
   paymentsTable,
   walletTransactionsTable, reviewsTable, deliveryPartnersTable,
-  outboxEventsTable, inventoryLedgerTable
+  outboxEventsTable, inventoryLedgerTable, notificationsTable
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middleware/auth";
 import { generateOrderNumber } from "../lib/auth";
@@ -22,6 +22,8 @@ import { cancelDeliveryOffers } from "../lib/delivery-offers";
 const router = Router();
 
 router.use(requireAuth);
+
+const LATE_DELIVERY_RETURN_MS = 60 * 60_000;
 
 function safeNum(v: unknown, fallback = 0): number {
   const n = Number(v);
@@ -53,7 +55,32 @@ async function assignNearestPartner(store: typeof storesTable.$inferSelect) {
 
 async function enrichOrder(order: typeof ordersTable.$inferSelect) {
   const [store] = await db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
-  return { ...order, store };
+  const returnRequestAvailable = !["delivered", "cancelled", "returned"].includes(order.status)
+    && Date.now() - new Date(order.createdAt).getTime() >= LATE_DELIVERY_RETURN_MS;
+  return { ...order, store, returnRequestAvailable };
+}
+
+async function notifyLateDeliveryReturn(order: typeof ordersTable.$inferSelect) {
+  if (["delivered", "cancelled", "returned"].includes(order.status)) return;
+  if (Date.now() - new Date(order.createdAt).getTime() < LATE_DELIVERY_RETURN_MS) return;
+
+  const existing = await db.select({ id: notificationsTable.id })
+    .from(notificationsTable)
+    .where(and(
+      eq(notificationsTable.userId, order.userId),
+      eq(notificationsTable.type, "late_delivery_return"),
+      sql`${notificationsTable.data}->>'orderId' = ${String(order.id)}`,
+    ))
+    .limit(1);
+  if (existing.length) return;
+
+  await db.insert(notificationsTable).values({
+    userId: order.userId,
+    type: "late_delivery_return",
+    title: "Return request available",
+    body: `Order #${order.orderNumber} has not been delivered within 1 hour. You can submit a return request from My Returns.`,
+    data: { orderId: order.id, orderNumber: order.orderNumber, action: "return_request" },
+  });
 }
 
 // GET /api/orders
@@ -71,6 +98,7 @@ router.get("/", async (req: AuthRequest, res) => {
       .orderBy(desc(ordersTable.createdAt))
       .limit(limit).offset(offset);
 
+    await Promise.all(orders.map(notifyLateDeliveryReturn));
     const enriched = await Promise.all(orders.map(enrichOrder));
     res.json(enriched);
   } catch (err) {
@@ -410,6 +438,8 @@ router.get("/:orderId", async (req: AuthRequest, res) => {
 
     if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
+    await notifyLateDeliveryReturn(order);
+
     const [items, [store], [address], tracking] = await Promise.all([
       db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId)),
       db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1),
@@ -419,6 +449,8 @@ router.get("/:orderId", async (req: AuthRequest, res) => {
 
     res.json({
       ...order,
+      returnRequestAvailable: !["delivered", "cancelled", "returned"].includes(order.status)
+        && Date.now() - new Date(order.createdAt).getTime() >= LATE_DELIVERY_RETURN_MS,
       items,
       store,
       address,

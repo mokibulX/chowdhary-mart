@@ -71,6 +71,12 @@ function currentDeliveryStatus(isOnline: boolean, activeDelivery: boolean) {
   return !isOnline ? "offline" : activeDelivery ? "on_delivery" : "online";
 }
 
+function orderForPartner(order: typeof ordersTable.$inferSelect) {
+  if (order.status !== "delivered") return order;
+  const { userId, addressId, addressSnapshot, pickupAddress, pickupLatitude, pickupLongitude, ...safeOrder } = order;
+  return safeOrder;
+}
+
 async function activeDeliveryForPartner(partnerId: number) {
   const rows = await db.execute(sql`
     select 1 from order_tracking ot
@@ -450,24 +456,24 @@ router.get("/orders", async (req: AuthRequest, res) => {
       const store = order ? storeMap.get(order.storeId) : null;
       const lifecycle = order ? await lifecycleMeta(order) : null;
       return order ? {
-        ...order,
+        ...orderForPartner(order),
         store,
         liveTracking: {
           orderId: order.id,
           status: order.status,
           estimatedMins: order.estimatedDeliveryMins ?? 40,
           storeLocation: store ? { lat: store.lat, lng: store.lng, label: store.name, address: store.address } : null,
-          partnerLocation: dp.currentLat != null && dp.currentLng != null
-            ? { lat: Number(dp.currentLat), lng: Number(dp.currentLng), label: "Delivery partner" }
-            : null,
-          customerLocation: order.pickupLatitude && order.pickupLongitude ? {
+          customerLocation: order.status !== "delivered" && order.pickupLatitude && order.pickupLongitude ? {
             lat: Number(order.pickupLatitude),
             lng: Number(order.pickupLongitude),
             label: "Customer pickup location",
             address: order.pickupAddress ?? "Confirmed pickup point",
           } : null,
-          pickupOtp: lifecycle?.pickupOtp,
-          deliveryOtp: lifecycle?.deliveryOtp,
+          partnerLocation: order.status !== "delivered" && dp.currentLat != null && dp.currentLng != null
+            ? { lat: Number(dp.currentLat), lng: Number(dp.currentLng), label: "Delivery partner" }
+            : null,
+          pickupOtp: order.status !== "delivered" ? lifecycle?.pickupOtp : null,
+          deliveryOtp: order.status !== "delivered" ? lifecycle?.deliveryOtp : null,
           lifecycle,
         },
       } : null;

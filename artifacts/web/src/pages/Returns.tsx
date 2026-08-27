@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { customFetch, useListOrders, getListOrdersQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -12,13 +12,18 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { PackageOpen, RotateCcw } from "lucide-react";
 
-const REASONS = ["Product damaged on delivery", "Broken or leaked item", "Damaged package and item"];
+const REASONS = ["Delivery not completed within 1 hour", "Product damaged on delivery", "Broken or leaked item", "Damaged package and item"];
 
 export default function Returns() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [location] = useLocation();
+  const requestedOrderId = useMemo(() => {
+    const query = location.split("?", 2)[1] ?? "";
+    return new URLSearchParams(query).get("orderId") ?? "";
+  }, [location]);
   const [open, setOpen] = useState(false);
-  const [orderId, setOrderId] = useState("");
+  const [orderId, setOrderId] = useState(requestedOrderId);
   const [productId, setProductId] = useState("");
   const [reason, setReason] = useState(REASONS[0]);
   const [details, setDetails] = useState("");
@@ -30,9 +35,21 @@ export default function Returns() {
     queryFn: () => customFetch<any[]>("/api/returns"),
   });
 
-  const returnableOrders = useMemo(() => (orders ?? []).filter((order: any) => !["cancelled"].includes(order.status)), [orders]);
+  const returnableOrders = useMemo(() => (orders ?? []).filter((order: any) => {
+    if (["cancelled", "returned"].includes(order.status)) return false;
+    const late = !["delivered", "cancelled", "returned"].includes(order.status)
+      && Date.now() - new Date(order.createdAt).getTime() >= 60 * 60_000;
+    return order.status === "delivered" || late;
+  }), [orders]);
   const selectedOrder = returnableOrders.find((order: any) => String(order.id) === orderId);
   const selectedItems = (selectedOrder as any)?.items ?? [];
+
+  useEffect(() => {
+    if (!requestedOrderId) return;
+    setOrderId(requestedOrderId);
+    setProductId("");
+    setOpen(true);
+  }, [requestedOrderId]);
 
   const submitReturn = async () => {
     if (!orderId || !productId) {
@@ -62,7 +79,7 @@ export default function Returns() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">My Returns</h1>
-          <p className="text-sm text-muted-foreground">Only damaged items are eligible for return support.</p>
+          <p className="text-sm text-muted-foreground">Request help for a delayed or damaged order.</p>
         </div>
         <Button onClick={() => setOpen(true)}><RotateCcw className="mr-2 h-4 w-4" />New Return</Button>
       </div>
@@ -73,7 +90,7 @@ export default function Returns() {
         <div className="rounded-lg border bg-white p-8 text-center">
           <PackageOpen className="mx-auto mb-3 h-12 w-12 text-muted-foreground/40" />
           <p className="font-semibold">No return requests yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">Create a return only when an ordered item arrives damaged.</p>
+          <p className="mt-1 text-sm text-muted-foreground">You can request help for a delayed or damaged order.</p>
           <Button className="mt-4" onClick={() => setOpen(true)}>Request return</Button>
         </div>
       ) : (
@@ -113,7 +130,7 @@ export default function Returns() {
           <DialogHeader><DialogTitle>Request a Return</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-              Return requests are allowed only for damaged items. Please add clear details so support can verify it.
+              Return requests are available for orders delayed beyond 1 hour or items damaged during delivery.
             </div>
             <div className="space-y-1">
               <Label>Order</Label>

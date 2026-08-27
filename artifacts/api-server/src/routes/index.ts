@@ -24,6 +24,7 @@ import mapsRouter from "./maps";
 import publicRouter from "./public";
 import uploadsRouter from "./uploads";
 import translateRouter from "./translate";
+import returnsRouter from "./returns";
 
 const router: IRouter = Router();
 
@@ -40,6 +41,7 @@ router.use("/tracking", trackingRouter);
 router.use("/coupons", couponsRouter);
 router.use("/wallet", walletRouter);
 router.use("/notifications", notificationsRouter);
+router.use("/returns", returnsRouter);
 router.use("/vendor", vendorRouter);
 router.use("/admin", adminRouter);
 router.use("/delivery", deliveryRouter);
