@@ -737,7 +737,7 @@ router.patch("/orders/:orderId/status", async (req: AuthRequest, res) => {
     }
     const validTransition = (status === "picked_up" && targetOrder.status === "packed")
       || (status === "on_the_way" && targetOrder.status === "picked_up")
-      || (status === "delivered" && targetOrder.status === "on_the_way");
+      || (status === "delivered" && ["on_the_way", "arriving"].includes(targetOrder.status));
     if (!validTransition) { res.status(400).json({ error: "Invalid delivery status transition." }); return; }
     if (status === "picked_up" && String(enteredPickupOtp ?? "") !== pickupOtp(orderId)) {
       res.status(400).json({ error: "Invalid pickup OTP." }); return;

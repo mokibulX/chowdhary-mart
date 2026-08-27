@@ -21,12 +21,14 @@ const NEXT_STATUS: Record<string, string> = {
   packed: "picked_up",
   picked_up: "on_the_way",
   on_the_way: "delivered",
+  arriving: "delivered",
 };
 
 const ACTION_LABEL: Record<string, string> = {
-  packed: "Picked up",
+  packed: "Confirm pickup",
   picked_up: "Start delivery",
   on_the_way: "Mark delivered",
+  arriving: "Mark delivered",
 };
 
 export default function DeliveryDashboard() {
@@ -146,7 +148,7 @@ export default function DeliveryDashboard() {
       window.clearTimeout(offlineTimer);
     };
   }, [toast, user?.id, user?.role, userOnline]);
-  const activeOrders = (orders ?? []).filter((order: any) => ["packed", "picked_up", "on_the_way"].includes(order.status));
+  const activeOrders = (orders ?? []).filter((order: any) => ["packed", "picked_up", "on_the_way", "arriving"].includes(order.status));
   const waitingOrders = (orders ?? []).filter((order: any) => ["confirmed", "preparing"].includes(order.status));
   const currentOrder = activeOrders[0] ?? waitingOrders[0];
   const currentTracking = currentOrder ? {
@@ -364,14 +366,19 @@ export default function DeliveryDashboard() {
     }
     setBusyOrderId(order.id);
     try {
-      const location = await getPartnerLocation();
+      // Do not block the status transition on a fresh GPS fix. The latest live
+      // point is enough for the tracking event; a newer fix is sent in the background.
+      const location = livePoint ? { ...livePoint, orderId: order.id } : undefined;
       await customFetch(`/api/delivery/orders/${order.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status, otp: otpByOrder[order.id], pickupOtp: pickupOtpByOrder[order.id], location }),
+        body: JSON.stringify({ status, otp: otpByOrder[order.id], pickupOtp: pickupOtpByOrder[order.id], ...(location ? { location } : {}) }),
         responseType: "json",
       });
       toast({ title: "Delivery updated", description: `Order #${order.orderNumber} is now ${status.replace(/_/g, " ")}.` });
       refresh();
+      void getPartnerLocation()
+        .then((nextLocation) => customFetch("/api/delivery/location", { method: "PATCH", body: JSON.stringify(nextLocation), responseType: "json" }))
+        .catch(() => undefined);
     } catch (error) {
       const message = (error as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
         ?? (error as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -461,7 +468,7 @@ export default function DeliveryDashboard() {
         {currentOrder && <section className="rounded-2xl border border-orange-200 bg-orange-50 p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-wide text-orange-700">Current delivery</p><h2 className="mt-1 text-lg font-black">{currentOrder.store?.name ?? "Assigned order"}</h2></div><Badge className="capitalize bg-white text-orange-700">{currentOrder.status.replace(/_/g, " ")}</Badge></div>
           <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">Pickup</p><p className="font-semibold">{currentOrder.store?.address ?? "Seller location"}</p></div><div><p className="text-xs text-muted-foreground">Drop</p><p className="font-semibold">{(currentOrder as any).pickupAddress ?? (currentOrder as any).addressSnapshot?.city ?? "Customer location"}</p></div><div><p className="text-xs text-muted-foreground">Order earning</p><p className="font-bold">₹{Number(currentOrder.deliveryFee ?? 0).toFixed(0)}</p></div></div>
-          <div className="mt-4 flex flex-wrap gap-2"><Link href={`/track/${currentOrder.id}`}><Button className="bg-orange-500 hover:bg-orange-600"><Navigation className="mr-2 h-4 w-4" /> Navigate</Button></Link><Button variant="outline" onClick={() => document.getElementById("orders")?.scrollIntoView({ behavior: "smooth" })}>View order</Button></div>
+          <div className="mt-4 flex flex-wrap gap-2"><Link href={`/track/${currentOrder.id}`}><Button className="bg-orange-500 hover:bg-orange-600"><Navigation className="mr-2 h-4 w-4" /> {(["picked_up", "on_the_way", "arriving"].includes(currentOrder.status)) ? "Navigate to customer" : "Reach pickup"}</Button></Link><Button variant="outline" onClick={() => document.getElementById("orders")?.scrollIntoView({ behavior: "smooth" })}>View order</Button></div>
         </section>}
 
         <section className="overflow-hidden rounded-2xl bg-slate-900 text-white shadow-sm sm:hidden">
@@ -589,13 +596,25 @@ export default function DeliveryDashboard() {
                         )}
                       </div>
                     </div>
+                    <div className="mt-3 rounded-lg border border-orange-100 bg-orange-50/60 px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-slate-700">
+                        <span className={!(["confirmed", "preparing"].includes(order.status)) ? "text-emerald-700" : "text-orange-700"}>1. Reach pickup</span>
+                        <span className="text-slate-400">→</span>
+                        <span className={(["picked_up", "on_the_way", "arriving", "delivered"].includes(order.status)) ? "text-emerald-700" : "text-slate-500"}>2. Confirm pickup</span>
+                        <span className="text-slate-400">→</span>
+                        <span className={(["on_the_way", "arriving", "delivered"].includes(order.status)) ? "text-emerald-700" : "text-slate-500"}>3. Deliver to customer</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {(["picked_up", "on_the_way", "arriving"].includes(order.status)) ? "Order picked up. Navigate to the customer and complete delivery." : order.status === "packed" ? "Seller has packed the order. Reach the shop and confirm pickup with the seller PIN." : "Seller is preparing the order. Open the route to the pickup shop."}
+                      </p>
+                    </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                       <Link href={`/track/${order.id}`}>
-                        <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> Track map</Button>
+                        <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> Open live route</Button>
                       </Link>
                       {(["picked_up", "on_the_way", "arriving"].includes(order.status) ? order.pickupLatitude && order.pickupLongitude : order.store?.lat && order.store?.lng) && (
                         <a href={`https://www.google.com/maps/dir/?api=1&destination=${["picked_up", "on_the_way", "arriving"].includes(order.status) ? `${order.pickupLatitude},${order.pickupLongitude}` : `${order.store.lat},${order.store.lng}`}&travelmode=driving`} target="_blank" rel="noreferrer">
-                          <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> {(["picked_up", "on_the_way", "arriving"].includes(order.status)) ? "Directions to customer" : "Directions to shop"}</Button>
+                          <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> {(["picked_up", "on_the_way", "arriving"].includes(order.status)) ? "Navigate to customer" : "Reach pickup"}</Button>
                         </a>
                       )}
                       {["confirmed", "preparing"].includes(order.status) && !order.liveTracking?.lifecycle?.assignedDeliveryPartnerId && (
@@ -615,7 +634,7 @@ export default function DeliveryDashboard() {
                               className="h-9 w-full sm:w-36"
                               inputMode="numeric"
                               maxLength={4}
-                              placeholder="Pickup OTP"
+                              placeholder="Seller pickup PIN"
                               value={pickupOtpByOrder[order.id] ?? ""}
                               onChange={(event) => setPickupOtpByOrder((current) => ({ ...current, [order.id]: event.target.value.replace(/\D/g, "").slice(0, 4) }))}
                             />
@@ -625,7 +644,7 @@ export default function DeliveryDashboard() {
                               className="h-9 w-full sm:w-32"
                               inputMode="numeric"
                               maxLength={4}
-                              placeholder="OTP"
+                              placeholder="Customer OTP"
                               value={otpByOrder[order.id] ?? ""}
                               onChange={(event) => setOtpByOrder((current) => ({ ...current, [order.id]: event.target.value.replace(/\D/g, "").slice(0, 4) }))}
                             />
@@ -633,7 +652,7 @@ export default function DeliveryDashboard() {
                           <Button className="w-full sm:w-auto" size="sm" onClick={() => markStatus(order)} disabled={busyOrderId === order.id}>
                             <CheckCircle className="mr-2 h-4 w-4" /> {ACTION_LABEL[order.status]}
                           </Button>
-                          {["packed", "picked_up", "on_the_way"].includes(order.status) && (
+                          {["packed", "picked_up", "on_the_way", "arriving"].includes(order.status) && (
                             <Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={() => cancelAssignment(order.id)} disabled={busyOrderId === order.id}>
                               <X className="mr-2 h-4 w-4" /> Unable to continue
                             </Button>
