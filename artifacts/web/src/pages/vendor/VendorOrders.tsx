@@ -55,7 +55,7 @@ export default function VendorOrders() {
     query: {
       enabled: !!user,
       queryKey: getListVendorOrdersQueryKey(params),
-      refetchInterval: 5000,
+      refetchInterval: 2000,
       refetchOnWindowFocus: true,
       // A transient polling failure must not make the seller's order history
       // disappear from the screen. React Query keeps the last good response.
@@ -70,6 +70,11 @@ export default function VendorOrders() {
   };
 
   const handleUpdate = (orderId: number, status: string) => {
+    const updateCachedOrders = (key: readonly unknown[]) => {
+      qc.setQueryData<any[]>(key, (current = []) => current.map((order) => Number(order.id) === orderId ? { ...order, status } : order));
+    };
+    updateCachedOrders(getListVendorOrdersQueryKey({}));
+    updateCachedOrders(getListVendorOrdersQueryKey(params));
     updateStatus.mutate(
       { orderId, data: { status } },
       {
@@ -77,7 +82,10 @@ export default function VendorOrders() {
           refresh();
           toast({ title: `Order updated to ${STATUS_LABEL[status] ?? status}` });
         },
-        onError: () => toast({ title: "Update failed", variant: "destructive" }),
+        onError: () => {
+          refresh();
+          toast({ title: "Update failed", variant: "destructive" });
+        },
       },
     );
   };

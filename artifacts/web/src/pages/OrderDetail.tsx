@@ -110,7 +110,7 @@ export default function OrderDetail() {
                     {done && <div className="w-2 h-2 bg-white rounded-full" />}
                   </div>
                   <div className={current ? "font-semibold text-sm" : "text-sm text-muted-foreground"}>
-                    {step.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                    {step === "picked_up" ? "Out for delivery" : step.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
                     {current && order.estimatedDeliveryMins && step !== "delivered" && (
                       <span className="text-xs text-primary ml-1">(~{order.estimatedDeliveryMins} min)</span>
                     )}

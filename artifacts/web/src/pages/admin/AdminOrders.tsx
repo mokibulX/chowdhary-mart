@@ -31,7 +31,7 @@ export default function AdminOrders() {
 
   const params = { status: filter || undefined, limit: 100 };
   const { data: orders, isLoading } = useListAdminOrders(params, {
-    query: { enabled: !!user, queryKey: getListAdminOrdersQueryKey(params), refetchInterval: 5000 },
+    query: { enabled: !!user, queryKey: getListAdminOrdersQueryKey(params), refetchInterval: 2000 },
   });
   const liveOrders = (orders as any[] | undefined)?.filter((order) => !["delivered", "cancelled"].includes(order.status)) ?? [];
   const refresh = () => qc.invalidateQueries({ queryKey: getListAdminOrdersQueryKey(params) });

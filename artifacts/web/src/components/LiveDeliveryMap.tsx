@@ -39,7 +39,7 @@ const STATUS_LABELS: Record<string, string> = {
   confirmed: "Seller accepted",
   preparing: "Preparing",
   packed: "Partner assigned",
-  picked_up: "Picked up",
+  picked_up: "Out for delivery",
   on_the_way: "On the way",
   arriving: "Arriving",
   delivered: "Delivered",

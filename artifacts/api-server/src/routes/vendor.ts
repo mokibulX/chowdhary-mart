@@ -2,7 +2,7 @@ import { Router } from "express";
 import { eq, and, desc, sql, gte } from "drizzle-orm";
 import {
   db, storesTable, ordersTable, orderItemsTable, productsTable, serviceZonesTable, addressesTable,
-  orderTrackingTable, usersTable, mediaLibraryTable, categoriesTable
+  orderTrackingTable, usersTable, mediaLibraryTable, categoriesTable, deliveryPartnersTable, liveLocationsTable
 } from "@workspace/db";
 import { readEnv } from "@workspace/db";
 import { requireApprovedVendor, requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
@@ -640,6 +640,15 @@ router.get("/orders", async (req: AuthRequest, res) => {
         order.addressId ? db.select().from(addressesTable).where(eq(addressesTable.id, order.addressId)).limit(1) : Promise.resolve([]),
       ]);
       const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+      const [latestTracking] = await db.select().from(orderTrackingTable)
+        .where(eq(orderTrackingTable.orderId, order.id))
+        .orderBy(desc(orderTrackingTable.updatedAt)).limit(1);
+      const [partner] = latestTracking?.deliveryPartnerId
+        ? await db.select().from(deliveryPartnersTable).where(eq(deliveryPartnersTable.id, latestTracking.deliveryPartnerId)).limit(1)
+        : [];
+      const [partnerLiveLocation] = partner
+        ? await db.select().from(liveLocationsTable).where(eq(liveLocationsTable.deliveryPartnerId, partner.id)).limit(1)
+        : [];
       const productIds = items.map((item) => item.productId).filter((id): id is number => id !== null);
       const products = productIds.length ? await db.select().from(productsTable).where(sql`${productsTable.id} in (${sql.join(productIds.map((id) => sql`${id}`), sql`, `)})`) : [];
       const productMap = new Map(products.map((product) => [product.id, product]));
@@ -674,6 +683,16 @@ router.get("/orders", async (req: AuthRequest, res) => {
         }),
         lifecycle,
         tracking: { pickupOtp: lifecycle.pickupOtp },
+        liveTracking: {
+          orderId: order.id,
+          status: order.status,
+          storeLocation: store.lat != null && store.lng != null ? { lat: Number(store.lat), lng: Number(store.lng), label: store.name, address: store.address } : null,
+          partnerLocation: partnerLiveLocation ? { lat: Number(partnerLiveLocation.lat), lng: Number(partnerLiveLocation.lng), speed: partnerLiveLocation.speed, heading: partnerLiveLocation.heading, updatedAt: partnerLiveLocation.updatedAt } : partner?.currentLat != null && partner?.currentLng != null ? { lat: Number(partner.currentLat), lng: Number(partner.currentLng), label: "Delivery partner" } : null,
+          customerLocation: order.pickupLatitude != null && order.pickupLongitude != null ? { lat: Number(order.pickupLatitude), lng: Number(order.pickupLongitude), label: "Customer", address: order.pickupAddress ?? "Delivery address" } : null,
+          pickupOtp: lifecycle.pickupOtp,
+          deliveryOtp: ["picked_up", "on_the_way", "arriving"].includes(order.status) ? String(1000 + (order.id % 9000)) : null,
+          lifecycle: { assignedDeliveryPartnerId: partner?.id ?? null },
+        },
       };
     }));
     res.json(enriched);

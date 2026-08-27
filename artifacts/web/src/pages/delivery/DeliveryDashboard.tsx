@@ -48,7 +48,7 @@ export default function DeliveryDashboard() {
   const [livePoint, setLivePoint] = useState<{ lat: number; lng: number } | null>(null);
 
   const { data: orders, isLoading } = useListDeliveryOrders({
-    query: { enabled: !!user, queryKey: getListDeliveryOrdersQueryKey(), refetchInterval: 5000 },
+    query: { enabled: !!user, queryKey: getListDeliveryOrdersQueryKey(), refetchInterval: 2000 },
   });
   const { data: dashboardSummary } = useQuery({
     queryKey: ["/api/delivery/dashboard-summary"],
@@ -255,6 +255,24 @@ export default function DeliveryDashboard() {
 
   const acceptOrder = async (orderId: number) => {
     setBusyOrderId(orderId);
+    const existing = (orders ?? []).find((order: any) => Number(order.id) === orderId) as any;
+    if (existing) {
+      qc.setQueryData<any[]>(getListDeliveryOrdersQueryKey(), (current = []) => {
+        const optimistic = {
+          ...existing,
+          status: "confirmed",
+          liveTracking: {
+            ...(existing.liveTracking ?? {}),
+            status: "confirmed",
+            lifecycle: {
+              ...(existing.liveTracking?.lifecycle ?? {}),
+              assignedDeliveryPartnerId: user?.id,
+            },
+          },
+        };
+        return [optimistic, ...current.filter((order) => Number(order.id) !== orderId)];
+      });
+    }
     try {
       // Accept must not wait for a slow or denied GPS permission. The server
       // already knows the partner's last location; refresh it after acceptance.
@@ -284,6 +302,7 @@ export default function DeliveryDashboard() {
         .catch(() => undefined);
       void refresh();
     } catch (error) {
+      void refresh();
       const message = (error as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
         ?? (error as { response?: { data?: { error?: string } } })?.response?.data?.error
         ?? "Could not accept order";
@@ -481,6 +500,25 @@ export default function DeliveryDashboard() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+          <div className="mt-5 overflow-hidden rounded-xl border bg-slate-50">
+            <div className="flex items-center justify-between border-b bg-white px-3 py-3 sm:px-4">
+              <div>
+                <h3 className="font-bold">Daily activity</h3>
+                <p className="text-xs text-muted-foreground">Online time and earnings by day</p>
+              </div>
+              <span className="text-xs font-semibold text-muted-foreground">Last 7 days</span>
+            </div>
+            <div className="divide-y">
+              {[...(dashboardSummary?.daily ?? [])].slice(-7).reverse().map((day: any) => (
+                <div key={day.date} className="grid grid-cols-[1.1fr_1fr_1fr_auto] items-center gap-2 px-3 py-3 text-sm sm:grid-cols-[1.4fr_1fr_1fr_1fr] sm:px-4">
+                  <span className="font-semibold">{formatDailyDate(day.date)}</span>
+                  <span className="text-muted-foreground"><span className="hidden sm:inline">Online </span>{formatDuration(Number(day.onlineSeconds ?? 0))}</span>
+                  <span className="font-semibold text-orange-600">₹{Number(day.earnings ?? 0).toFixed(0)}</span>
+                  <span className="text-right text-muted-foreground">{Number(day.completedOrders ?? 0)} <span className="hidden sm:inline">orders</span></span>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         <section id="orders" className="grid scroll-mt-20 gap-4 lg:grid-cols-[1.1fr_0.9fr]">
@@ -671,6 +709,12 @@ function formatDuration(seconds: number) {
   const minutes = Math.floor((total % 3600) / 60);
   const secs = total % 60;
   return hours ? `${hours}h ${minutes}m` : `${minutes}m ${secs}s`;
+}
+
+function formatDailyDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(date);
 }
 
 function indiaMidnightMs(date: Date) {

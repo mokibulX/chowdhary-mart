@@ -6,7 +6,7 @@ import {
   homepageSectionsTable, homepageSectionProductsTable, walletTransactionsTable,
   serviceZonesTable, sellerZoneAssignmentsTable, riderZoneAssignmentsTable, zoneChangeRequestsTable,
   mediaLibraryTable, withdrawalRequestsTable,
-  platformSettingsTable, walletsTable, walletLedgerEntriesTable,
+  platformSettingsTable, walletsTable, walletLedgerEntriesTable, orderTrackingTable, liveLocationsTable,
 } from "@workspace/db";
 import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { generateReferralCode, hashPassword } from "../lib/auth";
@@ -1293,9 +1293,18 @@ router.get("/orders", async (req: AuthRequest, res) => {
 
     const stores = await db.select().from(storesTable);
     const storeMap = new Map(stores.map(s => [s.id, s]));
+    const orderIds = orders.map((order) => order.id);
+    const trackingRows = orderIds.length
+      ? await db.select().from(orderTrackingTable).where(sql`${orderTrackingTable.orderId} in (${sql.join(orderIds.map((id) => sql`${id}`), sql`, `)})`).orderBy(desc(orderTrackingTable.updatedAt))
+      : [];
+    const latestTrackingByOrder = new Map<number, typeof trackingRows[number]>();
+    for (const tracking of trackingRows) if (!latestTrackingByOrder.has(tracking.orderId)) latestTrackingByOrder.set(tracking.orderId, tracking);
+    const liveByPartner = new Map((await db.select().from(liveLocationsTable)).map((location) => [location.deliveryPartnerId, location]));
 
     res.json(orders.map(o => {
       const store = storeMap.get(o.storeId);
+      const latestTracking = latestTrackingByOrder.get(o.id);
+      const partnerLive = latestTracking?.deliveryPartnerId ? liveByPartner.get(latestTracking.deliveryPartnerId) : undefined;
       return {
         ...o,
         store,
@@ -1310,7 +1319,9 @@ router.get("/orders", async (req: AuthRequest, res) => {
             label: "Customer pickup location",
             address: o.pickupAddress ?? "Confirmed pickup point",
           } : null,
+          partnerLocation: partnerLive ? { lat: Number(partnerLive.lat), lng: Number(partnerLive.lng), speed: partnerLive.speed, heading: partnerLive.heading, updatedAt: partnerLive.updatedAt } : null,
           distanceKm: o.pickupDistanceKm ? Number(o.pickupDistanceKm) : null,
+          lifecycle: { assignedDeliveryPartnerId: latestTracking?.deliveryPartnerId ?? null },
         },
       };
     }));

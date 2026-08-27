@@ -13,7 +13,7 @@ const STEP_LABELS: Record<string, string> = {
   confirmed: "Shop confirmed",
   preparing: "Preparing order",
   packed: "Delivery partner assigned",
-  picked_up: "Picked up",
+  picked_up: "Out for delivery",
   on_the_way: "Rider on the way",
   arriving: "Rider arrived",
   delivered: "Delivered",
@@ -27,7 +27,7 @@ export default function Track() {
   const { user } = useAuth();
 
   const { data: tracking, isLoading } = useGetOrderTracking(id, {
-    query: { enabled: !!id && !!user, queryKey: getGetOrderTrackingQueryKey(id), refetchInterval: 5000 },
+    query: { enabled: !!id && !!user, queryKey: getGetOrderTrackingQueryKey(id), refetchInterval: 2000 },
   });
 
   const t = tracking as any;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { customFetch } from "@workspace/api-client-react";
+import { customFetch, getListVendorOrdersQueryKey } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getListDeliveryOrdersQueryKey } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -110,16 +110,40 @@ export function GlobalIncomingOrderAlerts() {
     setBusy(true);
     try {
       if (incoming.role === "seller") {
+        const optimisticOrder = { ...incoming.order, status: "confirmed" };
+        for (const key of [getListVendorOrdersQueryKey({}), getListVendorOrdersQueryKey({ status: "pending" })]) {
+          queryClient.setQueryData<any[]>(key, (current = []) => [
+            optimisticOrder,
+            ...current.filter((order) => Number(order.id) !== Number(incoming.order.id)),
+          ]);
+        }
+        closeActive();
+        if (location !== "/vendor/orders") setLocation("/vendor/orders");
         await customFetch(`/api/vendor/orders/${incoming.order.id}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status: "confirmed", preparationMins: 12 }),
           responseType: "json",
         });
         toast({ title: "Order accepted", description: "Delivery partner matching started." });
-        closeActive();
-        setLocation("/vendor/orders");
         return;
       }
+      queryClient.setQueryData<any[]>(getListDeliveryOrdersQueryKey(), (current = []) => {
+        const optimisticOrder = {
+          ...incoming.order,
+          status: "confirmed",
+          liveTracking: {
+            ...(incoming.order.liveTracking ?? {}),
+            status: "confirmed",
+            lifecycle: {
+              ...(incoming.order.liveTracking?.lifecycle ?? {}),
+              assignedDeliveryPartnerId: user?.id,
+            },
+          },
+        };
+        return [optimisticOrder, ...current.filter((order) => Number(order.id) !== Number(incoming.order.id))];
+      });
+      closeActive();
+      if (location !== "/delivery") setLocation("/delivery");
       const accepted = await customFetch<any>(`/api/delivery/orders/${incoming.order.id}/accept`, { method: "POST", responseType: "json" });
       // Put the accepted task in the delivery page cache immediately. The
       // polling request still refreshes it, but the route should not wait for
@@ -143,9 +167,10 @@ export function GlobalIncomingOrderAlerts() {
         return [acceptedOrder, ...current.filter((order) => Number(order.id) !== Number(incoming.order.id))];
       });
       toast({ title: "Delivery accepted", description: "Pickup navigation is ready." });
-      closeActive();
-      if (location !== "/delivery") setLocation("/delivery");
     } catch (error) {
+      void queryClient.invalidateQueries({ queryKey: getListVendorOrdersQueryKey({}), refetchType: "active" });
+      void queryClient.invalidateQueries({ queryKey: getListVendorOrdersQueryKey({ status: "pending" }), refetchType: "active" });
+      void queryClient.invalidateQueries({ queryKey: getListDeliveryOrdersQueryKey(), refetchType: "active" });
       const message = (error as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
         ?? (error as { response?: { data?: { error?: string } } })?.response?.data?.error
         ?? "Action failed. Please try again.";
