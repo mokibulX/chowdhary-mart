@@ -4205,6 +4205,8 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
         href: body.href ?? "/search",
         isActive: body.isActive ?? true,
         sortOrder: Number(body.sortOrder ?? state.banners.length + 1),
+        audience: body.audience ?? "customer",
+        partnerBonus: Number(body.partnerBonus ?? 0),
         createdAt: mockNow(),
       };
       state.banners.push(banner);
@@ -4227,6 +4229,14 @@ async function tryMockFetch<T>(input: RequestInfo | URL, options: CustomFetchOpt
     Object.assign(banner, body, { sortOrder: Number(body.sortOrder ?? banner.sortOrder ?? 0), updatedAt: mockNow() });
     saveMockState(state);
     return ok(banner);
+  }
+  if (path === "/api/delivery/offers") {
+    const user = requireUser();
+    requireApprovedDeliveryPartner(user, method, path);
+    return ok(state.banners
+      .filter((item: MockRecord) => item.isActive !== false && ["delivery_partner", "all"].includes(String(item.audience ?? "customer")))
+      .sort((a: MockRecord, b: MockRecord) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0))
+      .map((item: MockRecord) => ({ ...item, linkUrl: item.linkUrl ?? item.href ?? null, partnerBonus: Number(item.partnerBonus ?? 0) })));
   }
   if (path === "/api/delivery/orders") {
     const user = requireUser();

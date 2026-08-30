@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowLeft, Home, LayoutDashboard, Users, ShoppingBag, Store, Tag, LogOut, Images, ShieldCheck, Menu, Wallet, MapPinned, PanelsTopLeft } from "lucide-react";
+import { ArrowLeft, Home, LayoutDashboard, Users, ShoppingBag, Store, Tag, LogOut, Images, ShieldCheck, Menu, Wallet, MapPinned, PanelsTopLeft, Gift } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -17,6 +17,7 @@ const NAV = [
   { href: "/admin/stores", label: "Stores", icon: Store },
   { href: "/admin/coupons", label: "Coupons", icon: Tag },
   { href: "/admin/wallet", label: "Wallet", icon: Wallet },
+  { href: "/admin/incentives", label: "Partner Incentives", icon: Gift },
 ];
 
 export function AdminLayout({ children }: { children: ReactNode }) {

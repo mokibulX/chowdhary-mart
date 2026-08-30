@@ -72,6 +72,11 @@ export function getSavedDeliveryLocation(): DeliveryLocation {
   }
 }
 
+export function hasSavedDeliveryLocation() {
+  if (typeof window === "undefined") return false;
+  return Boolean(window.localStorage.getItem(DELIVERY_LOCATION_STORAGE_KEY));
+}
+
 export function saveDeliveryLocation(location: DeliveryLocation) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(DELIVERY_LOCATION_STORAGE_KEY, JSON.stringify(location));

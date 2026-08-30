@@ -1,6 +1,7 @@
-import { and, desc, eq, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import {
   db,
+  bannersTable,
   deliveryPartnersTable,
   orderTrackingTable,
   ordersTable,
@@ -65,6 +66,19 @@ export async function ensureFinanceTables() {
       create unique index if not exists seller_settlements_order_unique on seller_settlements(order_id);
       create unique index if not exists rider_earning_order_user_unique on rider_earning_transactions(order_id, rider_user_id);
       create index if not exists wallet_ledger_wallet_created_idx on wallet_ledger_entries(wallet_id, created_at desc);
+      create table if not exists partner_incentive_rules (
+        id serial primary key,
+        partner_user_id integer references users(id) on delete cascade,
+        name varchar(160) not null default 'Partner incentive',
+        orders_required integer not null default 0,
+        bonus_amount numeric(12,2) not null default 0,
+        online_start_time varchar(5),
+        online_end_time varchar(5),
+        is_active boolean not null default true,
+        created_at timestamp not null default now(),
+        updated_at timestamp not null default now()
+      );
+      create index if not exists partner_incentive_rules_partner_idx on partner_incentive_rules (partner_user_id, is_active);
     `).then(() => undefined).catch((error) => {
       financeTablesReady = null;
       throw error;
@@ -90,6 +104,22 @@ function money(value: unknown) {
 
 function moneyText(value: number) {
   return value.toFixed(2);
+}
+
+function indiaTimeMinutes(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+function isWithinTimeWindow(now: number, start?: string | null, end?: string | null) {
+  if (!start || !end) return true;
+  const toMinutes = (value: string) => { const [hour, minute] = value.split(":").map(Number); return hour * 60 + minute; };
+  const from = toMinutes(start);
+  const until = toMinutes(end);
+  if (!Number.isFinite(from) || !Number.isFinite(until)) return false;
+  return from <= until ? now >= from && now <= until : now >= from || now <= until;
 }
 
 function settlementAvailableAt(settings: typeof DEFAULT_FINANCE_SETTINGS, createdAt = new Date()) {
@@ -201,9 +231,23 @@ export async function settleCompletedOrder(orderId: number) {
       if (partner) {
         const distanceKm = Math.max(0, money(order.pickupDistanceKm));
         riderEarning = distanceKm * money(settings.deliveryRatePerKm);
-        await tx.insert(riderEarningTransactionsTable).values({ orderId: order.id, riderUserId: partner.userId, distanceEarning: moneyText(riderEarning), finalEarning: moneyText(riderEarning), status: "pending", availableAt });
+        const activeOffers = await tx.select({ partnerBonus: bannersTable.partnerBonus }).from(bannersTable)
+          .where(and(eq(bannersTable.isActive, true), inArray(bannersTable.audience, ["delivery_partner", "all"])))
+          .limit(20);
+        const bannerIncentive = activeOffers.reduce((total, offer) => total + Math.max(0, money(offer.partnerBonus)), 0);
+        const completedBefore = await tx.execute(sql`select count(*)::int as count from rider_earning_transactions where rider_user_id = ${partner.userId}`);
+        const completedCount = Number((completedBefore as any).rows?.[0]?.count ?? 0);
+        const rules = await tx.execute(sql`select partner_user_id as "partnerUserId", orders_required as "ordersRequired", bonus_amount as "bonusAmount", online_start_time as "onlineStartTime", online_end_time as "onlineEndTime" from partner_incentive_rules where is_active = true and (partner_user_id is null or partner_user_id = ${partner.userId})`);
+        const ruleIncentive = ((rules as any).rows ?? []).reduce((total: number, rule: any) => {
+          const required = Number(rule.ordersRequired ?? 0);
+          const qualifiesByOrders = required <= 0 || (completedCount + 1) % required === 0;
+          return qualifiesByOrders && isWithinTimeWindow(indiaTimeMinutes(), rule.onlineStartTime, rule.onlineEndTime) ? total + money(rule.bonusAmount) : total;
+        }, 0);
+        const incentive = bannerIncentive + ruleIncentive;
+        const finalEarning = riderEarning + incentive;
+        await tx.insert(riderEarningTransactionsTable).values({ orderId: order.id, riderUserId: partner.userId, distanceEarning: moneyText(riderEarning), incentive: moneyText(incentive), finalEarning: moneyText(finalEarning), status: "pending", availableAt });
         const rider = await ensureWallet(tx, partner.userId, "delivery_partner");
-        await pendingEntry(tx, rider, "DELIVERY_EARNING", riderEarning, "order", String(order.id), `rider-earning:${order.id}:${partner.userId}`, availableAt);
+        await pendingEntry(tx, rider, "DELIVERY_EARNING", finalEarning, "order", String(order.id), `rider-earning:${order.id}:${partner.userId}`, availableAt);
       }
     }
     await tx.update(sellerSettlementsTable).set({ status: "pending" }).where(eq(sellerSettlementsTable.id, sellerSettlement.id));

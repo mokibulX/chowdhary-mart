@@ -27,8 +27,6 @@ export async function expireOrderIfNeeded(order: typeof ordersTable.$inferSelect
     reason = "Seller did not respond within 5 minutes";
   } else if (["confirmed", "preparing"].includes(order.status) && sellerAccepted && now > new Date(sellerAccepted.updatedAt).getTime() + SELLER_PREPARATION_MS) {
     reason = "Seller did not mark the order ready within 10 minutes";
-  } else if (["confirmed", "preparing", "packed"].includes(order.status) && riderAccepted && now > new Date(riderAccepted.updatedAt).getTime() + RIDER_PICKUP_MS) {
-    reason = "Delivery partner did not complete pickup within 5 minutes";
   }
   if (!reason) return order;
 

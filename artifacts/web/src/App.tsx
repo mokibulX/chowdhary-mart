@@ -1,52 +1,55 @@
 import { Switch, Route, Router as WouterRouter, useLocation, Redirect, Link } from "wouter";
-import type { ReactElement } from "react";
+import { lazy, Suspense } from "react";
+import type { ComponentType } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 
-import NotFound from "@/pages/not-found";
-import Home from "@/pages/Home";
-import Login from "@/pages/Login";
-import Register from "@/pages/Register";
-import SellerRegister from "@/pages/SellerRegister";
-import DeliveryRegister from "@/pages/DeliveryPartnerRegistration";
-import Search from "@/pages/Search";
-import Store from "@/pages/Store";
-import ProductDetail from "@/pages/ProductDetail";
-import Cart from "@/pages/Cart";
-import Checkout from "@/pages/Checkout";
-import Orders from "@/pages/Orders";
-import OrderDetail from "@/pages/OrderDetail";
-import Track from "@/pages/Track";
-import Wishlist from "@/pages/Wishlist";
-import Profile from "@/pages/Profile";
-import Addresses from "@/pages/Addresses";
-import Wallet from "@/pages/Wallet";
-import Coupons from "@/pages/Coupons";
-import Notifications from "@/pages/Notifications";
-import HelpSupport from "@/pages/HelpSupport";
-import OrderConfirmation from "@/pages/OrderConfirmation";
-import Returns from "@/pages/Returns";
-import Language from "@/pages/Language";
-import PrivacySettings from "@/pages/PrivacySettings";
+const NotFound = lazy(() => import("@/pages/not-found"));
+const Home = lazy(() => import("@/pages/Home"));
+const Login = lazy(() => import("@/pages/Login"));
+const Register = lazy(() => import("@/pages/Register"));
+const SellerRegister = lazy(() => import("@/pages/SellerRegister"));
+const DeliveryRegister = lazy(() => import("@/pages/DeliveryPartnerRegistration"));
+const Search = lazy(() => import("@/pages/Search"));
+const Store = lazy(() => import("@/pages/Store"));
+const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
+const Cart = lazy(() => import("@/pages/Cart"));
+const Checkout = lazy(() => import("@/pages/Checkout"));
+const Orders = lazy(() => import("@/pages/Orders"));
+const OrderDetail = lazy(() => import("@/pages/OrderDetail"));
+const Track = lazy(() => import("@/pages/Track"));
+const Wishlist = lazy(() => import("@/pages/Wishlist"));
+const Profile = lazy(() => import("@/pages/Profile"));
+const Addresses = lazy(() => import("@/pages/Addresses"));
+const Wallet = lazy(() => import("@/pages/Wallet"));
+const Coupons = lazy(() => import("@/pages/Coupons"));
+const Notifications = lazy(() => import("@/pages/Notifications"));
+const HelpSupport = lazy(() => import("@/pages/HelpSupport"));
+const OrderConfirmation = lazy(() => import("@/pages/OrderConfirmation"));
+const Returns = lazy(() => import("@/pages/Returns"));
+const Language = lazy(() => import("@/pages/Language"));
+const PrivacySettings = lazy(() => import("@/pages/PrivacySettings"));
+const FindOrder = lazy(() => import("@/pages/FindOrder"));
 
-import VendorDashboard from "@/pages/vendor/VendorDashboard";
-import VendorOrders from "@/pages/vendor/VendorOrders";
-import VendorProducts from "@/pages/vendor/VendorProducts";
-import VendorStock from "@/pages/vendor/VendorStock";
-import VendorStore from "@/pages/vendor/VendorStore";
+const VendorDashboard = lazy(() => import("@/pages/vendor/VendorDashboard"));
+const VendorOrders = lazy(() => import("@/pages/vendor/VendorOrders"));
+const VendorProducts = lazy(() => import("@/pages/vendor/VendorProducts"));
+const VendorStock = lazy(() => import("@/pages/vendor/VendorStock"));
+const VendorStore = lazy(() => import("@/pages/vendor/VendorStore"));
 
-import AdminDashboard from "@/pages/admin/AdminDashboard";
-import AdminUsers from "@/pages/admin/AdminUsers";
-import AdminOrders from "@/pages/admin/AdminOrders";
-import AdminStores from "@/pages/admin/AdminStores";
-import AdminCoupons from "@/pages/admin/AdminCoupons";
-import AdminCatalog from "@/pages/admin/AdminCatalog";
-import AdminApprovals from "@/pages/admin/AdminApprovals";
-import AdminZones from "@/pages/admin/AdminZones";
-import AdminHomepage from "@/pages/admin/AdminHomepage";
-import DeliveryDashboard from "@/pages/delivery/DeliveryDashboard";
+const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
+const AdminIncentives = lazy(() => import("@/pages/admin/AdminIncentives"));
+const AdminUsers = lazy(() => import("@/pages/admin/AdminUsers"));
+const AdminOrders = lazy(() => import("@/pages/admin/AdminOrders"));
+const AdminStores = lazy(() => import("@/pages/admin/AdminStores"));
+const AdminCoupons = lazy(() => import("@/pages/admin/AdminCoupons"));
+const AdminCatalog = lazy(() => import("@/pages/admin/AdminCatalog"));
+const AdminApprovals = lazy(() => import("@/pages/admin/AdminApprovals"));
+const AdminZones = lazy(() => import("@/pages/admin/AdminZones"));
+const AdminHomepage = lazy(() => import("@/pages/admin/AdminHomepage"));
+const DeliveryDashboard = lazy(() => import("@/pages/delivery/DeliveryDashboard"));
 
 import { CustomerLayout } from "@/components/layout/CustomerLayout";
 import { VendorLayout } from "@/components/layout/VendorLayout";
@@ -54,6 +57,7 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import { GlobalTranslator } from "@/components/GlobalTranslator";
 import { GlobalIncomingOrderAlerts } from "@/components/GlobalIncomingOrderAlerts";
 import { DemoModeBadge } from "@/components/DemoModeBadge";
+import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, CircleUserRound, DollarSign, Home as HomeIcon, Package, Store as StoreIcon, WalletCards } from "lucide-react";
 
@@ -75,14 +79,7 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: s
   const [, setLocation] = useLocation();
 
   if (isLoading) {
-    return (
-      <div className="app-shell items-center justify-center">
-        <div className="text-center space-y-2">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
+    return <BrandLoader />;
   }
 
   if (!user) {
@@ -105,14 +102,7 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: s
 function DeliveryPartnerCustomerBlock({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   if (isLoading) {
-    return (
-      <div className="app-shell items-center justify-center">
-        <div className="text-center space-y-2">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
+    return <BrandLoader />;
   }
   const role = canonicalRole(user?.role);
   if (role === "delivery_partner") return <Redirect to="/delivery" />;
@@ -120,7 +110,7 @@ function DeliveryPartnerCustomerBlock({ children }: { children: React.ReactNode 
   return <>{children}</>;
 }
 
-function CustomerRoute({ component: Component }: { component: () => ReactElement }) {
+function CustomerRoute({ component: Component }: { component: ComponentType }) {
   return (
     <DeliveryPartnerCustomerBlock>
       <CustomerLayout>
@@ -130,7 +120,7 @@ function CustomerRoute({ component: Component }: { component: () => ReactElement
   );
 }
 
-function ProtectedCustomerRoute({ component: Component }: { component: () => ReactElement }) {
+function ProtectedCustomerRoute({ component: Component }: { component: ComponentType }) {
   return (
     <RequireAuth roles={["customer", "admin"]}>
       <CustomerLayout>
@@ -140,7 +130,7 @@ function ProtectedCustomerRoute({ component: Component }: { component: () => Rea
   );
 }
 
-function VendorRoute({ component: Component }: { component: () => ReactElement }) {
+function VendorRoute({ component: Component }: { component: ComponentType }) {
   return (
     <RequireAuth roles={["vendor", "admin"]}>
       <VendorLayout>
@@ -170,7 +160,7 @@ function ApprovedVendorGate({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AdminRoute({ component: Component }: { component: () => ReactElement }) {
+function AdminRoute({ component: Component }: { component: ComponentType }) {
   return (
     <RequireAuth roles={["admin"]}>
       <AdminLayout>
@@ -180,7 +170,7 @@ function AdminRoute({ component: Component }: { component: () => ReactElement })
   );
 }
 
-function DeliveryRoute({ component: Component }: { component: () => ReactElement }) {
+function DeliveryRoute({ component: Component }: { component: ComponentType }) {
   const dashboard = Component === DeliveryDashboard;
   return (
     <RequireAuth roles={["delivery_partner", "admin"]}>
@@ -233,7 +223,8 @@ function ApprovedDeliveryGate({ children }: { children: React.ReactNode }) {
 
 function Router() {
   return (
-    <Switch>
+    <Suspense fallback={<BrandLoader label="Loading cMart..." />}>
+      <Switch>
       {/* Auth */}
       <Route path="/login" component={Login} />
       <Route path="/seller/login" component={Login} />
@@ -246,6 +237,7 @@ function Router() {
 
       {/* Admin panel — must come before /a* to avoid conflicts */}
       <Route path="/admin/dashboard">{() => <AdminRoute component={AdminDashboard} />}</Route>
+      <Route path="/admin/incentives">{() => <AdminRoute component={AdminIncentives} />}</Route>
       <Route path="/admin">{() => <AdminRoute component={AdminDashboard} />}</Route>
       <Route path="/admin/users">{() => <AdminRoute component={AdminUsers} />}</Route>
       <Route path="/admin/orders">{() => <AdminRoute component={AdminOrders} />}</Route>
@@ -265,12 +257,14 @@ function Router() {
       <Route path="/vendor/stock">{() => <VendorRoute component={VendorStock} />}</Route>
       <Route path="/vendor/store">{() => <VendorRoute component={VendorStore} />}</Route>
       <Route path="/vendor/wallet">{() => <VendorRoute component={Wallet} />}</Route>
+      <Route path="/vendor/find-order">{() => <VendorRoute component={FindOrder} />}</Route>
 
       {/* Delivery partner panel */}
       <Route path="/rider/home">{() => <DeliveryRoute component={DeliveryDashboard} />}</Route>
       <Route path="/delivery">{() => <DeliveryRoute component={DeliveryDashboard} />}</Route>
       <Route path="/delivery/wallet">{() => <DeliveryRoute component={Wallet} />}</Route>
       <Route path="/delivery/profile">{() => <DeliveryRoute component={Profile} />}</Route>
+      <Route path="/delivery/find-order">{() => <DeliveryRoute component={FindOrder} />}</Route>
 
       {/* Protected customer routes */}
       <Route path="/cart">{() => <ProtectedCustomerRoute component={Cart} />}</Route>
@@ -297,7 +291,8 @@ function Router() {
       <Route path="/">{() => <CustomerRoute component={Home} />}</Route>
 
       <Route component={NotFound} />
-    </Switch>
+      </Switch>
+    </Suspense>
   );
 }
 

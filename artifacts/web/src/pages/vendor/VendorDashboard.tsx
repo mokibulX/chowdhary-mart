@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ShoppingBag, TrendingUp, Clock, Package, Power, Store } from "lucide-react";
-import { Link } from "wouter";
+import { ShoppingBag, TrendingUp, Clock, Package, Power, Store, CheckCircle2, XCircle } from "lucide-react";
+import { Link, useLocation } from "wouter";
 import { WalletSummaryCard } from "@/components/WalletSummaryCard";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -18,19 +18,23 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function VendorDashboard() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const qc = useQueryClient();
   const { data: dashboard, isLoading } = useGetVendorDashboard({
     query: { enabled: !!user, queryKey: getGetVendorDashboardQueryKey() },
   });
   const store = (dashboard as any)?.store;
+  const dashboardData = dashboard as any;
   const isStoreOpen = store?.isOpen !== false;
 
   const stats = [
-    { label: "Today's Orders", value: dashboard?.todayOrders ?? 0, icon: ShoppingBag, color: "text-primary" },
-    { label: "Today's Revenue", value: `₹${Number(dashboard?.todayRevenue ?? 0).toFixed(0)}`, icon: TrendingUp, color: "text-green-600" },
-    { label: "Pending Orders", value: dashboard?.pendingOrders ?? 0, icon: Clock, color: "text-orange-500" },
-    { label: "Total Products", value: dashboard?.totalProducts ?? 0, icon: Package, color: "text-purple-600" },
+    { label: "Total orders", value: dashboardData?.totalOrders ?? 0, icon: ShoppingBag, color: "text-primary" },
+    { label: "Confirmed orders", value: dashboardData?.confirmedOrders ?? 0, icon: CheckCircle2, color: "text-blue-600" },
+    { label: "Cancelled orders", value: dashboardData?.cancelledOrders ?? 0, icon: XCircle, color: "text-red-600" },
+    { label: "Total earnings", value: `₹${Number(dashboardData?.totalEarnings ?? 0).toFixed(0)}`, icon: TrendingUp, color: "text-green-600" },
+    { label: "Pending orders", value: dashboardData?.pendingOrders ?? 0, icon: Clock, color: "text-orange-500" },
+    { label: "Total products", value: dashboardData?.totalProducts ?? 0, icon: Package, color: "text-purple-600" },
   ];
 
   const toggleStore = async () => {
@@ -41,6 +45,7 @@ export default function VendorDashboard() {
       });
       qc.invalidateQueries({ queryKey: getGetVendorDashboardQueryKey() });
       toast({ title: !isStoreOpen ? "Store activated" : "Store deactivated", description: !isStoreOpen ? "Customers can order your products now." : "Customers will see: Seller is not active." });
+      if (!isStoreOpen) setLocation("/vendor/find-order?active=1");
     } catch (error) {
       toast({ title: "Store status update failed", description: (error as Error).message, variant: "destructive" });
     }
@@ -91,7 +96,7 @@ export default function VendorDashboard() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {stats.map(({ label, value, icon: Icon, color }) => (
           <Card key={label}>
             <CardContent className="p-5">

@@ -50,6 +50,7 @@ type Props = {
   locateFirst?: boolean;
   compact?: boolean;
   serviceZones?: Array<{ id: number; centreLatitude?: number; centreLongitude?: number; radiusMeters?: number; boundaryGeometry?: any; insideServiceZone?: boolean }>;
+  serviceZoneType?: "customer" | "seller" | "rider";
   polygonMode?: boolean;
   initialPolygon?: Array<{ lat: number; lng: number }>;
   onLocationChange?: (point: { lat: number; lng: number }) => void;
@@ -63,6 +64,15 @@ const SERVICE_ZONE_DEFAULT_ZOOM = 18;
 const FALLBACK_TILE_MAX_ZOOM = 18;
 // All location pickers share the Admin service-area road/building map.
 const USE_SHARED_LEAFLET_MAP = true;
+
+// Keep the pickup point distinct from the user's blue location dot while
+// leaving its position attached to the map's geographic coordinate system.
+const PICKUP_PIN_SVG = `
+  <svg width="28" height="48" viewBox="0 0 28 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <circle cx="14" cy="10" r="10" fill="#cf2027" stroke="#fff" stroke-width="2"/>
+    <path d="M13 19h2v24l-1 5-1-5z" fill="#b8b8b8" stroke="#777" stroke-width=".5"/>
+  </svg>
+`;
 
 function env(name: string) {
   const values = import.meta.env as Record<string, string | undefined>;
@@ -225,6 +235,7 @@ export function PickupLocationPicker({
   locateFirst = true,
   compact = false,
   serviceZones: suppliedServiceZones,
+  serviceZoneType = "customer",
   polygonMode = false,
   initialPolygon = [],
   onLocationChange,
@@ -272,6 +283,7 @@ export function PickupLocationPicker({
   const [polygonCursorPoint, setPolygonCursorPoint] = useState<{ lat: number; lng: number } | null>(null);
   const draggingPolygonPointRef = useRef<number | null>(null);
   const polygonVertexMovedRef = useRef(false);
+  const fittedZoneKeyRef = useRef("");
   const initialPolygonKey = initialPolygon.map((point) => `${point.lat.toFixed(7)},${point.lng.toFixed(7)}`).join("|");
   const polygonClosedRef = useRef(initialPolygon.length >= 3);
   const fallbackSizeRef = useRef({ width: 560, height: 420 });
@@ -317,11 +329,15 @@ export function PickupLocationPicker({
     instance.on("click", (event) => {
       const point = { lat: event.latlng.lat, lng: event.latlng.lng };
       if (polygonMode) addPolygonPoint(point);
-      else {
-        setFallbackCenter(point);
-        void buildLocation(point);
-        onLocationChange?.(point);
-      }
+      else instance.panTo([point.lat, point.lng], { animate: true, duration: 0.2 });
+    });
+    instance.on("moveend", () => {
+      if (polygonMode) return;
+      const centre = instance.getCenter();
+      const point = { lat: Number(centre.lat.toFixed(7)), lng: Number(centre.lng.toFixed(7)) };
+      setFallbackCenter(point);
+      void buildLocation(point);
+      onLocationChange?.(point);
     });
     leafletMap.current = instance;
     setFallbackMap(false);
@@ -399,19 +415,6 @@ export function PickupLocationPicker({
       });
     }
     if (!polygonMode) {
-      const selectedPoint = selected ?? initial ?? null;
-      if (selectedPoint && validCoordinate(selectedPoint.lat, selectedPoint.lng)) {
-        L.marker([selectedPoint.lat, selectedPoint.lng], {
-          icon: L.divIcon({
-            className: "cm-location-native-marker",
-            iconSize: [34, 46],
-            iconAnchor: [17, 43],
-            html: `<span style="display:block;width:30px;height:40px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#ff5a00;border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,.3)"><i style="display:block;width:8px;height:8px;margin:13px auto;border-radius:50%;background:white"></i></span>`,
-          }),
-          title: "Selected delivery point",
-          interactive: false,
-        }).addTo(group);
-      }
       if (storePoint && validCoordinate(storePoint.lat, storePoint.lng)) {
         L.circleMarker([storePoint.lat, storePoint.lng], {
           radius: 8,
@@ -425,21 +428,65 @@ export function PickupLocationPicker({
       serviceZones.forEach((zone) => {
         const geometry = zone.boundaryGeometry;
         const raw = geometry?.type === "Polygon" ? geometry.coordinates?.[0] : geometry?.coordinates ?? geometry?.points ?? geometry?.vertices;
-        if (!Array.isArray(raw) || raw.length < 3) return;
-        const points: Array<[number, number]> = raw.map((item: any) => Array.isArray(item)
-          ? [Number(item[1]), Number(item[0])]
-          : [Number(item.lat ?? item.latitude), Number(item.lng ?? item.longitude)]);
-        if (points.every((item) => validCoordinate(Number(item[0]), Number(item[1])))) {
-          L.polygon(points, {
+        if (Array.isArray(raw) && raw.length >= 3) {
+          const points: Array<[number, number]> = raw.map((item: any) => Array.isArray(item)
+            ? [Number(item[1]), Number(item[0])]
+            : [Number(item.lat ?? item.latitude), Number(item.lng ?? item.longitude)]);
+          if (points.every((item) => validCoordinate(Number(item[0]), Number(item[1])))) {
+            L.polygon(points, {
+              color: "#16a34a",
+              weight: 2,
+              opacity: 0.8,
+              fillColor: "#22c55e",
+              fillOpacity: 0.1,
+              interactive: false,
+            }).addTo(group);
+          }
+          return;
+        }
+        const centreLat = Number((zone as any).centreLatitude ?? (zone as any).centerLatitude);
+        const centreLng = Number((zone as any).centreLongitude ?? (zone as any).centerLongitude);
+        const radiusMeters = Number(zone.radiusMeters);
+        if (validCoordinate(centreLat, centreLng) && Number.isFinite(radiusMeters) && radiusMeters > 0) {
+          L.circle([centreLat, centreLng], {
+            radius: radiusMeters,
             color: "#16a34a",
-            weight: 1.5,
-            opacity: 0.55,
+            weight: 2,
+            opacity: 0.8,
             fillColor: "#22c55e",
-            fillOpacity: 0.08,
+            fillOpacity: 0.1,
             interactive: false,
           }).addTo(group);
         }
       });
+      if (!polygonMode && serviceZones.length) {
+        const zoneKey = serviceZones.map((zone: any) => `${zone.id}:${zone.boundaryGeometry ? JSON.stringify(zone.boundaryGeometry) : `${zone.centreLatitude ?? zone.centerLatitude},${zone.centreLongitude ?? zone.centerLongitude},${zone.radiusMeters ?? ""}`}`).join("|");
+        if (zoneKey && fittedZoneKeyRef.current !== zoneKey) {
+          const bounds = L.latLngBounds([]);
+          serviceZones.forEach((zone: any) => {
+            const geometry = zone.boundaryGeometry;
+            const raw = geometry?.type === "Polygon" ? geometry.coordinates?.[0] : geometry?.coordinates ?? geometry?.points ?? geometry?.vertices;
+            if (Array.isArray(raw)) raw.forEach((item: any) => {
+              const lat = Array.isArray(item) ? Number(item[1]) : Number(item.lat ?? item.latitude);
+              const lng = Array.isArray(item) ? Number(item[0]) : Number(item.lng ?? item.longitude);
+              if (validCoordinate(lat, lng)) bounds.extend([lat, lng]);
+            });
+            const lat = Number(zone.centreLatitude ?? zone.centerLatitude);
+            const lng = Number(zone.centreLongitude ?? zone.centerLongitude);
+            const radius = Number(zone.radiusMeters);
+            if (validCoordinate(lat, lng) && Number.isFinite(radius) && radius > 0) {
+              const deltaLat = radius / 111320;
+              const deltaLng = radius / (111320 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
+              bounds.extend([lat - deltaLat, lng - deltaLng]);
+              bounds.extend([lat + deltaLat, lng + deltaLng]);
+            }
+          });
+          if (bounds.isValid()) {
+            instance.fitBounds(bounds.pad(0.12), { animate: false, maxZoom: 17 });
+            fittedZoneKeyRef.current = zoneKey;
+          }
+        }
+      }
     }
     if (liveGpsPoint && validCoordinate(liveGpsPoint.lat, liveGpsPoint.lng)) {
       L.circle([liveGpsPoint.lat, liveGpsPoint.lng], {
@@ -464,11 +511,20 @@ export function PickupLocationPicker({
   }, [leafletReady, polygonMode, polygonPoints, polygonClosed, liveGpsPoint, selected, initial, serviceZones, storePoint]);
 
   const loadServiceability = async (point: { lat: number; lng: number }) => {
-    if (suppliedServiceZones) return suppliedServiceZones.some((zone) => zone.insideServiceZone);
+    // Preview zones are client-only. Real assigned zones must be rechecked at
+    // the current map coordinate so stale `insideServiceZone` values cannot
+    // keep seller or rider pickup locations incorrectly unavailable.
+    if (suppliedServiceZones?.some((zone) => zone.id <= 0)) {
+      return suppliedServiceZones.some((zone) => zone.insideServiceZone);
+    }
     try {
-      const data = await customFetch<{ items: typeof serviceZones }>(`/api/public/service-zones?type=customer&lat=${point.lat}&lng=${point.lng}`, { responseType: "json" });
+      const data = await customFetch<{ items: typeof serviceZones }>(`/api/public/service-zones?type=${serviceZoneType}&lat=${point.lat}&lng=${point.lng}`, { responseType: "json" });
       const items = data.items ?? [];
       setServiceZones(items);
+      if (suppliedServiceZones) {
+        const assignedIds = new Set(suppliedServiceZones.map((zone) => Number(zone.id)));
+        return items.some((zone) => assignedIds.has(Number(zone.id)) && zone.insideServiceZone);
+      }
       return items.some((zone) => zone.insideServiceZone);
     } catch {
       return null;
@@ -508,7 +564,7 @@ export function PickupLocationPicker({
         lng: point.lng,
         address,
         distanceKm: distance === null ? null : Number(distance.toFixed(2)),
-        available: zoneAvailable === null ? shopAvailable : shopAvailable && zoneAvailable,
+        available: zoneAvailable === null ? shopAvailable : zoneAvailable,
         ...parts,
       });
     } catch {
@@ -519,7 +575,7 @@ export function PickupLocationPicker({
         lng: point.lng,
         address: `Pinned location ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`,
         distanceKm: distance === null ? null : Number(distance.toFixed(2)),
-        available: zoneAvailable === null ? distance === null || distance <= SERVICE_RADIUS_KM : zoneAvailable && (distance === null || distance <= SERVICE_RADIUS_KM),
+        available: zoneAvailable === null ? distance === null || distance <= SERVICE_RADIUS_KM : zoneAvailable,
       });
       setError("Address name could not be loaded, but this pinned coordinate is ready.");
     } finally {
@@ -530,7 +586,12 @@ export function PickupLocationPicker({
   const setMarkerPosition = (point: { lat: number; lng: number }) => {
     if (leafletMap.current) {
       setFallbackCenter(point);
-      void buildLocation(point);
+      const centre = leafletMap.current.getCenter();
+      if (Math.abs(centre.lat - point.lat) > 0.0000001 || Math.abs(centre.lng - point.lng) > 0.0000001) {
+        leafletMap.current.panTo([point.lat, point.lng], { animate: true, duration: 0.2 });
+      } else {
+        void buildLocation(point);
+      }
       return;
     }
     if (!window.google?.maps || !map.current) return;
@@ -542,14 +603,9 @@ export function PickupLocationPicker({
         visible: false,
         title: "Selected delivery point",
         icon: {
-          url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
-            <svg width="34" height="48" viewBox="0 0 34 48" xmlns="http://www.w3.org/2000/svg">
-              <path d="M17 46 C17 46 29 27 29 16 C29 8.8 23.6 3 17 3 C10.4 3 5 8.8 5 16 C5 27 17 46 17 46Z" fill="#ff5a00" stroke="white" stroke-width="3"/>
-              <circle cx="17" cy="16" r="5" fill="white"/>
-            </svg>
-          `),
-          scaledSize: new window.google.maps.Size(34, 48),
-          anchor: new window.google.maps.Point(17, 46),
+          url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(PICKUP_PIN_SVG),
+          scaledSize: new window.google.maps.Size(28, 48),
+          anchor: new window.google.maps.Point(14, 48),
         },
       });
     } else {
@@ -872,7 +928,6 @@ export function PickupLocationPicker({
           addPolygonPoint(point);
           return;
         }
-        addPolygonPoint(point);
         setMarkerPosition(point);
         onLocationChange?.(point);
       });
@@ -1242,12 +1297,11 @@ export function PickupLocationPicker({
             </div>
           </div>
         )}
-        {!polygonMode && !USE_SHARED_LEAFLET_MAP && <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-full drop-shadow-2xl">
-          <svg width="30" height="46" viewBox="0 0 30 46" aria-hidden="true">
-            <path d="M15 44 C15 44 26 26 26 15 C26 8.4 21.1 3 15 3 C8.9 3 4 8.4 4 15 C4 26 15 44 15 44Z" fill="#ff5a00" stroke="white" strokeWidth="3" />
-            <circle cx="15" cy="15" r="4.6" fill="white" />
-          </svg>
-        </div>}
+        {!polygonMode && <div
+          className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-12 w-7 -translate-x-1/2 -translate-y-full drop-shadow-xl"
+          aria-hidden="true"
+          dangerouslySetInnerHTML={{ __html: PICKUP_PIN_SVG }}
+        />}
         <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-xl bg-white/95 px-3 py-2 text-[11px] font-semibold text-slate-700 shadow-lg">
           <span className="mr-3 inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-green-600" /> Service area</span>
           <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-slate-400" /> Outside service area</span>

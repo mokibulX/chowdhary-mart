@@ -23,7 +23,6 @@ import {
   Settings,
   ShoppingCart,
   Store,
-  Truck,
   User,
   X,
   Zap,
@@ -34,8 +33,8 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
-import { getSavedDeliveryLocation, lookupPincode, nearestDeliveryLocation, PINCODE_LOCATIONS, saveDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
-import { getBrowserLocation } from "@/lib/live-location";
+import { getSavedDeliveryLocation, hasSavedDeliveryLocation, lookupPincode, nearestDeliveryLocation, PINCODE_LOCATIONS, saveDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
+import { getBrowserLocation, getCurrentIndianLocation } from "@/lib/live-location";
 import { useI18n } from "@/lib/i18n";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 import { searchProductByImage } from "@/lib/image-search";
@@ -78,6 +77,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
   const [placesLoading, setPlacesLoading] = useState(false);
   const cameraSearchRef = useRef<HTMLInputElement | null>(null);
   const gallerySearchRef = useRef<HTMLInputElement | null>(null);
+  const gpsBootstrapStarted = useRef(false);
 
   const { data: cart } = useGetCart({
     query: { enabled: !!user, queryKey: getGetCartQueryKey() },
@@ -249,6 +249,42 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
     window.addEventListener("delivery-location-change", syncLocation);
     return () => window.removeEventListener("delivery-location-change", syncLocation);
   }, []);
+
+  useEffect(() => {
+    const openLocationSelector = () => setLocationOpen(true);
+    window.addEventListener("open-location-selector", openLocationSelector);
+    return () => window.removeEventListener("open-location-selector", openLocationSelector);
+  }, []);
+
+  useEffect(() => {
+    // Registration and login stay location-free. Ask for GPS only after a
+    // signed-in customer opens the shopping experience, and never replace an
+    // address the customer has already selected or saved.
+    if (user?.role !== "customer" || gpsBootstrapStarted.current || hasSavedDeliveryLocation()) return;
+    gpsBootstrapStarted.current = true;
+
+    void getCurrentIndianLocation().then((gps) => {
+      const nearest = nearestDeliveryLocation(gps.lat, gps.lng)?.location;
+      const current = getSavedDeliveryLocation();
+      saveDeliveryLocation({
+        ...current,
+        ...nearest,
+        pincode: gps.pincode || nearest?.pincode || current.pincode,
+        city: gps.city || nearest?.city || current.city,
+        district: gps.district || nearest?.district || current.district,
+        state: gps.state || nearest?.state || current.state,
+        area: gps.area || nearest?.area || current.area,
+        lat: gps.lat,
+        lng: gps.lng,
+        source: "gps",
+        accuracy: gps.accuracy,
+        capturedAt: gps.capturedAt,
+      });
+    }).catch(() => {
+      // GPS is optional for browsing. The location selector remains available
+      // when permission is denied or the browser cannot provide a position.
+    });
+  }, [user]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -502,10 +538,10 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
 
   const CartButton = ({ compact = false }: { compact?: boolean }) => (
     <Link href={user ? "/cart" : "/login"}>
-      <Button variant="ghost" className={`relative rounded-xl text-white hover:bg-white/10 ${compact ? "h-10 px-2" : "h-10 px-3"}`} data-testid="link-cart">
+        <Button variant="ghost" className={`relative rounded-xl text-white hover:bg-white/12 ${compact ? "h-10 px-2" : "h-10 px-3"}`} data-testid="link-cart">
         <ShoppingCart className="h-5 w-5" />
         {cartItemCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-yellow-300 px-1 text-[10px] font-bold text-gray-950 ring-2 ring-[#0757ee]">
+          <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#ffd166] px-1 text-[10px] font-bold text-[#08152f] ring-2 ring-[#0b1d41]">
             {cartItemCount}
           </span>
         )}
@@ -515,16 +551,16 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
 
   return (
     <div className="app-shell bg-gray-50">
-      <header className="sticky top-0 z-50 border-b border-blue-700/40 bg-gradient-to-r from-[#044bd8] via-[#0757ee] to-[#0b6cff] text-white shadow-lg shadow-blue-950/15">
+      <header className="sticky top-0 z-50 border-b border-[#ff6b00]/30 bg-gradient-to-r from-[#07142f] via-[#0b2552] to-[#123f86] text-white shadow-lg shadow-[#07142f]/30">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-3 py-3 md:hidden">
           <div className="flex min-h-12 items-center gap-2">
             <MobileMenu user={user} confirmLogout={confirmLogout} setLocationOpen={setLocationOpen} deliveryLocation={deliveryLocation} />
             <BrandBlock compact />
-            {user && <Link href="/notifications"><Button variant="ghost" size="icon" className="text-white hover:bg-white/10"><Bell className="h-5 w-5" /></Button></Link>}
+            {user && <Link href="/notifications"><Button variant="ghost" size="icon" className="text-white hover:bg-white/12"><Bell className="h-5 w-5" /></Button></Link>}
             <CartButton compact />
           </div>
-          <button type="button" onClick={() => setLocationOpen(true)} className="flex w-full items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-left text-xs leading-tight shadow-inner shadow-white/5">
-            <MapPin className="h-4 w-4 flex-shrink-0 text-yellow-200" />
+          <button type="button" onClick={() => setLocationOpen(true)} className="flex w-full items-center gap-2 rounded-2xl border border-[#ffb36b]/35 bg-white/10 px-3 py-2 text-left text-xs leading-tight shadow-inner shadow-white/5">
+            <MapPin className="h-4 w-4 flex-shrink-0 text-[#ffd166]" />
             <span className="min-w-0">
               <span className="block truncate font-semibold">Deliver to {deliveryLocation.area || "Live GPS"}</span>
               <span className="block truncate text-white/80">{deliveryLocation.pincode || "Select location"}</span>
@@ -536,8 +572,8 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
         <div className="hidden md:block">
           <div className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(150px,220px)_minmax(135px,190px)_minmax(220px,1fr)_minmax(0,auto)] items-center gap-2 px-4 py-3 xl:grid-cols-[minmax(190px,260px)_minmax(150px,210px)_minmax(300px,1fr)_minmax(0,auto)] xl:gap-3">
             <BrandBlock />
-            <button type="button" onClick={() => setLocationOpen(true)} className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-3 py-2.5 text-left text-xs leading-tight shadow-inner shadow-white/5 transition-colors hover:bg-white/15">
-              <MapPin className="h-4 w-4 flex-shrink-0 text-yellow-200" />
+            <button type="button" onClick={() => setLocationOpen(true)} className="flex min-w-0 items-center gap-2 rounded-2xl border border-[#ffb36b]/35 bg-white/10 px-3 py-2.5 text-left text-xs leading-tight shadow-inner shadow-white/5 transition-colors hover:bg-white/15">
+              <MapPin className="h-4 w-4 flex-shrink-0 text-[#ffd166]" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[11px] font-semibold uppercase tracking-wide text-white/65">Deliver to</span>
                 <span className="block truncate font-bold">{deliveryLocation.area || "Live GPS near you"}</span>
@@ -547,9 +583,9 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
             </button>
             {renderSearchBox()}
             <div className="flex min-w-0 items-center justify-end gap-0.5 xl:gap-1">
-              {user && <Link href="/notifications"><Button variant="ghost" size="sm" className="h-10 rounded-xl px-2 text-white hover:bg-white/10 2xl:px-3"><Bell className="h-5 w-5" /><span className="ml-2 hidden 2xl:inline">{t("Notifications")}</span></Button></Link>}
-              {user && <Link href="/wishlist"><Button variant="ghost" size="sm" className="hidden h-10 rounded-xl px-2 text-white hover:bg-white/10 lg:inline-flex 2xl:px-3"><Heart className="h-5 w-5" /><span className="ml-2 hidden 2xl:inline">{t("Wishlist")}</span></Button></Link>}
-              {user && <Link href="/orders"><Button variant="ghost" size="sm" className="hidden h-10 rounded-xl px-2 text-white hover:bg-white/10 lg:inline-flex 2xl:px-3"><Package className="h-5 w-5" /><span className="ml-2 hidden 2xl:inline">{t("Orders")}</span></Button></Link>}
+              {user && <Link href="/notifications"><Button variant="ghost" size="sm" className="h-10 rounded-xl px-2 text-white hover:bg-white/12 2xl:px-3"><Bell className="h-5 w-5" /><span className="ml-2 hidden 2xl:inline">{t("Notifications")}</span></Button></Link>}
+              {user && <Link href="/wishlist"><Button variant="ghost" size="sm" className="hidden h-10 rounded-xl px-2 text-white hover:bg-white/12 lg:inline-flex 2xl:px-3"><Heart className="h-5 w-5" /><span className="ml-2 hidden 2xl:inline">{t("Wishlist")}</span></Button></Link>}
+              {user && <Link href="/orders"><Button variant="ghost" size="sm" className="hidden h-10 rounded-xl px-2 text-white hover:bg-white/12 lg:inline-flex 2xl:px-3"><Package className="h-5 w-5" /><span className="ml-2 hidden 2xl:inline">{t("Orders")}</span></Button></Link>}
               {user ? (
                 <Link href="/profile">
                   <Button variant="ghost" size="sm" className="h-10 max-w-[122px] overflow-hidden rounded-2xl bg-white/10 px-2 text-white hover:bg-white/15 xl:max-w-[155px] 2xl:px-3" data-testid="link-profile">
@@ -561,29 +597,25 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
                   </Button>
                 </Link>
               ) : (
-                <Link href="/login"><Button size="sm" className="rounded-full bg-white px-5 font-bold text-[#0f3f8f] shadow-sm hover:bg-gray-100">{t("Login")}</Button></Link>
+                <Link href="/login"><Button size="sm" className="rounded-full bg-[#fff7ed] px-5 font-bold text-[#0b2552] shadow-sm hover:bg-white">{t("Login")}</Button></Link>
               )}
               <CartButton />
             </div>
           </div>
 
-          <div className="border-t border-white/10 bg-blue-950/12 backdrop-blur">
+          <div className="border-t border-white/10 bg-[#07142f]/45 backdrop-blur">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-5 py-2">
               <nav className="flex min-w-0 items-center gap-1 overflow-x-auto">
                 {desktopNavLinks.map(({ href, label, icon: Icon }) => {
                   const active = isRouteActive(href, label);
                   return (
-                    <Link key={`${href}-${label}`} href={href} className={`flex flex-shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-all ${active ? "bg-white/16 text-white ring-1 ring-white/20" : "text-white/88 hover:bg-white/10 hover:text-white"}`}>
+                    <Link key={`${href}-${label}`} href={href} className={`flex flex-shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition-all ${active ? "bg-[#ff6b00] text-white shadow-md shadow-[#ff6b00]/25 ring-1 ring-[#ffb36b]/70" : "text-white/88 hover:bg-white/10 hover:text-white"}`}>
                       <Icon className="h-[18px] w-[18px]" />
                       <span>{t(label)}</span>
                     </Link>
                   );
                 })}
               </nav>
-              <div className="hidden shrink-0 items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90 lg:flex">
-                <Truck className="h-4 w-4 text-yellow-200" />
-                5km local coverage
-              </div>
             </div>
           </div>
         </div>
@@ -742,7 +774,7 @@ function BrandBlock({ compact = false }: { compact?: boolean }) {
       </span>
       <span className="min-w-0 max-w-full leading-tight">
         <span className={`block truncate italic ${compact ? "text-xl" : "text-2xl xl:text-3xl"}`}>Chowdhary Mart</span>
-        <span className="block truncate text-xs font-semibold text-yellow-300">Local Plus - 40 min delivery</span>
+        <span className="block truncate text-xs font-semibold text-[#ffd166]">Local Plus - 40 min delivery</span>
       </span>
     </Link>
   );
@@ -771,7 +803,7 @@ function MobileMenu({
         <div className="mb-6 mt-4 flex items-center gap-2 text-xl font-bold text-primary">
           <img src="/app-logo.png" alt="Chowdhary Mart" className="h-9 w-9 rounded-xl object-contain" /> Chowdhary Mart
         </div>
-        <button type="button" onClick={() => setLocationOpen(true)} className="mb-4 w-full rounded-lg bg-orange-50 p-3 text-left text-sm">
+        <button type="button" onClick={() => setLocationOpen(true)} className="mb-4 w-full rounded-lg border border-[#ffb36b]/35 bg-[#fff7ed] p-3 text-left text-sm text-[#0b2552]">
           <p className="font-semibold">{deliveryLocation.pincode ? `Delivering to ${deliveryLocation.area}` : "Select live delivery location"}</p>
           <p className="text-muted-foreground">{deliveryLocation.city} - {deliveryLocation.pincode}{deliveryLocation.source === "gps" ? " - Live GPS" : ""}</p>
         </button>

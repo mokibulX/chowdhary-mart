@@ -1,14 +1,14 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowLeft, Home, LayoutDashboard, Package, ShoppingBag, Store, LogOut, Menu, Wallet, Boxes } from "lucide-react";
+import { ArrowLeft, Home, LayoutDashboard, Package, ShoppingBag, Store, LogOut, Menu, Wallet, Boxes, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const NAV = [
-  { href: "/vendor", label: "Seller Home", icon: Home },
   { href: "/vendor", label: "Dashboard", icon: LayoutDashboard },
   { href: "/vendor/orders", label: "Orders", icon: ShoppingBag },
+  { href: "/vendor/find-order", label: "Find Order", icon: Search },
   { href: "/vendor/stock", label: "Stock", icon: Boxes },
   { href: "/vendor/products", label: "Products", icon: Package },
   { href: "/vendor/store", label: "Store Settings", icon: Store },
@@ -105,7 +105,7 @@ export function VendorLayout({ children }: { children: ReactNode }) {
             Chowdhary Mart
           </div>
           </Link>
-          <div className="text-xs text-muted-foreground mt-0.5">Vendor Panel</div>
+          <div className="text-xs text-muted-foreground mt-0.5">Seller Panel</div>
         </div>
         {navItems()}
         <div className="p-3 border-t">

@@ -11,8 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Bell, Bike, Camera, CheckCircle, CircleUserRound, DollarSign, Gift, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Power, Route, WalletCards, X } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ArrowLeft, Bell, Bike, Camera, CheckCircle, CircleUserRound, DollarSign, Gift, Home, LocateFixed, LogOut, MapPin, Navigation, Package, Phone, Power, Route, WalletCards, X } from "lucide-react";
 import { LiveDeliveryMap } from "@/components/LiveDeliveryMap";
+import { DeliveryPartnerOffers } from "@/components/DeliveryPartnerOffers";
 import { getBrowserLocation, watchBrowserLocation } from "@/lib/live-location";
 import { resolveRuntimeApiUrl } from "@/lib/mobile-runtime";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -31,6 +33,15 @@ const ACTION_LABEL: Record<string, string> = {
   arriving: "Mark delivered",
 };
 
+function getRouteDestination(order: any, toCustomer: boolean) {
+  const point = toCustomer
+    ? order.liveTracking?.customerLocation ?? { lat: order.pickupLatitude, lng: order.pickupLongitude }
+    : order.liveTracking?.storeLocation ?? { lat: order.store?.lat, lng: order.store?.lng };
+  const lat = Number(point?.lat);
+  const lng = Number(point?.lng);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat},${lng}` : null;
+}
+
 export default function DeliveryDashboard() {
   const { user, confirmLogout } = useAuth();
   const [, setLocation] = useLocation();
@@ -38,6 +49,7 @@ export default function DeliveryDashboard() {
   const qc = useQueryClient();
   const [autoGps, setAutoGps] = useState(false);
   const [busyOrderId, setBusyOrderId] = useState<number | null>(null);
+  const [issueBusyOrderId, setIssueBusyOrderId] = useState<number | null>(null);
   const [otpByOrder, setOtpByOrder] = useState<Record<number, string>>({});
   const [pickupOtpByOrder, setPickupOtpByOrder] = useState<Record<number, string>>({});
   const [addressConfirmedByOrder, setAddressConfirmedByOrder] = useState<Record<number, boolean>>({});
@@ -45,9 +57,11 @@ export default function DeliveryDashboard() {
   const [lastGpsAt, setLastGpsAt] = useState<string | null>(null);
   const [lastAccuracy, setLastAccuracy] = useState<number | undefined>();
   const [onlineBusy, setOnlineBusy] = useState(false);
+  const [onlineConfirmOpen, setOnlineConfirmOpen] = useState(false);
   const [onlineOverride, setOnlineOverride] = useState<boolean | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [orderFilter, setOrderFilter] = useState<"active" | "completed" | "cancelled">("active");
+  const [activityRange, setActivityRange] = useState<"day" | "week" | "month">("week");
   const [livePoint, setLivePoint] = useState<{ lat: number; lng: number } | null>(null);
 
   const { data: orders, isLoading } = useListDeliveryOrders({
@@ -171,11 +185,23 @@ export default function DeliveryDashboard() {
   // The live part is clamped to India's current day so a session crossing midnight
   // never carries yesterday's time into today's counter.
   const onlineSecondsToday = Math.max(Number(dashboardSummary?.onlineSecondsToday ?? 0), currentSessionSecondsToday);
+  const activityDays = [...(dashboardSummary?.daily ?? [])].sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
+  const latestActivityDate = activityDays.length ? String(activityDays[activityDays.length - 1].date) : "";
+  const activityRows = activityRange === "day"
+    ? activityDays.slice(-1)
+    : activityRange === "month"
+      ? activityDays.filter((day: any) => String(day.date).slice(0, 7) === latestActivityDate.slice(0, 7))
+      : activityDays.slice(-7);
+  const activityTotals = activityRows.reduce((totals: { onlineSeconds: number; earnings: number; completedOrders: number }, day: any) => ({
+    onlineSeconds: totals.onlineSeconds + Number(day.onlineSeconds ?? 0),
+    earnings: totals.earnings + Number(day.earnings ?? 0),
+    completedOrders: totals.completedOrders + Number(day.completedOrders ?? 0),
+  }), { onlineSeconds: 0, earnings: 0, completedOrders: 0 });
+  const activityRangeLabel = activityRange === "day" ? "Today" : activityRange === "month" ? "This month" : "Last 7 days";
   useEffect(() => {
-    if (!dashboardSummary?.currentOnlineStartedAt) return undefined;
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [dashboardSummary?.currentOnlineStartedAt]);
+  }, []);
   useEffect(() => {
     if (!autoGps) return;
     setGpsError("");
@@ -253,6 +279,10 @@ export default function DeliveryDashboard() {
     } finally {
       setOnlineBusy(false);
     }
+  };
+
+  const requestOnlineToggle = () => {
+    if (!onlineBusy) setOnlineConfirmOpen(true);
   };
 
 
@@ -350,6 +380,34 @@ export default function DeliveryDashboard() {
     }
   };
 
+  const handlePickupIssue = async (orderId: number, action: "continue" | "handover") => {
+    setIssueBusyOrderId(orderId);
+    try {
+      await customFetch(`/api/delivery/orders/${orderId}/issue`, {
+        method: "POST",
+        body: JSON.stringify({
+          action,
+          reason: action === "handover" ? "Partner requested another delivery partner" : "Partner confirmed they can continue",
+        }),
+        responseType: "json",
+      });
+      toast({
+        title: action === "handover" ? "Another partner is being requested" : "Pickup will continue",
+        description: action === "handover" ? "The order has been returned to rider matching." : "The order remains assigned to you.",
+      });
+      setOnlineOverride(action === "continue");
+      await Promise.all([
+        refresh(),
+        qc.invalidateQueries({ queryKey: ["/api/delivery/dashboard-summary"] }),
+      ]);
+    } catch (error) {
+      const message = (error as { data?: { error?: string } })?.data?.error ?? "Could not update the pickup issue. Please try again.";
+      toast({ title: message, variant: "destructive" });
+    } finally {
+      setIssueBusyOrderId(null);
+    }
+  };
+
   const markStatus = async (order: any) => {
     const status = NEXT_STATUS[order.status];
     if (!status) return;
@@ -374,11 +432,24 @@ export default function DeliveryDashboard() {
       // Do not block the status transition on a fresh GPS fix. The latest live
       // point is enough for the tracking event; a newer fix is sent in the background.
       const location = livePoint ? { ...livePoint, orderId: order.id } : undefined;
-      await customFetch(`/api/delivery/orders/${order.id}/status`, {
+      const updated = await customFetch<any>(`/api/delivery/orders/${order.id}/status`, {
         method: "PATCH",
         body: JSON.stringify({ status, otp: otpByOrder[order.id], pickupOtp: pickupOtpByOrder[order.id], ...(location ? { location } : {}) }),
         responseType: "json",
       });
+      qc.setQueryData<any[]>(getListDeliveryOrdersQueryKey(), (current = []) => current.map((item: any) => {
+        if (Number(item.id) !== Number(order.id)) return item;
+        return {
+          ...item,
+          ...updated,
+          store: item.store,
+          liveTracking: {
+            ...(item.liveTracking ?? {}),
+            ...(updated?.liveTracking ?? {}),
+            status,
+          },
+        };
+      }));
       toast({ title: "Delivery updated", description: `Order #${order.orderNumber} is now ${status.replace(/_/g, " ")}.` });
       refresh();
       void getPartnerLocation()
@@ -396,6 +467,7 @@ export default function DeliveryDashboard() {
 
   return (
     <div className="app-shell bg-[#f6f7f9] pb-24 text-slate-950">
+      <DeliveryPartnerOffers />
       <header className="sticky top-0 z-40 border-b bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 py-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-2">
@@ -412,7 +484,7 @@ export default function DeliveryDashboard() {
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-3 pb-3 sm:hidden">
           <button
             type="button"
-            onClick={toggleOnline}
+            onClick={requestOnlineToggle}
             disabled={onlineBusy}
             className={`flex h-12 min-w-[132px] items-center gap-2 rounded-full border-2 px-2 text-sm font-black transition ${userOnline ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-slate-100 text-slate-600"}`}
             aria-label={userOnline ? "Go offline" : "Go online"}
@@ -435,7 +507,7 @@ export default function DeliveryDashboard() {
           {currentOrder ? (
             <LiveDeliveryMap tracking={currentTracking} compact role="partner" />
           ) : (
-            <RiderMapPreview location={livePoint} currentOrder={currentOrder} />
+            <RiderMapPreview location={livePoint} currentOrder={currentOrder} finderActive={userOnline} />
           )}
         </section>
         <section className="rounded-2xl bg-slate-950 p-4 text-white shadow-sm sm:hidden">
@@ -453,7 +525,7 @@ export default function DeliveryDashboard() {
               <p className="mt-2 text-sm text-white/65">{userOnline ? `Online for ${formatDuration(currentSessionSeconds)}` : "Go online when you are ready to deliver."}</p>
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-48">
-              <Button className="h-12 w-full rounded-xl bg-orange-500 px-6 text-base font-bold text-white hover:bg-orange-600" onClick={toggleOnline} disabled={onlineBusy}>
+              <Button className="h-12 w-full rounded-xl bg-orange-500 px-6 text-base font-bold text-white hover:bg-orange-600" onClick={requestOnlineToggle} disabled={onlineBusy}>
                 <Power className="mr-2 h-5 w-5" /> {onlineBusy ? "Updating..." : userOnline ? "Go offline" : "Go online"}
               </Button>
               <Button variant="ghost" className="h-9 text-xs text-white/70 hover:bg-white/10 hover:text-white" onClick={() => setAutoGps((value) => !value)}>
@@ -470,26 +542,18 @@ export default function DeliveryDashboard() {
           <SummaryCard label="Wallet balance" value={`₹${Number((user as any)?.walletBalance ?? dashboardSummary?.walletBalance ?? 0).toFixed(0)}`} detail="Available to withdraw" />
         </section>
 
+        <PartnerIncentiveCard incentives={(dashboardSummary as any)?.incentives ?? []} />
+
         {currentOrder && <section className="rounded-2xl border border-orange-200 bg-orange-50 p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-bold uppercase tracking-wide text-orange-700">Current delivery</p><h2 className="mt-1 text-lg font-black">{currentOrder.store?.name ?? "Assigned order"}</h2></div><Badge className="capitalize bg-white text-orange-700">{currentOrder.status.replace(/_/g, " ")}</Badge></div>
-          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">Pickup</p><p className="font-semibold">{currentOrder.store?.address ?? "Seller location"}</p></div><div><p className="text-xs text-muted-foreground">Drop</p><p className="font-semibold">{(currentOrder as any).pickupAddress ?? (currentOrder as any).addressSnapshot?.city ?? "Customer location"}</p></div><div><p className="text-xs text-muted-foreground">Order earning</p><p className="font-bold">₹{Number(currentOrder.deliveryFee ?? 0).toFixed(0)}</p></div></div>
-          <div className="mt-4 flex flex-wrap gap-2"><Link href={`/track/${currentOrder.id}`}><Button className="bg-orange-500 hover:bg-orange-600"><Navigation className="mr-2 h-4 w-4" /> {(["picked_up", "on_the_way", "arriving"].includes(currentOrder.status)) ? "Navigate to customer" : "Reach pickup"}</Button></Link><Button variant="outline" onClick={() => document.getElementById("orders")?.scrollIntoView({ behavior: "smooth" })}>View order</Button></div>
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">Pickup</p><p className="font-semibold">{currentOrder.store?.address ?? "Seller location"}</p></div><div><p className="text-xs text-muted-foreground">Drop</p><p className="font-semibold">{(currentOrder as any).pickupAddress ?? (currentOrder as any).addressSnapshot?.city ?? "Customer location"}{(currentOrder as any).customerPhone && <a className="mt-2 flex items-center gap-1 font-semibold text-orange-700" href={`tel:${(currentOrder as any).customerPhone}`}><Phone className="h-4 w-4" /> {(currentOrder as any).customerPhone}</a>}</p></div><div><p className="text-xs text-muted-foreground">Order earning</p><p className="font-bold">₹{Number(currentOrder.deliveryFee ?? 0).toFixed(0)}</p></div></div>
+          <div className="mt-4 flex flex-wrap gap-2"><Link href={`/track/${currentOrder.id}`}><Button className="bg-orange-500 hover:bg-orange-600"><Navigation className="mr-2 h-4 w-4" /> {(["picked_up", "on_the_way", "arriving"].includes(currentOrder.status)) ? "Navigate to customer" : "Reach pickup"}</Button></Link>{(currentOrder as any).customerPhone && <a href={`tel:${(currentOrder as any).customerPhone}`}><Button variant="outline"><Phone className="mr-2 h-4 w-4" /> Call customer</Button></a>}<Button variant="outline" onClick={() => document.getElementById("orders")?.scrollIntoView({ behavior: "smooth" })}>View order</Button></div>
         </section>}
 
         <section className="overflow-hidden rounded-2xl bg-slate-900 text-white shadow-sm sm:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-4">
             <div className="flex items-center gap-3"><Gift className="h-7 w-7 text-orange-400" /><div><p className="font-black">Deliver locally with cMart</p><p className="text-xs text-white/65">New orders appear here when you are online.</p></div></div>
             <Button size="sm" variant="secondary" className="shrink-0 rounded-full" onClick={() => document.getElementById("orders")?.scrollIntoView({ behavior: "smooth" })}>View orders</Button>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border bg-white p-4 shadow-sm sm:hidden">
-          <div className="mb-3 flex items-center justify-between"><h2 className="flex items-center gap-2 text-lg font-black"><CheckCircle className="h-5 w-5 text-emerald-600" /> Today&apos;s progress</h2><Link href="#earnings" className="text-sm font-bold text-orange-600">View details</Link></div>
-          <div className="grid grid-cols-2 divide-x divide-y rounded-xl border bg-slate-50">
-            <ProgressMetric label="Earnings" value={`₹${Number(dashboardSummary?.earningsToday ?? 0).toFixed(0)}`} />
-            <ProgressMetric label="Trips" value={String(dashboardSummary?.ordersToday ?? 0)} />
-            <ProgressMetric label="Online time" value={formatDuration(onlineSecondsToday)} />
-            <ProgressMetric label="Wallet" value={`₹${Number((user as any)?.walletBalance ?? dashboardSummary?.walletBalance ?? 0).toFixed(0)}`} />
           </div>
         </section>
 
@@ -516,23 +580,31 @@ export default function DeliveryDashboard() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-5 overflow-hidden rounded-xl border bg-slate-50">
-            <div className="flex items-center justify-between border-b bg-white px-3 py-3 sm:px-4">
+          <div className="mt-5 rounded-2xl bg-slate-50/80 p-4 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="font-bold">Daily activity</h3>
-                <p className="text-xs text-muted-foreground">Online time and earnings by day</p>
+                <h3 className="font-bold">Activity summary</h3>
+                <p className="text-xs text-muted-foreground">Income and completed delivery count</p>
               </div>
-              <span className="text-xs font-semibold text-muted-foreground">Last 7 days</span>
+              <label className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+                <span>Period</span>
+                <select
+                  value={activityRange}
+                  onChange={(event) => setActivityRange(event.target.value as "day" | "week" | "month")}
+                  className="h-10 rounded-lg bg-white px-3 text-sm font-semibold text-foreground shadow-sm outline-none ring-offset-background focus:ring-2 focus:ring-orange-500"
+                  aria-label="Activity period"
+                >
+                  <option value="day">Day</option>
+                  <option value="week">Week</option>
+                  <option value="month">Month</option>
+                </select>
+              </label>
             </div>
-            <div className="divide-y">
-              {[...(dashboardSummary?.daily ?? [])].slice(-7).reverse().map((day: any) => (
-                <div key={day.date} className="grid grid-cols-[1.1fr_1fr_1fr_auto] items-center gap-2 px-3 py-3 text-sm sm:grid-cols-[1.4fr_1fr_1fr_1fr] sm:px-4">
-                  <span className="font-semibold">{formatDailyDate(day.date)}</span>
-                  <span className="text-muted-foreground"><span className="hidden sm:inline">Online </span>{formatDuration(Number(day.onlineSeconds ?? 0))}</span>
-                  <span className="font-semibold text-orange-600">₹{Number(day.earnings ?? 0).toFixed(0)}</span>
-                  <span className="text-right text-muted-foreground">{Number(day.completedOrders ?? 0)} <span className="hidden sm:inline">orders</span></span>
-                </div>
-              ))}
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="min-w-0 py-1"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Period</p><p className="mt-1 truncate font-bold">{activityRangeLabel}</p></div>
+              <div className="min-w-0 py-1"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Online time</p><p className="mt-1 font-bold">{formatDuration(activityTotals.onlineSeconds)}</p></div>
+              <div className="min-w-0 py-1"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Income</p><p className="mt-1 font-bold text-orange-600">₹{activityTotals.earnings.toFixed(0)}</p></div>
+              <div className="min-w-0 py-1"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Completed</p><p className="mt-1 font-bold">{activityTotals.completedOrders}</p></div>
             </div>
           </div>
         </section>
@@ -594,6 +666,7 @@ export default function DeliveryDashboard() {
                       <div className="rounded bg-gray-50 p-2">
                         <p className="flex items-center gap-1 font-medium"><MapPin className="h-4 w-4" /> Drop</p>
                         <p className="text-xs text-muted-foreground">{order.pickupAddress ?? order.addressSnapshot?.line1}, {order.addressSnapshot?.city}</p>
+                        {order.customerPhone && <a href={`tel:${order.customerPhone}`} className="mt-1 flex items-center gap-1 text-xs font-semibold text-orange-700"><Phone className="h-3.5 w-3.5" /> {order.customerPhone}</a>}
                         {order.pickupLatitude && order.pickupLongitude && (
                           <p className="mt-1 text-[11px] font-semibold text-emerald-700">
                             {Number(order.pickupLatitude).toFixed(5)}, {Number(order.pickupLongitude).toFixed(5)}
@@ -613,15 +686,41 @@ export default function DeliveryDashboard() {
                         {(["picked_up", "on_the_way", "arriving"].includes(order.status)) ? "Order picked up. Navigate to the customer and complete delivery." : order.status === "packed" ? "Seller has packed the order. Reach the shop and confirm pickup with the seller PIN." : "Seller is preparing the order. Open the route to the pickup shop."}
                       </p>
                     </div>
+                    {(() => {
+                      const pickupDeadline = order.liveTracking?.lifecycle?.pickupDeadline;
+                      const pickupWarning = ["confirmed", "preparing", "packed"].includes(order.status)
+                        && Boolean(order.liveTracking?.lifecycle?.assignedDeliveryPartnerId)
+                        && Boolean(pickupDeadline)
+                        && clock >= new Date(pickupDeadline).getTime();
+                      return pickupWarning ? (
+                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                          <p className="font-semibold text-amber-900">Are you having any difficulty with this pickup?</p>
+                          <p className="mt-1 text-xs text-amber-800">The 5-minute pickup window has passed. Choose an action to keep or hand over this order.</p>
+                          <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                            <Button type="button" size="sm" onClick={() => handlePickupIssue(order.id, "continue")} disabled={issueBusyOrderId === order.id}>
+                              {issueBusyOrderId === order.id ? "Updating..." : "I'm okay, continue"}
+                            </Button>
+                            <Button type="button" size="sm" variant="outline" onClick={() => handlePickupIssue(order.id, "handover")} disabled={issueBusyOrderId === order.id}>
+                              Request another partner
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                       <Link href={`/track/${order.id}`}>
                         <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> Open live route</Button>
                       </Link>
-                      {(["picked_up", "on_the_way", "arriving"].includes(order.status) ? order.pickupLatitude && order.pickupLongitude : order.store?.lat && order.store?.lng) && (
-                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${["picked_up", "on_the_way", "arriving"].includes(order.status) ? `${order.pickupLatitude},${order.pickupLongitude}` : `${order.store.lat},${order.store.lng}`}&travelmode=driving`} target="_blank" rel="noreferrer">
+                      {(() => {
+                        const goingToCustomer = ["picked_up", "on_the_way", "arriving"].includes(order.status);
+                        const destination = getRouteDestination(order, goingToCustomer);
+                        return destination ? (
+                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`} target="_blank" rel="noreferrer">
                           <Button className="w-full sm:w-auto" variant="outline" size="sm"><Navigation className="mr-2 h-4 w-4" /> {(["picked_up", "on_the_way", "arriving"].includes(order.status)) ? "Navigate to customer" : "Reach pickup"}</Button>
                         </a>
-                      )}
+                        ) : null;
+                      })()}
+                      {order.customerPhone && <a href={`tel:${order.customerPhone}`}><Button className="w-full sm:w-auto" variant="outline" size="sm"><Phone className="mr-2 h-4 w-4" /> Call customer</Button></a>}
                       {["confirmed", "preparing"].includes(order.status) && !order.liveTracking?.lifecycle?.assignedDeliveryPartnerId && (
                         <>
                           <Button className="w-full sm:w-auto" size="sm" onClick={() => acceptOrder(order.id)} disabled={busyOrderId === order.id}>
@@ -691,8 +790,9 @@ export default function DeliveryDashboard() {
               {currentOrder ? (
                 <LiveDeliveryMap tracking={currentTracking} compact role="partner" />
               ) : (
-                <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
-                  Accept an order to see its live route map here.
+                <div className="relative overflow-hidden rounded-lg border border-dashed bg-slate-50 p-6 text-center text-sm text-muted-foreground">
+                  <span>Go online to find nearby delivery orders.</span>
+                  {userOnline && <OrderFinderAnimation />}
                 </div>
               )}
               <div className="mt-3 space-y-1 text-xs">
@@ -720,6 +820,24 @@ export default function DeliveryDashboard() {
           </div>
         </section>
       </main>
+      <AlertDialog open={onlineConfirmOpen} onOpenChange={setOnlineConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{userOnline ? "Go offline?" : "Go online?"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {userOnline
+                ? "You will stop receiving new delivery orders until you go online again."
+                : "You will start receiving nearby delivery orders while you are online."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void toggleOnline()}>
+              {userOnline ? "Go offline" : "Go online"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <nav className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden" aria-label="Delivery navigation">
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
           <BottomNavLink href="#top" label="Home" icon={<Home className="h-5 w-5" />} />
@@ -771,11 +889,55 @@ function SummaryCard({ label, value, detail, accent }: { label: string; value: s
   return <div className={`rounded-lg border bg-white p-4 shadow-sm ${accent ? "border-emerald-300" : ""}`}><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-2 text-2xl font-bold ${accent ? "text-emerald-700" : ""}`}>{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>;
 }
 
+function PartnerIncentiveCard({ incentives }: { incentives: Array<{ id: number; name: string; ordersRequired: number; completedOrders: number; bonusAmount: number; onlineStartTime?: string | null; onlineEndTime?: string | null }> }) {
+  const incentive = incentives[0];
+  if (!incentive) return null;
+  const target = Math.max(1, incentive.ordersRequired);
+  const completed = Math.min(target, Math.max(0, incentive.completedOrders));
+  const percent = Math.round((completed / target) * 100);
+  const window = incentive.onlineStartTime && incentive.onlineEndTime
+    ? `Online ${incentive.onlineStartTime}–${incentive.onlineEndTime}`
+    : "Complete orders while online";
+  return (
+    <section className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100"><Gift className="h-5 w-5 text-emerald-700" /></div>
+          <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Partner incentive</p><h2 className="truncate text-base font-black">{incentive.name}</h2><p className="text-xs text-muted-foreground">{window}</p></div>
+        </div>
+        <p className="shrink-0 text-right font-black text-emerald-700">₹{incentive.bonusAmount.toFixed(0)}<span className="block text-[11px] font-semibold text-muted-foreground">extra bonus</span></p>
+      </div>
+      <div className="mt-4 flex items-center justify-between text-sm"><span className="font-semibold">{completed} of {target} trips</span><span className="text-muted-foreground">{percent}%</span></div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-emerald-100"><div className="h-full rounded-full bg-emerald-600 transition-[width] duration-300" style={{ width: `${percent}%` }} /></div>
+    </section>
+  );
+}
+
 function MetricTile({ label, value, sub }: { label: string; value: string; sub: string }) {
   return <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs font-semibold text-muted-foreground">{label}</p><p className="mt-1 text-xl font-bold">{value}</p><p className="mt-1 text-xs text-muted-foreground">{sub}</p></div>;
 }
 
-function RiderMapPreview({ location, currentOrder }: { location: { lat: number; lng: number } | null; currentOrder: any }) {
+function OrderFinderAnimation() {
+  return (
+    <div className="cm-order-finder pointer-events-none absolute inset-0 z-10 flex items-center justify-center overflow-hidden" aria-hidden="true">
+      <div className="cm-order-finder-wash absolute inset-0" />
+      <div className="cm-order-finder-orbit relative flex aspect-square w-32 items-center justify-center rounded-full">
+        <span className="cm-order-finder-ring cm-order-finder-ring-one absolute inset-0 rounded-full" />
+        <span className="cm-order-finder-ring cm-order-finder-ring-two absolute inset-3 rounded-full" />
+        <span className="cm-order-finder-sweep absolute inset-0 rounded-full" />
+        <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-slate-950 text-orange-400 shadow-xl">
+          <Package className="h-6 w-6" />
+        </span>
+      </div>
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/70 bg-white/90 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-lg backdrop-blur">
+        <span className="mr-1.5 inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" /> Finding nearby orders
+      </div>
+    </div>
+  );
+}
+
+function RiderMapPreview({ location, currentOrder, finderActive }: { location: { lat: number; lng: number } | null; currentOrder: any; finderActive: boolean }) {
+  const RIDER_MAP_ZOOM = 17;
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [nearbyShops, setNearbyShops] = useState<any[]>([]);
   const [selectedShop, setSelectedShop] = useState<any | null>(null);
@@ -787,9 +949,10 @@ function RiderMapPreview({ location, currentOrder }: { location: { lat: number; 
   const routeRef = useRef<L.Polyline | null>(null);
   useEffect(() => {
     if (!container || mapRef.current || !location) return;
-    const map = L.map(container, { zoomControl: true, scrollWheelZoom: false, doubleClickZoom: true, touchZoom: true, dragging: true, attributionControl: true }).setView([location.lat, location.lng], 15);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
+    const map = L.map(container, { zoomControl: true, scrollWheelZoom: false, doubleClickZoom: true, touchZoom: true, dragging: true, attributionControl: true }).setView([location.lat, location.lng], RIDER_MAP_ZOOM);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 20, minZoom: 12, attribution: "© OpenStreetMap contributors" }).addTo(map);
     mapRef.current = map;
+    requestAnimationFrame(() => map.invalidateSize({ pan: false }));
     customFetch<any[]>("/api/delivery/my-zones", { responseType: "json" }).then((zones) => {
       setAssignedZones(zones ?? []);
       const rings = (zones ?? []).flatMap((zone) => boundaryToLeafletRings(zone.boundaryGeometry));
@@ -805,14 +968,14 @@ function RiderMapPreview({ location, currentOrder }: { location: { lat: number; 
         zoneRefs.current.push(mask);
       }
     }).catch(() => undefined);
-    riderRef.current = L.circleMarker([location.lat, location.lng], { radius: 9, color: "#fff", weight: 4, fillColor: "#2563eb", fillOpacity: 1 }).addTo(map).bindTooltip("Your live location", { permanent: true, direction: "top", offset: [0, -8] });
+    riderRef.current = L.circleMarker([location.lat, location.lng], { radius: 8, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1, bubblingMouseEvents: false }).addTo(map).bindTooltip("Your live location", { permanent: true, direction: "top", offset: [0, -8] });
     const store = currentOrder?.store;
     if (store?.lat && store?.lng) L.circleMarker([Number(store.lat), Number(store.lng)], { radius: 8, color: "#fff", weight: 3, fillColor: "#16a34a", fillOpacity: 1 }).addTo(map).bindPopup(`<strong>${escapePopup(store.name ?? "Pickup store")}</strong><br/>${escapePopup(store.address ?? "Seller location")}`);
     customFetch<any[]>("/api/delivery/nearby-stores", { responseType: "json" }).then((stores) => {
       setNearbyShops(stores ?? []);
       (stores ?? []).forEach((shop) => {
         if (!shop.lat || !shop.lng || Number(shop.id) === Number(store?.id)) return;
-        const marker = L.circleMarker([Number(shop.lat), Number(shop.lng)], { radius: 7, color: "#fff", weight: 3, fillColor: "#f97316", fillOpacity: 1 }).addTo(map);
+        const marker = L.circleMarker([Number(shop.lat), Number(shop.lng)], { radius: 5, color: "#fff", weight: 2, fillColor: "#f97316", fillOpacity: 1, bubblingMouseEvents: false }).addTo(map);
         marker.bindPopup(`<strong>${escapePopup(shop.name ?? "Nearby shop")}</strong><br/>${escapePopup(shop.address ?? "Local store")}<br/><small>Tap the shop card below to start navigation</small>`);
         marker.on("click", () => setSelectedShop(shop));
         shopRefs.current.push(marker);
@@ -829,9 +992,12 @@ function RiderMapPreview({ location, currentOrder }: { location: { lat: number; 
       routeRef.current = L.polyline([[location.lat, location.lng], [Number(selectedShop.lat), Number(selectedShop.lng)]], { color: "#f97316", weight: 5, opacity: 0.9, dashArray: "10 8" }).addTo(mapRef.current);
     }
   }, [location?.lat, location?.lng, selectedShop?.id]);
-  if (!location) return <div className="flex h-72 items-center justify-center rounded-xl bg-slate-100 px-6 text-center text-sm text-muted-foreground">Tap Locate or enable Live GPS to show your position on the map.</div>;
+  if (!location) return <div className="relative flex h-72 items-center justify-center overflow-hidden rounded-xl bg-slate-100 px-6 text-center text-sm text-muted-foreground"><span className="relative z-20">Tap Locate or enable Live GPS to show your position on the map.</span>{finderActive && <OrderFinderAnimation />}</div>;
   return <>
-    <div ref={setContainer} className="relative z-0 h-72 w-full overflow-hidden rounded-xl bg-slate-100" />
+    <div className="relative z-0 h-72 w-full overflow-hidden rounded-xl bg-slate-100">
+      <div ref={setContainer} className="h-full w-full" />
+      {finderActive && !currentOrder && <OrderFinderAnimation />}
+    </div>
     {assignedZones.length > 0 && <p className="px-1 pt-2 text-xs font-semibold text-orange-700">Highlighted zone: {assignedZones.map((zone) => zone.name ?? zone.code).join(", ")}</p>}
     {!currentOrder && <div className="mt-2 space-y-2">
       <p className="px-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">Nearby seller shops</p>

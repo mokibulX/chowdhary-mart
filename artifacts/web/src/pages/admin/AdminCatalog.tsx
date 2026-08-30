@@ -39,6 +39,8 @@ const EMPTY_BANNER = {
   href: "/search",
   sortOrder: "1",
   isActive: true,
+  audience: "customer",
+  partnerBonus: "0",
 };
 
 const EMPTY_CATEGORY = {
@@ -131,7 +133,7 @@ export default function AdminCatalog() {
         imageUrl: item.images?.[0] ?? "",
       });
     } else if (mode === "banners") {
-      setForm({ ...EMPTY_BANNER, ...item, sortOrder: String(item.sortOrder ?? 1) });
+      setForm({ ...EMPTY_BANNER, ...item, href: item.href ?? item.linkUrl ?? "/search", sortOrder: String(item.sortOrder ?? 1), partnerBonus: String(item.partnerBonus ?? 0) });
     } else if (mode === "categories") {
       setForm({ ...EMPTY_CATEGORY, ...item, sortOrder: String(item.sortOrder ?? 1) });
     } else {
@@ -433,6 +435,10 @@ function BannerForm({ form, setForm }: any) {
         <Field label="Link" value={form.href} onChange={(value) => setForm({ ...form, href: value })} />
         <Field label="Sort order" value={form.sortOrder} onChange={(value) => setForm({ ...form, sortOrder: value })} type="number" />
       </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1 text-sm font-medium">Audience<select className="flex h-10 w-full rounded-md border bg-background px-3" value={form.audience ?? "customer"} onChange={(event) => setForm({ ...form, audience: event.target.value })}><option value="customer">Customer</option><option value="delivery_partner">Delivery partners</option><option value="all">Everyone</option></select></label>
+        <Field label="Partner bonus per completed delivery (Rs.)" value={form.partnerBonus ?? "0"} onChange={(value) => setForm({ ...form, partnerBonus: value })} type="number" />
+      </div>
       <SwitchRow label="Active banner" checked={!!form.isActive} onChange={(value) => setForm({ ...form, isActive: value })} />
     </>
   );
@@ -582,7 +588,7 @@ function buildPayload(mode: Mode, form: any) {
     };
   }
   if (mode === "banners") {
-    return { ...form, sortOrder: Number(form.sortOrder ?? 0), isActive: !!form.isActive };
+    return { ...form, sortOrder: Number(form.sortOrder ?? 0), isActive: !!form.isActive, audience: form.audience ?? "customer", partnerBonus: Number(form.partnerBonus ?? 0) };
   }
   if (mode === "media-library") {
     return {

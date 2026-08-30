@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Store, Star, Camera, ImagePlus, LocateFixed, MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import { getBrowserLocation } from "@/lib/live-location";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 import { uploadImageFile } from "@/lib/image-upload";
@@ -37,6 +38,7 @@ export default function VendorStore() {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [, setLocation] = useLocation();
   const [locatingGps, setLocatingGps] = useState(false);
 
   const { data: store, isLoading } = useGetVendorStore({
@@ -44,7 +46,7 @@ export default function VendorStore() {
   });
   const update = useUpdateVendorStore();
 
-  const { register, handleSubmit, setValue, watch, reset, formState: { errors, isDirty } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, getValues, watch, reset, formState: { errors, isDirty } } = useForm<FormData>({
     resolver: zodResolver(schema as any),
     defaultValues: { isOpen: true },
   });
@@ -60,6 +62,7 @@ export default function VendorStore() {
         available: true,
       }
     : null;
+  const registeredZone = (store as any)?.serviceZone;
 
   useEffect(() => {
     if (store) {
@@ -141,6 +144,27 @@ export default function VendorStore() {
     } finally {
       setLocatingGps(false);
     }
+  };
+
+  const handleStoreStatusChange = (open: boolean) => {
+    setValue("isOpen", open, { shouldDirty: true });
+    if (!open) return;
+
+    const data = getValues();
+    update.mutate(
+      { data: { ...data, isOpen: true } as any },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getGetVendorStoreQueryKey() });
+          toast({ title: "Store active", description: "Live order finder is ready." });
+          setLocation("/vendor/find-order?active=1");
+        },
+        onError: (err: unknown) => {
+          setValue("isOpen", false, { shouldDirty: true });
+          toast({ title: "Could not activate store", description: getFriendlyErrorMessage(err, "Please try again."), variant: "destructive" });
+        },
+      },
+    );
   };
 
   if (isLoading) return <div className="space-y-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)}</div>;
@@ -239,6 +263,8 @@ export default function VendorStore() {
             <PickupLocationPicker
               mode="inline"
               initial={currentPickupLocation}
+              serviceZones={registeredZone ? [registeredZone] : []}
+              serviceZoneType="customer"
               locateFirst={!currentPickupLocation}
               title="Set exact store pickup point"
               subtitle="Use GPS, search, tap or move the map. Delivery partner will come to this pin."
@@ -263,7 +289,7 @@ export default function VendorStore() {
                 <p className="font-medium">Store Status</p>
                 <p className="text-sm text-muted-foreground">Toggle to open or close your store</p>
               </div>
-              <Switch checked={isOpen} onCheckedChange={v => setValue("isOpen", v)} data-testid="switch-open" />
+              <Switch checked={isOpen} onCheckedChange={handleStoreStatusChange} disabled={update.isPending} data-testid="switch-open" />
             </div>
           </CardContent>
         </Card>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { customFetch } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Eye, GripVertical, LayoutGrid, Megaphone, Pin, Plus, Search, Trash2 } from "lucide-react";
+import { Eye, GripVertical, LayoutGrid, Megaphone, Pin, Plus, Search, Trash2, Upload } from "lucide-react";
 import { DateTextInput } from "@/components/DateTextInput";
 import { useToast } from "@/hooks/use-toast";
 import { getFriendlyErrorMessage } from "@/lib/error-message";
@@ -33,6 +33,15 @@ const EMPTY_SECTION = {
 
 const SECTION_TYPES = ["MANUAL", "RULE_BASED", "PERSONALIZED", "CATEGORY_BASED", "BEST_SELLING", "DISCOUNT_BASED", "NEW_ARRIVAL"];
 const LAYOUTS = ["horizontal_product_scroll", "product_grid", "hero_product", "compact_deal_row"];
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Could not read image"));
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read image"));
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function AdminHomepage() {
   const qc = useQueryClient();

@@ -18,6 +18,19 @@ router.use(requireAuth, requireRole("vendor", "admin"), requireApprovedVendor);
 
 let mediaLibraryReady: Promise<void> | null = null;
 let barcodeMasterReady: Promise<void> | null = null;
+let sellerOrderHistoryReady: Promise<void> | null = null;
+
+function ensureSellerOrderHistoryTable() {
+  sellerOrderHistoryReady ??= db.execute(sql`
+    create table if not exists seller_order_history_archives (
+      seller_user_id integer not null references users(id) on delete cascade,
+      order_id integer not null references orders(id) on delete cascade,
+      archived_at timestamp not null default now(),
+      primary key (seller_user_id, order_id)
+    )
+  `).then(() => undefined);
+  return sellerOrderHistoryReady;
+}
 
 function ensureBarcodeMasterTable() {
   barcodeMasterReady ??= db.execute(sql`
@@ -553,7 +566,10 @@ router.get("/store", async (req: AuthRequest, res) => {
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(404).json({ error: "Store not found" }); return; }
     if (!(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "You cannot manage another service zone." }); return; }
-    res.json(store);
+    const [serviceZone] = store.zoneId
+      ? await db.select().from(serviceZonesTable).where(eq(serviceZonesTable.id, store.zoneId)).limit(1)
+      : [];
+    res.json({ ...store, serviceZone: serviceZone ?? null });
   } catch (err) {
     req.log.error(err);
     res.status(400).json({ error: err instanceof Error ? err.message : "Could not save product" });
@@ -616,6 +632,7 @@ router.patch("/store", async (req: AuthRequest, res) => {
 // GET /api/vendor/orders
 router.get("/orders", async (req: AuthRequest, res) => {
   try {
+    await ensureSellerOrderHistoryTable();
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(200).json([]); return; }
 
@@ -625,6 +642,11 @@ router.get("/orders", async (req: AuthRequest, res) => {
     // match here: historical orders may predate zone assignment and must still
     // remain visible in the seller's order history.
     if (status) conditions.push(eq(ordersTable.status, status as typeof ordersTable.$inferSelect["status"]));
+    conditions.push(sql`not exists (
+      select 1 from seller_order_history_archives history
+      where history.seller_user_id = ${req.user!.userId}
+        and history.order_id = ${ordersTable.id}
+    )`);
 
     const orders = await db.select().from(ordersTable)
       .where(and(...conditions))
@@ -701,6 +723,59 @@ router.get("/orders", async (req: AuthRequest, res) => {
     const message = err instanceof Error ? err.message : "Internal server error";
     const isValidationError = /requires|expiry date|expired products/i.test(message);
     res.status(isValidationError ? 400 : 500).json({ error: isValidationError ? message : "Internal server error" });
+  }
+});
+
+// Seller history clearing is intentionally an archive, not a destructive order delete.
+// Customer/admin history, stock accounting, payments and delivery records remain intact.
+router.delete("/orders/:orderId", async (req: AuthRequest, res) => {
+  try {
+    await ensureSellerOrderHistoryTable();
+    const orderId = Number(req.params.orderId);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      res.status(400).json({ error: "Invalid order ID." });
+      return;
+    }
+    const store = await getVendorStore(req.user!.userId);
+    if (!store) { res.status(404).json({ error: "Seller store not found." }); return; }
+    const [order] = await db.select({ id: ordersTable.id, status: ordersTable.status })
+      .from(ordersTable)
+      .where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, store.id)))
+      .limit(1);
+    if (!order) { res.status(404).json({ error: "Order not found in your store." }); return; }
+    if (!["delivered", "cancelled", "returned"].includes(order.status)) {
+      res.status(409).json({ error: "Active orders cannot be cleared from history." });
+      return;
+    }
+    await db.execute(sql`
+      insert into seller_order_history_archives (seller_user_id, order_id)
+      values (${req.user!.userId}, ${orderId})
+      on conflict (seller_user_id, order_id) do nothing
+    `);
+    res.json({ success: true, orderId, message: "Order removed from your history." });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Unable to clear the order. Please try again." });
+  }
+});
+
+router.delete("/orders", async (req: AuthRequest, res) => {
+  try {
+    await ensureSellerOrderHistoryTable();
+    const store = await getVendorStore(req.user!.userId);
+    if (!store) { res.status(404).json({ error: "Seller store not found." }); return; }
+    const result = await db.execute(sql`
+      insert into seller_order_history_archives (seller_user_id, order_id)
+      select ${req.user!.userId}, orders.id
+      from orders
+      where orders.store_id = ${store.id}
+        and orders.status in ('delivered', 'cancelled', 'returned')
+      on conflict (seller_user_id, order_id) do nothing
+    `);
+    res.json({ success: true, cleared: Number((result as any).rowCount ?? 0), message: "Order history cleared." });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Unable to clear order history. Please try again." });
   }
 });
 
@@ -970,9 +1045,15 @@ router.delete("/products/:productId", async (req: AuthRequest, res) => {
 // GET /api/vendor/dashboard
 router.get("/dashboard", async (req: AuthRequest, res) => {
   try {
+    await ensureSellerOrderHistoryTable();
     const store = await getVendorStore(req.user!.userId);
     if (!store) {
-      res.json({ todayOrders: 0, todayRevenue: "0.00", pendingOrders: 0, totalProducts: 0, weekRevenue: "0.00", monthRevenue: "0.00", recentOrders: [] });
+      res.json({
+        todayOrders: 0, todayRevenue: "0.00", pendingOrders: 0, totalProducts: 0,
+        weekRevenue: "0.00", monthRevenue: "0.00", totalOrders: 0,
+        confirmedOrders: 0, cancelledOrders: 0, completedOrders: 0,
+        totalEarnings: "0.00", recentOrders: [],
+      });
       return;
     }
 
@@ -981,16 +1062,28 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
     const monthAgo = new Date(today); monthAgo.setDate(monthAgo.getDate() - 30);
 
     const [allOrders, products] = await Promise.all([
-      db.select().from(ordersTable).where(eq(ordersTable.storeId, store.id)),
+      db.select().from(ordersTable).where(and(
+        eq(ordersTable.storeId, store.id),
+        sql`not exists (
+          select 1 from seller_order_history_archives history
+          where history.seller_user_id = ${req.user!.userId}
+            and history.order_id = ${ordersTable.id}
+        )`,
+      )),
       db.select({ count: sql<number>`count(*)` }).from(productsTable).where(eq(productsTable.storeId, store.id)),
     ]);
 
     const todayOrders = allOrders.filter(o => new Date(o.createdAt) >= today);
-    const weekOrders = allOrders.filter(o => new Date(o.createdAt) >= weekAgo && o.status !== "cancelled");
-    const monthOrders = allOrders.filter(o => new Date(o.createdAt) >= monthAgo && o.status !== "cancelled");
+    const completedOrders = allOrders.filter(o => o.status === "delivered");
+    const weekOrders = completedOrders.filter(o => new Date(o.deliveredAt ?? o.createdAt) >= weekAgo);
+    const monthOrders = completedOrders.filter(o => new Date(o.deliveredAt ?? o.createdAt) >= monthAgo);
     const pending = allOrders.filter(o => ["pending", "confirmed", "preparing"].includes(o.status));
 
-    const sum = (arr: typeof allOrders) => arr.reduce((s, o) => s + Number(o.total), 0);
+    // Seller earnings are the delivered item amount only. Customer delivery fees,
+    // platform commission and delivery-partner earnings are separate ledgers.
+    const sellerEarning = (order: (typeof allOrders)[number]) =>
+      Math.max(0, Number(order.subtotal ?? 0) - Number(order.couponDiscount ?? 0));
+    const sumEarnings = (arr: typeof allOrders) => arr.reduce((s, o) => s + sellerEarning(o), 0);
 
     const recentOrders = allOrders
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -999,11 +1092,16 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
 
     res.json({
       todayOrders: todayOrders.length,
-      todayRevenue: sum(todayOrders.filter(o => o.status !== "cancelled")).toFixed(2),
+      todayRevenue: sumEarnings(todayOrders.filter(o => o.status === "delivered")).toFixed(2),
       pendingOrders: pending.length,
       totalProducts: Number(products[0]?.count ?? 0),
-      weekRevenue: sum(weekOrders).toFixed(2),
-      monthRevenue: sum(monthOrders).toFixed(2),
+      weekRevenue: sumEarnings(weekOrders).toFixed(2),
+      monthRevenue: sumEarnings(monthOrders).toFixed(2),
+      totalOrders: allOrders.length,
+      confirmedOrders: allOrders.filter(o => o.status === "confirmed").length,
+      cancelledOrders: allOrders.filter(o => o.status === "cancelled").length,
+      completedOrders: completedOrders.length,
+      totalEarnings: sumEarnings(completedOrders).toFixed(2),
       store,
       recentOrders,
     });

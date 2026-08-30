@@ -14,6 +14,7 @@ const DELIVERY_QUERY_KEY = ["/api/admin/delivery-applications"];
 export default function AdminApprovals() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [approvalTab, setApprovalTab] = useState<"shops" | "delivery">("shops");
   const { data: applications = [], isLoading } = useQuery({
     queryKey: QUERY_KEY,
     queryFn: () => customFetch<any[]>("/api/admin/store-applications"),
@@ -56,70 +57,54 @@ export default function AdminApprovals() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Shop Owner Approvals</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Review seller details before allowing product upload and order management.</p>
+        <h1 className="text-2xl font-bold">Approvals</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Review shops and delivery partners in separate approval queues.</p>
       </div>
 
-      {isLoading ? (
-        <div className="space-y-3">{Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-48 rounded-xl" />)}</div>
-      ) : pending.length === 0 ? (
-        <div className="rounded-xl border bg-white py-16 text-center text-muted-foreground">
-          <Store className="mx-auto mb-3 h-12 w-12 opacity-30" />
-          <p>No pending shop applications</p>
-        </div>
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {pending.map((app: any) => (
-            <ApplicationCard key={app.id} app={app}>
-              <Button disabled={action.isPending} onClick={() => action.mutate({ id: app.id, status: "approve" })} className="bg-green-600 hover:bg-green-700">
-                <CheckCircle2 className="mr-2 h-4 w-4" />Approve
-              </Button>
-              <Button disabled={action.isPending} variant="destructive" onClick={() => action.mutate({ id: app.id, status: "reject" })}>
-                <XCircle className="mr-2 h-4 w-4" />Reject
-              </Button>
-            </ApplicationCard>
-          ))}
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-2 rounded-xl border bg-slate-50 p-2">
+        <button type="button" onClick={() => setApprovalTab("shops")} className={`rounded-lg px-4 py-3 text-left text-sm font-bold transition ${approvalTab === "shops" ? "bg-white text-orange-600 shadow-sm" : "text-muted-foreground hover:bg-white/70"}`}>
+          Shop approvals <span className="ml-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-800">{pending.length}</span>
+        </button>
+        <button type="button" onClick={() => setApprovalTab("delivery")} className={`rounded-lg px-4 py-3 text-left text-sm font-bold transition ${approvalTab === "delivery" ? "bg-white text-green-700 shadow-sm" : "text-muted-foreground hover:bg-white/70"}`}>
+          Delivery partners <span className="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-800">{pendingDelivery.length}</span>
+        </button>
+      </div>
 
-      {reviewed.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-lg font-bold">Reviewed applications</h2>
-          <div className="grid gap-4 xl:grid-cols-2">
-            {reviewed.map((app: any) => <ApplicationCard key={app.id} app={app} />)}
+      {approvalTab === "shops" ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-xl font-bold">Shop Owner Approvals</h2>
+            <p className="text-sm text-muted-foreground">Review seller details before allowing product upload and order management.</p>
           </div>
+          {isLoading ? (
+            <div className="space-y-3">{Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-48 rounded-xl" />)}</div>
+          ) : pending.length === 0 ? (
+            <div className="rounded-xl border bg-white py-16 text-center text-muted-foreground"><Store className="mx-auto mb-3 h-12 w-12 opacity-30" /><p>No pending shop applications</p></div>
+          ) : (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {pending.map((app: any) => (
+                <ApplicationCard key={app.id} app={app}>
+                  <Button disabled={action.isPending} onClick={() => action.mutate({ id: app.id, status: "approve" })} className="bg-green-600 hover:bg-green-700"><CheckCircle2 className="mr-2 h-4 w-4" />Approve</Button>
+                  <Button disabled={action.isPending} variant="destructive" onClick={() => action.mutate({ id: app.id, status: "reject" })}><XCircle className="mr-2 h-4 w-4" />Reject</Button>
+                </ApplicationCard>
+              ))}
+            </div>
+          )}
+          {reviewed.length > 0 && <section className="space-y-3"><h2 className="text-lg font-bold">Reviewed shop applications</h2><div className="grid gap-4 xl:grid-cols-2">{reviewed.map((app: any) => <ApplicationCard key={app.id} app={app} />)}</div></section>}
+        </section>
+      ) : (
+        <section className="space-y-4">
+          <div><h2 className="text-xl font-bold">Delivery Partner Approvals</h2><p className="text-sm text-muted-foreground">Delivery partners can only enter their panel after admin approval.</p></div>
+          {loadingDelivery ? (
+            <div className="space-y-3">{Array.from({ length: 2 }).map((_, index) => <Skeleton key={index} className="h-36 rounded-xl" />)}</div>
+          ) : pendingDelivery.length === 0 ? (
+            <div className="rounded-xl border bg-white py-10 text-center text-muted-foreground">No pending delivery partner applications</div>
+          ) : (
+            <div className="grid gap-4 xl:grid-cols-2">{pendingDelivery.map((partner: any) => <DeliveryCard key={partner.id} partner={partner}><Button disabled={deliveryAction.isPending} onClick={() => deliveryAction.mutate({ id: partner.id, status: "approve" })} className="bg-green-600 hover:bg-green-700"><CheckCircle2 className="mr-2 h-4 w-4" />Approve</Button><Button disabled={deliveryAction.isPending} variant="destructive" onClick={() => deliveryAction.mutate({ id: partner.id, status: "reject" })}><XCircle className="mr-2 h-4 w-4" />Reject</Button></DeliveryCard>)}</div>
+          )}
+          {reviewedDelivery.length > 0 && <div className="grid gap-4 xl:grid-cols-2">{reviewedDelivery.map((partner: any) => <DeliveryCard key={partner.id} partner={partner} />)}</div>}
         </section>
       )}
-
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-xl font-bold">Delivery Partner Approvals</h2>
-          <p className="text-sm text-muted-foreground">Delivery partners can only enter their panel after admin approval.</p>
-        </div>
-        {loadingDelivery ? (
-          <div className="space-y-3">{Array.from({ length: 2 }).map((_, index) => <Skeleton key={index} className="h-36 rounded-xl" />)}</div>
-        ) : pendingDelivery.length === 0 ? (
-          <div className="rounded-xl border bg-white py-10 text-center text-muted-foreground">No pending delivery partner applications</div>
-        ) : (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {pendingDelivery.map((partner: any) => (
-              <DeliveryCard key={partner.id} partner={partner}>
-                <Button disabled={deliveryAction.isPending} onClick={() => deliveryAction.mutate({ id: partner.id, status: "approve" })} className="bg-green-600 hover:bg-green-700">
-                  <CheckCircle2 className="mr-2 h-4 w-4" />Approve
-                </Button>
-                <Button disabled={deliveryAction.isPending} variant="destructive" onClick={() => deliveryAction.mutate({ id: partner.id, status: "reject" })}>
-                  <XCircle className="mr-2 h-4 w-4" />Reject
-                </Button>
-              </DeliveryCard>
-            ))}
-          </div>
-        )}
-        {reviewedDelivery.length > 0 && (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {reviewedDelivery.map((partner: any) => <DeliveryCard key={partner.id} partner={partner} />)}
-          </div>
-        )}
-      </section>
     </div>
   );
 }

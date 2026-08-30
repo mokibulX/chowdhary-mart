@@ -52,6 +52,8 @@ export const bannersTable = pgTable("banners", {
   linkUrl: text("link_url"),
   isActive: boolean("is_active").notNull().default(true),
   sortOrder: integer("sort_order").default(0),
+  audience: varchar("audience", { length: 30 }).notNull().default("customer"),
+  partnerBonus: decimal("partner_bonus", { precision: 10, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

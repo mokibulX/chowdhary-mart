@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { customFetch, getListVendorOrdersQueryKey, useListVendorOrders, useUpdateOrderStatus } from "@workspace/api-client-react";
+import { customFetch, getGetVendorDashboardQueryKey, getListVendorOrdersQueryKey, useListVendorOrders, useUpdateOrderStatus } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, Eye, FileText, Package, Printer, XCircle } from "lucide-react";
+import { AlertTriangle, Eye, FileText, Package, Printer, Trash2, XCircle } from "lucide-react";
 
 const NEXT_STATUS: Record<string, string> = { pending: "confirmed", confirmed: "packed", preparing: "packed" };
 const STATUS_COLORS: Record<string, string> = {
@@ -36,6 +36,7 @@ const NEXT_LABEL: Record<string, string> = { pending: "Accept order", confirmed:
 type PrintType = "customer_bill" | "packing_slip" | "preparation_slip";
 const SELLER_REJECT_REASONS = ["Product out of stock", "Shop closed", "Unable to prepare", "Wrong product price", "Too many active orders", "Product unavailable", "Shop temporarily unavailable", "Delivery service unavailable", "Other"];
 const SELLER_CANCEL_REASONS = ["Items became unavailable", "Shop emergency", "Unable to prepare on time", "Technical issue", "Shop closing", "Incorrect stock", "Other"];
+const CLEARABLE_STATUSES = ["delivered", "cancelled", "returned"];
 
 export default function VendorOrders() {
   const { user } = useAuth();
@@ -49,6 +50,8 @@ export default function VendorOrders() {
   const [decisionType, setDecisionType] = useState<"reject" | "cancel" | null>(null);
   const [decisionReason, setDecisionReason] = useState("");
   const [customReason, setCustomReason] = useState("");
+  const [clearingOrderId, setClearingOrderId] = useState<number | null>(null);
+  const [isClearingAll, setIsClearingAll] = useState(false);
 
   const params = filter !== "all" ? { status: filter } : {};
   const { data: orders, isLoading, isError, refetch } = useListVendorOrders(params, {
@@ -63,10 +66,12 @@ export default function VendorOrders() {
     },
   });
   const updateStatus = useUpdateOrderStatus();
+  const clearableOrders = (orders as any[] | undefined)?.filter((order) => CLEARABLE_STATUSES.includes(order.status)) ?? [];
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: getListVendorOrdersQueryKey({}) });
     qc.invalidateQueries({ queryKey: getListVendorOrdersQueryKey(params) });
+    qc.invalidateQueries({ queryKey: getGetVendorDashboardQueryKey() });
   };
 
   const handleUpdate = (orderId: number, status: string) => {
@@ -141,6 +146,35 @@ export default function VendorOrders() {
     toast({ title: type === "customer_bill" ? "Bill ready" : "Slip ready", description: `${paperSize} print preview opened.` });
   };
 
+  const clearOrder = async (order: any) => {
+    if (!CLEARABLE_STATUSES.includes(order.status)) return;
+    if (!window.confirm("Remove this order from your seller history?")) return;
+    setClearingOrderId(Number(order.id));
+    try {
+      await customFetch(`/api/vendor/orders/${order.id}`, { method: "DELETE", responseType: "json" });
+      refresh();
+      toast({ title: "Order removed", description: "The order was removed from your seller history." });
+    } catch (error: any) {
+      toast({ title: "Unable to clear order", description: error?.data?.error ?? "Please try again.", variant: "destructive" });
+    } finally {
+      setClearingOrderId(null);
+    }
+  };
+
+  const clearAllOrders = async () => {
+    if (!clearableOrders.length || !window.confirm("Clear all completed and cancelled orders from your seller history?")) return;
+    setIsClearingAll(true);
+    try {
+      await customFetch("/api/vendor/orders", { method: "DELETE", responseType: "json" });
+      refresh();
+      toast({ title: "Order history cleared", description: "Completed and cancelled orders were removed from your seller history." });
+    } catch (error: any) {
+      toast({ title: "Unable to clear order history", description: error?.data?.error ?? "Please try again.", variant: "destructive" });
+    } finally {
+      setIsClearingAll(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -148,7 +182,12 @@ export default function VendorOrders() {
           <h1 className="text-xl font-bold sm:text-2xl">Orders</h1>
           <p className="text-sm text-muted-foreground">Order details, item snapshots, bill and packing slip printing.</p>
         </div>
-        <div className="flex min-w-0 max-w-full gap-2 overflow-x-auto pb-2 [scrollbar-width:none]">
+        <div className="flex min-w-0 max-w-full flex-wrap justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={() => void clearAllOrders()} disabled={!clearableOrders.length || isClearingAll || clearingOrderId !== null} data-testid="btn-clear-all-orders">
+            <Trash2 className="mr-2 h-4 w-4" />{isClearingAll ? "Clearing..." : "Clear history"}
+          </Button>
+        </div>
+        <div className="flex min-w-0 max-w-full gap-2 overflow-x-auto pb-2 [scrollbar-width:none] lg:col-span-2">
           {["all", "pending", "confirmed", "packed", "picked_up", "on_the_way", "delivered", "cancelled"].map((f) => (
             <Button key={f} variant={filter === f ? "default" : "outline"} size="sm" onClick={() => setFilter(f)} className="shrink-0 whitespace-nowrap" data-testid={`filter-${f}`}>
               {f === "all" ? "All" : STATUS_LABEL[f]}
@@ -228,6 +267,11 @@ export default function VendorOrders() {
                   {nextStatus && !["delivered", "cancelled"].includes(order.status) && (
                     <Button size="sm" onClick={() => handleUpdate(order.id, nextStatus)} disabled={updateStatus.isPending} data-testid={`btn-next-${order.id}`}>
                       {NEXT_LABEL[order.status] ?? `Mark ${STATUS_LABEL[nextStatus]}`}
+                    </Button>
+                  )}
+                  {CLEARABLE_STATUSES.includes(order.status) && (
+                    <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => void clearOrder(order)} disabled={isClearingAll || clearingOrderId !== null} data-testid={`btn-clear-order-${order.id}`}>
+                      <Trash2 className="mr-2 h-4 w-4" />{clearingOrderId === Number(order.id) ? "Clearing..." : "Clear"}
                     </Button>
                   )}
                 </div>

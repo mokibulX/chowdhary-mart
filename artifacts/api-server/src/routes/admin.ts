@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { eq, desc, ilike, and, sql, inArray, isNull } from "drizzle-orm";
 import {
-  db, usersTable, ordersTable, storesTable, couponsTable, couponUsesTable, bannersTable,
+  db, usersTable, ordersTable, orderItemsTable, storesTable, couponsTable, couponUsesTable, bannersTable,
   deliveryPartnersTable, productsTable, categoriesTable,
   homepageSectionsTable, homepageSectionProductsTable, walletTransactionsTable,
   serviceZonesTable, sellerZoneAssignmentsTable, riderZoneAssignmentsTable, zoneChangeRequestsTable,
   mediaLibraryTable, withdrawalRequestsTable,
   platformSettingsTable, walletsTable, walletLedgerEntriesTable, orderTrackingTable, liveLocationsTable,
+  sellerSettlementsTable,
 } from "@workspace/db";
 import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 import { generateReferralCode, hashPassword } from "../lib/auth";
@@ -16,6 +17,7 @@ import { auditZone, isInsideZone, validCoordinate } from "../lib/zones";
 import { ensureFinanceTables, ensureWallet, getFinanceSettings, settleCompletedOrder } from "../lib/finance";
 import { ensurePricingSchema } from "../lib/pricing";
 import { DEFAULT_LOCATION } from "../lib/default-location";
+import { advanceDeliveryOffer, cancelDeliveryOffers } from "../lib/delivery-offers";
 
 const router = Router();
 
@@ -265,13 +267,14 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
   try {
     await ensureAdminUsersColumns();
     await ensureDeliveryReviewColumns();
+    await ensureFinanceTables();
     // The dashboard reads the complete orders row. Keep legacy Render databases
     // in sync before Drizzle generates that SELECT, otherwise missing pricing
     // columns turn the whole dashboard request into a 500 response.
     await ensurePricingSchema();
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
-    const [counts, allOrders] = await Promise.all([
+    const [counts, allOrders, settlements] = await Promise.all([
       db.execute(sql`
         select
           (select count(*) from users where deleted_at is null)::int as "totalUsers",
@@ -299,14 +302,32 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
               and u.deleted_at is null)::int as "activeDeliveryPartners"
       `),
       db.select().from(ordersTable),
+      db.select().from(sellerSettlementsTable),
     ]);
     const countResult = counts as any;
     const summary = (Array.isArray(countResult) ? countResult[0] : countResult?.rows?.[0]) ?? {};
 
     const todayOrders = allOrders.filter(o => new Date(o.createdAt) >= today);
     const completed = allOrders.filter(o => o.status === "delivered");
-    const totalRevenue = completed.reduce((s, o) => s + Number(o.total), 0);
-    const todayRevenue = todayOrders.filter(o => o.status !== "cancelled").reduce((s, o) => s + Number(o.total), 0);
+    const financeSettings = await getFinanceSettings();
+    const settlementByOrder = new Map(settlements.map(settlement => [settlement.orderId, settlement]));
+    const revenueForCompletedOrder = (order: typeof allOrders[number]) => {
+      const settlement = settlementByOrder.get(order.id);
+      if (settlement) return Number(settlement.platformCommission ?? 0);
+      if (Number(order.commissionAmount ?? 0) > 0) return Number(order.commissionAmount);
+
+      // Legacy delivered orders may predate the settlement ledger. Rebuild the
+      // platform share from the order's saved rate, or the current admin rate.
+      const itemAmount = Math.max(0, Number(order.subtotal ?? 0) - Number(order.couponDiscount ?? 0));
+      const rate = Number(order.commissionPercentage ?? 0) || Number(financeSettings.commissionPercentage ?? 0);
+      return itemAmount * Math.max(0, rate) / 100;
+    };
+    const totalRevenue = completed.reduce((sum, order) => sum + revenueForCompletedOrder(order), 0);
+    // Revenue is realized only after delivery. Pending, confirmed, preparing,
+    // rejected, cancelled and returned orders must never count as earnings.
+    const todayRevenue = completed
+      .filter(order => new Date(order.deliveredAt ?? order.createdAt) >= today)
+      .reduce((sum, order) => sum + revenueForCompletedOrder(order), 0);
 
     const recentOrders = await db.select().from(ordersTable)
       .orderBy(desc(ordersTable.createdAt)).limit(10);
@@ -321,6 +342,7 @@ router.get("/dashboard", async (req: AuthRequest, res) => {
       pendingStores: Number(summary.pendingStores ?? 0),
       todayOrders: todayOrders.length,
       todayRevenue: todayRevenue.toFixed(2),
+      adminCommissionPercent: Number(financeSettings.commissionPercentage ?? 0),
       activeDeliveryPartners: Number(summary.activeDeliveryPartners ?? 0),
       recentOrders: recentOrders.map(o => ({ ...o, store: firstStore })),
     });
@@ -1331,16 +1353,113 @@ router.get("/orders", async (req: AuthRequest, res) => {
   }
 });
 
-// PATCH /api/admin/orders/:orderId
-router.patch("/orders/:orderId", async (req: AuthRequest, res) => {
+// Admin-only full order view. The list endpoint intentionally returns a compact
+// summary; this endpoint loads the related records needed for operations.
+router.get("/orders/:orderId", async (req: AuthRequest, res) => {
   try {
     const orderId = Number(req.params.orderId);
-    const status = String(req.body.status ?? "");
-    const validStatuses = new Set(["pending", "confirmed", "preparing", "packed", "picked_up", "on_the_way", "arriving", "delivered", "cancelled", "returned"]);
     if (!Number.isInteger(orderId) || orderId <= 0) {
       res.status(400).json({ error: "Invalid order id" });
       return;
     }
+
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+    if (!order) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+
+    // Related records are useful for the modal but should not prevent the
+    // core order from opening when an older/demo row has incomplete links.
+    const optional = async <T>(query: PromiseLike<T>, fallback: T): Promise<T> => {
+      try {
+        return await query;
+      } catch (error) {
+        req.log.warn({ err: error, orderId }, "Could not load optional order detail");
+        return fallback;
+      }
+    };
+    const [store, customer, items, tracking] = await Promise.all([
+      optional(db.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1).then(rows => rows[0]), undefined),
+      optional(db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, phone: usersTable.phone, avatarUrl: usersTable.avatarUrl })
+        .from(usersTable).where(eq(usersTable.id, order.userId)).limit(1).then(rows => rows[0]), undefined),
+      optional(db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId)), []),
+      optional(db.select().from(orderTrackingTable).where(eq(orderTrackingTable.orderId, orderId)).orderBy(desc(orderTrackingTable.updatedAt)), []),
+    ]);
+
+    const sellerUser = store
+      ? await optional(db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, phone: usersTable.phone, avatarUrl: usersTable.avatarUrl })
+        .from(usersTable).where(eq(usersTable.id, store.userId)).limit(1).then(rows => rows[0]), undefined)
+      : undefined;
+
+    const latestTracking = tracking[0];
+    const partner = latestTracking?.deliveryPartnerId
+      ? await optional(db.select().from(deliveryPartnersTable).where(eq(deliveryPartnersTable.id, latestTracking.deliveryPartnerId)).limit(1).then(rows => rows[0]), undefined)
+      : undefined;
+    const partnerUser = partner
+      ? await optional(db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, phone: usersTable.phone, avatarUrl: usersTable.avatarUrl })
+        .from(usersTable).where(eq(usersTable.id, partner.userId)).limit(1).then(rows => rows[0]), undefined)
+      : undefined;
+    const liveLocation = partner
+      ? await optional(db.select().from(liveLocationsTable).where(eq(liveLocationsTable.deliveryPartnerId, partner.id)).orderBy(desc(liveLocationsTable.updatedAt)).limit(1).then(rows => rows[0]), undefined)
+      : undefined;
+    const snapshot = order.addressSnapshot && typeof order.addressSnapshot === "object" ? order.addressSnapshot as Record<string, unknown> : {};
+    const address = {
+      ...snapshot,
+      latitude: snapshot.latitude ?? order.pickupLatitude,
+      longitude: snapshot.longitude ?? order.pickupLongitude,
+      address: snapshot.address ?? order.pickupAddress,
+    };
+
+    res.json({
+      ...order,
+      store: store ?? null,
+      customer: customer ?? null,
+      seller: store ? { id: store.userId, name: sellerUser?.name ?? store.name, email: sellerUser?.email, phone: sellerUser?.phone ?? store.phone, address: store.address, lat: store.lat, lng: store.lng } : null,
+      deliveryPartner: partner ? { ...partner, user: partnerUser ?? null } : null,
+      items,
+      address,
+      tracking,
+      liveTracking: {
+        orderId: order.id,
+        status: order.status,
+        estimatedMins: order.estimatedDeliveryMins ?? 40,
+        storeLocation: store ? { lat: store.lat, lng: store.lng, label: store.name, address: store.address } : null,
+        customerLocation: address.latitude != null && address.longitude != null ? { lat: Number(address.latitude), lng: Number(address.longitude), label: "Customer location", address: address.address } : null,
+        partnerLocation: liveLocation ? { lat: Number(liveLocation.lat), lng: Number(liveLocation.lng), speed: liveLocation.speed, heading: liveLocation.heading, updatedAt: liveLocation.updatedAt } : null,
+      },
+    });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not load order details" });
+  }
+});
+
+// PATCH /api/admin/orders/:orderId
+router.patch("/orders/:orderId", async (req: AuthRequest, res) => {
+  try {
+    const orderId = Number(req.params.orderId);
+    const action = String(req.body?.action ?? "");
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      res.status(400).json({ error: "Invalid order id" });
+      return;
+    }
+    if (action === "handover") {
+      const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+      if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+      const [latest] = await db.select().from(orderTrackingTable).where(eq(orderTrackingTable.orderId, orderId)).orderBy(desc(orderTrackingTable.updatedAt)).limit(1);
+      if (latest?.deliveryPartnerId) {
+        await db.update(deliveryPartnersTable).set({ isOnline: false }).where(eq(deliveryPartnersTable.id, latest.deliveryPartnerId));
+      }
+      await db.insert(orderTrackingTable).values({ orderId, deliveryPartnerId: latest?.deliveryPartnerId ?? null, status: "confirmed", message: "Admin requested delivery handover", lat: latest?.lat ?? null, lng: latest?.lng ?? null });
+      await db.update(ordersTable).set({ status: "confirmed", updatedAt: new Date() }).where(eq(ordersTable.id, orderId));
+      await cancelDeliveryOffers(orderId);
+      void advanceDeliveryOffer(orderId).catch((error) => req.log.error(error));
+      res.json({ message: "Delivery handover started", orderId });
+      return;
+    }
+    const status = String(req.body.status ?? "");
+    const validStatuses = new Set(["pending", "confirmed", "preparing", "packed", "picked_up", "on_the_way", "arriving", "delivered", "cancelled", "returned"]);
     if (!validStatuses.has(status)) {
       res.status(400).json({ error: "Invalid order status" });
       return;
@@ -1395,8 +1514,13 @@ router.delete("/orders/:orderId", async (req: AuthRequest, res) => {
       await tx.execute(sql`delete from coupon_uses where order_id = ${orderId}`);
       await tx.execute(sql`delete from refunds where parent_order_id = ${orderId}`);
       await tx.execute(sql`delete from payments where parent_order_id = ${orderId}`);
+      // payment_attempts is linked through payment_order_id; it has no parent_order_id column.
+      // Delete attempts before their payment order so the admin delete transaction can commit.
       await tx.execute(sql`delete from payment_attempts where payment_order_id in (select id from payment_orders where parent_order_id = ${orderId})`);
       await tx.execute(sql`delete from payment_orders where parent_order_id = ${orderId}`);
+      // Inventory movements reference orders without ON DELETE CASCADE.
+      // Remove them before the parent order so the whole delete can commit.
+      await tx.execute(sql`delete from inventory_ledger where order_id = ${orderId}`);
       await tx.execute(sql`delete from order_items where order_id = ${orderId}`);
       await tx.delete(ordersTable).where(eq(ordersTable.id, orderId));
     });
@@ -1843,6 +1967,98 @@ router.get("/banners", async (req: AuthRequest, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+function bannerPayload(body: any) {
+  const audience = ["customer", "delivery_partner", "all"].includes(body?.audience) ? body.audience : "customer";
+  const partnerBonus = Math.max(0, Number(body?.partnerBonus ?? 0));
+  const linkUrl = body?.linkUrl ?? body?.href;
+  return {
+    title: String(body?.title ?? "").trim(),
+    subtitle: body?.subtitle ? String(body.subtitle) : null,
+    imageUrl: String(body?.imageUrl ?? "").trim(),
+    linkUrl: linkUrl ? String(linkUrl) : null,
+    isActive: body?.isActive !== false,
+    sortOrder: Number(body?.sortOrder ?? 0),
+    audience,
+    partnerBonus: partnerBonus.toFixed(2),
+  };
+}
+
+router.post("/banners", async (req: AuthRequest, res) => {
+  try {
+    const payload = bannerPayload(req.body);
+    if (!payload.title || !payload.imageUrl) { res.status(400).json({ error: "Title and image are required" }); return; }
+    const [banner] = await db.insert(bannersTable).values(payload).returning();
+    res.status(201).json(banner);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not create banner" });
+  }
+});
+
+router.patch("/banners/:bannerId", async (req: AuthRequest, res) => {
+  try {
+    const bannerId = Number(req.params.bannerId);
+    const payload = bannerPayload(req.body);
+    if (!payload.title || !payload.imageUrl) { res.status(400).json({ error: "Title and image are required" }); return; }
+    const [banner] = await db.update(bannersTable).set(payload).where(eq(bannersTable.id, bannerId)).returning();
+    if (!banner) { res.status(404).json({ error: "Banner not found" }); return; }
+    res.json(banner);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not update banner" });
+  }
+});
+
+router.delete("/banners/:bannerId", async (req: AuthRequest, res) => {
+  try {
+    const [banner] = await db.delete(bannersTable).where(eq(bannersTable.id, Number(req.params.bannerId))).returning({ id: bannersTable.id });
+    if (!banner) { res.status(404).json({ error: "Banner not found" }); return; }
+    res.json({ message: "Banner deleted" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: "Could not delete banner" });
+  }
+});
+
+router.get("/incentive-rules", async (_req: AuthRequest, res) => {
+  try {
+    await ensureFinanceTables();
+    const result = await db.execute(sql`select id, partner_user_id as "partnerUserId", name, orders_required as "ordersRequired", bonus_amount as "bonusAmount", online_start_time as "onlineStartTime", online_end_time as "onlineEndTime", is_active as "isActive" from partner_incentive_rules order by created_at desc`);
+    res.json((result as any).rows ?? []);
+  } catch (err) {
+    res.status(500).json({ error: "Could not load incentive rules" });
+  }
+});
+
+router.post("/incentive-rules", async (req: AuthRequest, res) => {
+  try {
+    await ensureFinanceTables();
+    const body = req.body ?? {};
+    const name = String(body.name ?? "Partner incentive").trim() || "Partner incentive";
+    const ordersRequired = Math.max(0, Math.floor(Number(body.ordersRequired ?? 0)));
+    const bonusAmount = Math.max(0, Number(body.bonusAmount ?? 0));
+    const partnerUserId = body.partnerUserId ? Number(body.partnerUserId) : null;
+    const time = (value: unknown) => typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
+    if (!Number.isFinite(bonusAmount) || bonusAmount <= 0) { res.status(400).json({ error: "Bonus amount must be greater than zero" }); return; }
+    const result = await db.execute(sql`insert into partner_incentive_rules (partner_user_id, name, orders_required, bonus_amount, online_start_time, online_end_time) values (${Number.isFinite(partnerUserId) ? partnerUserId : null}, ${name}, ${ordersRequired}, ${bonusAmount.toFixed(2)}, ${time(body.onlineStartTime)}, ${time(body.onlineEndTime)}) returning id, partner_user_id as "partnerUserId", name, orders_required as "ordersRequired", bonus_amount as "bonusAmount", online_start_time as "onlineStartTime", online_end_time as "onlineEndTime", is_active as "isActive"`);
+    res.status(201).json((result as any).rows?.[0]);
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: "Could not create incentive rule" });
+  }
+});
+
+router.delete("/incentive-rules/:ruleId", async (req: AuthRequest, res) => {
+  try {
+    await ensureFinanceTables();
+    await db.execute(sql`delete from partner_incentive_rules where id = ${Number(req.params.ruleId)}`);
+    res.json({ message: "Incentive rule deleted" });
+  } catch (err) {
+    req.log.error(err);
+    res.status(400).json({ error: "Could not delete incentive rule" });
   }
 });
 

@@ -56,11 +56,11 @@ export default function AdminDashboard() {
   const stats = [
     { label: "Total Users", value: dashboard?.totalUsers ?? 0, icon: Users, color: "text-blue-600", href: "/admin/users" },
     { label: "Total Orders", value: dashboard?.totalOrders ?? 0, icon: ShoppingBag, color: "text-primary", href: "/admin/orders" },
-    { label: "Total Revenue", value: `₹${Number(dashboard?.totalRevenue ?? 0).toLocaleString("en-IN")}`, icon: TrendingUp, color: "text-green-600", href: "/admin/orders" },
+    { label: `Platform Revenue (${Number((dashboard as any)?.adminCommissionPercent ?? 0)}%)`, value: `₹${Number(dashboard?.totalRevenue ?? 0).toLocaleString("en-IN")}`, icon: TrendingUp, color: "text-green-600", href: "/admin/orders" },
     { label: "Stores", value: dashboard?.totalStores ?? 0, icon: Store, color: "text-purple-600", href: "/admin/stores" },
     { label: "Pending Shops", value: (dashboard as any)?.pendingStores ?? 0, icon: ShieldCheck, color: "text-yellow-600", href: "/admin/approvals" },
     { label: "Today Orders", value: dashboard?.todayOrders ?? 0, icon: Clock, color: "text-orange-500", href: "/admin/orders" },
-    { label: "Today Revenue", value: `₹${Number(dashboard?.todayRevenue ?? 0).toFixed(0)}`, icon: TrendingUp, color: "text-emerald-600", href: "/admin/orders" },
+    { label: `Today Platform Revenue (${Number((dashboard as any)?.adminCommissionPercent ?? 0)}%)`, value: `₹${Number(dashboard?.todayRevenue ?? 0).toFixed(0)}`, icon: TrendingUp, color: "text-emerald-600", href: "/admin/orders" },
     { label: "Active Riders", value: dashboard?.activeDeliveryPartners ?? 0, icon: Bike, color: "text-cyan-600", href: "/admin/users" },
   ];
 

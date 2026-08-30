@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckCircle2, CreditCard, Save, Send, Star, TrendingDown, TrendingUp, Wallet as WalletIcon, XCircle } from "lucide-react";
 import { getFriendlyErrorMessage } from "@/lib/error-message";
+import { DeliveryPartnerOffers } from "@/components/DeliveryPartnerOffers";
 
 export default function Wallet() {
   const { user } = useAuth();
@@ -237,6 +238,8 @@ export default function Wallet() {
   return (
     <div className="mx-auto max-w-lg space-y-5">
       <h1 className="text-xl font-bold">{roleLabel} Wallet</h1>
+
+      {user.role === "delivery_partner" && <DeliveryPartnerOffers />}
 
       {loadingWallet ? (
         <Skeleton className="h-36 rounded-2xl" />

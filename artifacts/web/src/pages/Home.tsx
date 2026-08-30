@@ -95,6 +95,18 @@ export default function Home() {
   const bannerItems = listItems<any>(banners);
   const categoryItems = listItems<any>(categories);
   const storeItems = listItems<any>(stores);
+  const storeIds = storeItems.map((store) => store.id).filter(Boolean).join(",");
+  const { data: nearbyStoreProducts } = useQuery<Record<string, any[]>>({
+    queryKey: ["/api/products", "nearby-seller-offers", storeIds],
+    enabled: storeItems.length > 0,
+    queryFn: async () => {
+      const entries = await Promise.all(storeItems.map(async (store) => {
+        const response = await customFetch<any>(`/api/products?storeId=${encodeURIComponent(String(store.id))}&limit=100`);
+        return [String(store.id), listItems<any>(response)] as const;
+      }));
+      return Object.fromEntries(entries);
+    },
+  });
   const zoneId = (deliveryLocation as DeliveryLocation & { zoneId?: number }).zoneId;
   const { data: homepageData } = useQuery({
     queryKey: ["/api/homepage", zoneId],
@@ -140,7 +152,6 @@ export default function Home() {
 
   const slides = bannerItems.length ? bannerItems : FALLBACK_BANNERS;
   const selectedCategory = categoryItems.find((cat) => cat.id === selectedCategoryId);
-  const quickPhotoProducts = (newest?.items ?? featured?.items ?? []).slice(0, 7);
   const countdown = useMemo(() => {
     const hours = Math.floor(secondsLeft / 3600).toString().padStart(2, "0");
     const minutes = Math.floor((secondsLeft % 3600) / 60).toString().padStart(2, "0");
@@ -183,7 +194,12 @@ export default function Home() {
       `}</style>
 
       <section className="rounded-xl border bg-white p-3 shadow-sm sm:p-4">
-        <button className="flex w-full items-center gap-2 rounded-lg bg-orange-50 px-3 py-3 text-left text-sm text-gray-800 transition-colors hover:bg-orange-100">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event("open-location-selector"))}
+          className="flex w-full items-center gap-2 rounded-lg bg-orange-50 px-3 py-3 text-left text-sm text-gray-800 transition-colors hover:bg-orange-100"
+          aria-label="Change delivery location"
+        >
           <MapPin className="h-4 w-4 text-primary" />
           <span className="min-w-0 flex-1 truncate font-semibold">
             {deliveryLocation.pincode ? `Deliver to ${deliveryLocation.area} ${deliveryLocation.pincode}` : "Select live delivery location"}
@@ -213,27 +229,6 @@ export default function Home() {
             ))}
           </div>
         )}
-      </section>
-
-      <section className="rounded-lg border bg-white p-3 shadow-sm">
-        <div className="mb-3">
-          <h2 className="text-sm font-bold">Tap a product style</h2>
-        </div>
-        <div className="lch-clean-scroll flex max-w-full gap-3 overflow-x-auto pb-1">
-          {quickPhotoProducts.map((product: any) => (
-            <button
-              key={product.id}
-              type="button"
-              onClick={() => setSelectedCategoryId(product.categoryId)}
-              className="min-w-[78px] rounded-xl border bg-white p-2 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
-            >
-              <div className="mx-auto h-16 w-16 overflow-hidden rounded-lg bg-gray-50">
-                {product.images?.[0] && <img src={product.images[0]} alt={product.name} className="h-full w-full object-contain p-1.5" />}
-              </div>
-              <p className="mt-1 line-clamp-2 text-[10px] font-semibold leading-3">{product.name}</p>
-            </button>
-          ))}
-        </div>
       </section>
 
       {selectedCategoryId && (
@@ -404,29 +399,44 @@ export default function Home() {
           <Link href="/search" className="text-sm font-medium text-primary">Browse products</Link>
         </div>
         {loadingStores ? (
-          <div className="grid gap-3 md:grid-cols-5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)}</div>
+          <div className="cm-nearby-seller-rail">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-24 w-24 shrink-0 rounded-full" />)}</div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
-            {storeItems.map((store) => (
-              <Link key={store.id} href={`/store/${store.id}`} className="overflow-hidden rounded-xl border bg-white transition-all hover:-translate-y-1 hover:shadow-md">
-                <div className="h-28 overflow-hidden bg-gray-100 sm:h-32 md:h-36">
-                  {store.logoUrl && <img src={store.logoUrl} alt={store.name} className="h-full w-full object-cover" />}
-                </div>
-                <div className="p-3">
-                  <h3 className="line-clamp-1 text-sm font-semibold">{store.name}</h3>
-                  <p className="line-clamp-1 text-xs text-muted-foreground">{store.address}</p>
-                  <div className="mt-2 flex items-center justify-between text-xs">
-                    <span className="font-medium text-amber-600">{store.rating || "New"} rating</span>
-                    <span className="rounded bg-gray-100 px-1.5 py-0.5">{store.estimatedDeliveryMins} min</span>
+          <div className="cm-nearby-seller-rail">
+            {storeItems.map((store) => {
+              const sellerProducts = nearbyStoreProducts?.[String(store.id)] ?? [];
+              const hasOffer = sellerProducts.some((product: any) => Number(product.discountPercent) > 0 && Number(product.stock ?? 1) > 0);
+              return (
+                <Link key={store.id} href={`/store/${store.id}`} className={`cm-nearby-seller ${hasOffer ? "cm-nearby-seller--offer" : ""}`}>
+                  <div className="cm-nearby-seller-avatar-wrap">
+                    <div className="cm-nearby-seller-avatar">
+                      {store.logoUrl ? <img src={store.logoUrl} alt={store.name} loading="lazy" /> : storeInitials(store.name)}
+                    </div>
                   </div>
-                </div>
-              </Link>
-            ))}
+                  <strong className="cm-nearby-seller-name">{store.name}</strong>
+                  {hasOffer ? (
+                    <span className="cm-nearby-seller-offer"><BadgePercent size={12} /> Offer</span>
+                  ) : (
+                    <span className="cm-nearby-seller-meta">{store.estimatedDeliveryMins ?? "--"} min</span>
+                  )}
+                </Link>
+              );
+            })}
           </div>
         )}
       </section>
     </div>
   );
+}
+
+function storeInitials(name: unknown) {
+  const initials = String(name || "Store")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+  return initials || "S";
 }
 
 function ProductRail({ title, subtitle, products, isLoading, href }: { title: string; subtitle?: string; products: any[]; isLoading?: boolean; href: string }) {
@@ -444,7 +454,7 @@ function ProductRail({ title, subtitle, products, isLoading, href }: { title: st
           {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-[250px] rounded-xl" />)}
         </div>
       ) : products.length > 0 ? (
-        <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
+        <div className="cm-product-rail-grid grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
           {products.slice(0, 10).map((product: any) => <ProductCard key={product.id} product={product} compact />)}
         </div>
       ) : (

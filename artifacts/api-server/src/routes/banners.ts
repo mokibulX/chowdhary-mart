@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db, bannersTable } from "@workspace/db";
 
 const router = Router();
@@ -8,7 +8,7 @@ const router = Router();
 router.get("/", async (req, res) => {
   try {
     const banners = await db.select().from(bannersTable)
-      .where(eq(bannersTable.isActive, true))
+      .where(and(eq(bannersTable.isActive, true), inArray(bannersTable.audience, ["customer", "all"])))
       .orderBy(bannersTable.sortOrder);
     res.json(banners);
   } catch (err) {

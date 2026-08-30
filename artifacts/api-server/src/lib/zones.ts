@@ -75,9 +75,11 @@ function pointInRing(point: GeoPoint, ring: GeoPoint[]) {
 
 export function isInsideZone(zone: Pick<ServiceZone, "centreLatitude" | "centreLongitude" | "radiusMeters" | "boundaryGeometry">, lat: number, lng: number) {
   const rings = polygonRings(zone.boundaryGeometry);
-  // Serviceability is boundary-only. Radius is retained in the schema for
-  // historical records, but must never create a new active service area.
-  if (!rings.length) return false;
+  if (!rings.length) {
+    const radiusMeters = Number(zone.radiusMeters);
+    if (!validCoordinate(zone.centreLatitude, zone.centreLongitude) || !Number.isFinite(radiusMeters) || radiusMeters <= 0) return false;
+    return distanceKm(lat, lng, Number(zone.centreLatitude), Number(zone.centreLongitude)) * 1000 <= radiusMeters;
+  }
   return pointInRing({ lat, lng }, rings[0]) && rings.slice(1).every((ring) => !pointInRing({ lat, lng }, ring));
 }
 
@@ -92,7 +94,7 @@ export async function getActiveDeliveryZones(lat?: number, lng?: number) {
     eq(serviceZonesTable.deliveryEnabled, true),
     isNull(serviceZonesTable.archivedAt),
   ));
-  return rows.filter(hasPolygonBoundary).map((zone) => {
+  return rows.map((zone) => {
     const distance = validCoordinate(lat, lng) ? distanceKm(Number(lat), Number(lng), zone.centreLatitude, zone.centreLongitude) : null;
     return { ...zone, distanceKm: distance === null ? null : Number(distance.toFixed(2)), insideServiceZone: distance === null ? false : isInsideZone(zone, Number(lat), Number(lng)) };
   });
@@ -106,8 +108,7 @@ export async function getEligibleRegistrationZones(type: "seller" | "rider", lat
     type === "seller" ? eq(serviceZonesTable.sellerRegistrationEnabled, true) : eq(serviceZonesTable.riderRegistrationEnabled, true),
     type === "rider" ? eq(serviceZonesTable.deliveryEnabled, true) : undefined,
   ));
-  return rows.filter(hasPolygonBoundary)
-    .map((zone) => {
+  return rows.map((zone) => {
       const distance = validCoordinate(lat, lng) ? distanceKm(Number(lat), Number(lng), zone.centreLatitude, zone.centreLongitude) : null;
       return {
         ...zone,
@@ -131,7 +132,6 @@ export async function validateZoneSelection(type: "seller" | "rider", zoneId: un
     type === "rider" ? eq(serviceZonesTable.deliveryEnabled, true) : undefined,
   )).limit(1);
   if (!zone) return { ok: false as const, error: "Please select an active service zone." };
-  if (!hasPolygonBoundary(zone)) return { ok: false as const, error: "This service zone needs a custom boundary before it can be used." };
   if (!isInsideZone(zone, Number(lat), Number(lng))) {
     return { ok: false as const, error: type === "seller" ? "Your shop location is outside the selected service zone." : "Your current location is outside the selected service zone." };
   }
