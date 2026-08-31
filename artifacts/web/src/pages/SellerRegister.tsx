@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Camera, CheckCircle2, ClipboardCheck, Eye, EyeOff, LocateFixed, MapPin, PackagePlus, ShieldCheck, Store, Upload, UserRound } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, ChevronDown, ClipboardCheck, Eye, EyeOff, LocateFixed, MapPin, PackagePlus, ShieldCheck, Store, Upload, UserRound } from "lucide-react";
 import { isDemoOtp, testMode } from "@/lib/test-mode";
 import { fileToDataUrl, getCurrentIndianLocation } from "@/lib/live-location";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
@@ -48,7 +48,7 @@ const initialForm: SellerForm = {
   password: "",
   shopName: "",
   businessType: "Retail shop",
-  shopCategory: "Grocery, Fashion, Electronics",
+  shopCategory: "",
   shopAddress: "",
   city: DEFAULT_LOCATION.city,
   district: DEFAULT_LOCATION.district,
@@ -78,6 +78,8 @@ export default function SellerRegister() {
   const [zones, setZones] = useState<any[]>([]);
   const [zoneBusy, setZoneBusy] = useState(false);
   const [gpsBusy, setGpsBusy] = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
   const formLat = Number(form.lat);
   const formLng = Number(form.lng);
   const currentPickupLocation: PickupLocation | null = form.lat && form.lng && Number.isFinite(formLat) && Number.isFinite(formLng)
@@ -101,6 +103,24 @@ export default function SellerRegister() {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  const selectedCategories = form.shopCategory
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  const availableCategoryOptions = Array.from(new Set([...categoryOptions, ...selectedCategories]));
+
+  const toggleCategory = (category: string) => {
+    setForm((current) => {
+      const selected = current.shopCategory.split(",").map((value) => value.trim()).filter(Boolean);
+      const exists = selected.some((value) => value.toLowerCase() === category.toLowerCase());
+      const next = exists
+        ? selected.filter((value) => value.toLowerCase() !== category.toLowerCase())
+        : [...selected, category];
+      return { ...current, shopCategory: next.join(", ") };
+    });
+  };
+
   useEffect(() => {
     if (!form.lat || !form.lng) return;
     setZoneBusy(true);
@@ -109,6 +129,29 @@ export default function SellerRegister() {
       .catch(() => setZones([]))
       .finally(() => setZoneBusy(false));
   }, [form.lat, form.lng]);
+
+  useEffect(() => {
+    let active = true;
+    customFetch<any>("/api/categories")
+      .then((response) => {
+        const rows = Array.isArray(response)
+          ? response
+          : response?.categories ?? response?.items ?? response?.data ?? [];
+        const names = rows
+          .map((item: any) =>
+            typeof item === "string" ? item : item?.name ?? item?.title ?? item?.category ?? item?.label,
+          )
+          .filter((value: unknown): value is string => typeof value === "string" && value.trim().length > 0)
+          .map((name) => name.trim());
+        if (active) setCategoryOptions([...new Set(names)]);
+      })
+      .catch(() => {
+        if (active) setCategoryOptions([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const captureGps = async () => {
     setGpsBusy(true);
@@ -326,7 +369,51 @@ export default function SellerRegister() {
                 </div>
                 <Field label="Shop name *" value={form.shopName} onChange={(value) => update("shopName", value)} />
                 <Field label="Business type" value={form.businessType} onChange={(value) => update("businessType", value)} />
-                <Field label="Main categories" value={form.shopCategory} onChange={(value) => update("shopCategory", value)} />
+                <div className="space-y-1.5">
+                  <label htmlFor="seller-main-categories" className="block text-sm font-medium">
+                    Main categories
+                  </label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      id="seller-main-categories"
+                      className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm"
+                      onClick={() => setCategoryMenuOpen((open) => !open)}
+                      aria-haspopup="listbox"
+                      aria-expanded={categoryMenuOpen}
+                    >
+                      <span className={selectedCategories.length ? "leading-6" : "leading-6 text-slate-500"}>
+                        {selectedCategories.length ? selectedCategories.join(", ") : "Select existing categories"}
+                      </span>
+                      <ChevronDown className={`h-5 w-5 shrink-0 transition-transform ${categoryMenuOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {categoryMenuOpen && (
+                      <div
+                        className="absolute z-30 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg"
+                        role="listbox"
+                        aria-label="Main categories"
+                      >
+                        {availableCategoryOptions.length ? availableCategoryOptions.map((category) => {
+                          const selected = selectedCategories.some((value) => value.toLowerCase() === category.toLowerCase());
+                          return (
+                            <button
+                              type="button"
+                              key={category}
+                              role="option"
+                              aria-selected={selected}
+                              onClick={() => toggleCategory(category)}
+                              className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left ${selected ? "bg-orange-50 text-orange-700" : "hover:bg-slate-50"}`}
+                            >
+                              <span>{category}</span>
+                              {selected && <CheckCircle2 className="h-4 w-4" />}
+                            </button>
+                          );
+                        }) : <p className="px-3 py-2 text-sm text-slate-500">No categories available</p>}
+                      </div>
+                    )}
+                  </div>
+                  <input type="hidden" name="shopCategory" value={form.shopCategory} />
+                </div>
                 <Field label="UPI ID *" value={form.upiId} onChange={(value) => update("upiId", value)} placeholder="shop@upi" />
                 <Field label="GST number (optional)" value={form.gstNumber} onChange={(value) => update("gstNumber", value)} />
                 <Field label="PAN number (optional)" value={form.panNumber} onChange={(value) => update("panNumber", value)} />

@@ -903,6 +903,9 @@ export function LiveFaceCapture({ value, onCapture }: { value: string; onCapture
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<any>(null);
   const checkingRef = useRef(false);
+  const readyRef = useRef(false);
+  const autoCapturedRef = useRef(false);
+  const autoCaptureTimerRef = useRef<number | null>(null);
   const [running, setRunning] = useState(false);
   const [ready, setReady] = useState(false);
   const [captured, setCaptured] = useState("");
@@ -915,6 +918,51 @@ export function LiveFaceCapture({ value, onCapture }: { value: string; onCapture
     if (videoRef.current) videoRef.current.srcObject = null;
     setRunning(false);
     checkingRef.current = false;
+    readyRef.current = false;
+    if (autoCaptureTimerRef.current) {
+      window.clearTimeout(autoCaptureTimerRef.current);
+      autoCaptureTimerRef.current = null;
+    }
+  };
+
+  const setNotReady = (nextMessage: string) => {
+    readyRef.current = false;
+    setReady(false);
+    setMessage(nextMessage);
+    if (autoCaptureTimerRef.current) {
+      window.clearTimeout(autoCaptureTimerRef.current);
+      autoCaptureTimerRef.current = null;
+    }
+  };
+
+  function capture(auto = false) {
+    const video = videoRef.current;
+    if (!video || !readyRef.current || !video.videoWidth || !video.videoHeight) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const image = canvas.toDataURL("image/jpeg", 0.9);
+    autoCapturedRef.current = autoCapturedRef.current || auto;
+    setCaptured(image);
+    onCapture(image);
+    stop();
+    setMessage(auto ? "Live selfie captured automatically." : "Live selfie ready.");
+  }
+
+  const setFaceReady = (nextMessage: string) => {
+    readyRef.current = true;
+    setReady(true);
+    setMessage(nextMessage);
+    if (autoCapturedRef.current || autoCaptureTimerRef.current) return;
+    autoCaptureTimerRef.current = window.setTimeout(() => {
+      autoCaptureTimerRef.current = null;
+      capture(true);
+    }, 900);
   };
 
   useEffect(() => () => stop(), []);
@@ -927,16 +975,14 @@ export function LiveFaceCapture({ value, onCapture }: { value: string; onCapture
       const video = videoRef.current;
       if (!video.videoWidth || !video.videoHeight) return;
       if (!detectorRef.current) {
-        setReady(true);
-        setMessage("Camera ready. Keep your face inside the circle.");
+        setFaceReady("Camera ready. Blink once or keep still for auto capture.");
         return;
       }
       checkingRef.current = true;
       try {
         const faces = await detectorRef.current.detect(video);
         if (faces.length !== 1) {
-          setReady(false);
-          setMessage(faces.length > 1 ? "Only one face should be visible." : "Please position your face inside the circle.");
+          setNotReady(faces.length > 1 ? "Only one face should be visible." : "Please position your face inside the circle.");
           return;
         }
         const face = faces[0];
@@ -946,18 +992,14 @@ export function LiveFaceCapture({ value, onCapture }: { value: string; onCapture
         const largeEnough = box.width > video.videoWidth * 0.18 && box.height > video.videoHeight * 0.22;
         const centered = faceCenterX > 0.25 && faceCenterX < 0.75 && faceCenterY > 0.2 && faceCenterY < 0.8;
         if (!largeEnough) {
-          setReady(false);
-          setMessage("Move a little closer to the camera.");
+          setNotReady("Move a little closer to the camera.");
         } else if (!centered) {
-          setReady(false);
-          setMessage("Keep your face centered inside the circle.");
+          setNotReady("Keep your face centered inside the circle.");
         } else {
-          setReady(true);
-          setMessage("Face detected. You can capture now.");
+          setFaceReady("Face is clear. Blink once or keep still for auto capture.");
         }
       } catch {
-        setReady(false);
-        setMessage("Please position your face inside the circle.");
+        setNotReady("Please position your face inside the circle.");
       } finally {
         checkingRef.current = false;
       }
@@ -972,6 +1014,7 @@ export function LiveFaceCapture({ value, onCapture }: { value: string; onCapture
     setAttempted(true);
     stop();
     setCaptured("");
+    autoCapturedRef.current = false;
     setReady(false);
     setMessage("Requesting camera permission...");
     try {
@@ -998,7 +1041,7 @@ export function LiveFaceCapture({ value, onCapture }: { value: string; onCapture
         await videoRef.current.play();
       }
       setRunning(true);
-      setMessage(detectorRef.current ? "Keep your face inside the circle." : "Camera ready. Keep your face inside the circle.");
+      setMessage(detectorRef.current ? "Keep your face inside the circle, then blink once." : "Camera ready. Blink once or keep still for auto capture.");
     } catch (error) {
       stop();
       const name = (error as DOMException)?.name;
@@ -1012,22 +1055,6 @@ export function LiveFaceCapture({ value, onCapture }: { value: string; onCapture
         setMessage("Could not start the camera. Check your browser camera permission and try again.");
       }
     }
-  };
-
-  const capture = () => {
-    const video = videoRef.current;
-    if (!video || !ready || !video.videoWidth || !video.videoHeight) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    context.translate(canvas.width, 0);
-    context.scale(-1, 1);
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    setCaptured(canvas.toDataURL("image/jpeg", 0.9));
-    stop();
-    setMessage("Review your selfie, then use it or retake it.");
   };
 
   const useSelfie = () => {
@@ -1050,7 +1077,7 @@ export function LiveFaceCapture({ value, onCapture }: { value: string; onCapture
       <p className={`rounded-xl px-3 py-2 text-center text-sm font-medium ${ready || preview ? "bg-green-50 text-green-800" : "bg-blue-50 text-blue-800"}`}>{message}</p>
       <div className="grid gap-2 sm:grid-cols-2">
         {running ? (
-          <Button type="button" onClick={capture} disabled={!ready} className="h-12 sm:col-span-2"><Camera className="mr-2 h-4 w-4" />Capture Selfie</Button>
+          <Button type="button" onClick={() => capture()} disabled={!ready} className="h-12 sm:col-span-2"><Camera className="mr-2 h-4 w-4" />Capture Selfie</Button>
         ) : captured ? (
           <>
             <Button type="button" variant="outline" onClick={start} className="h-12">Retake</Button>

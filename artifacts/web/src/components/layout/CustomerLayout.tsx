@@ -34,7 +34,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { getSavedDeliveryLocation, hasSavedDeliveryLocation, lookupPincode, nearestDeliveryLocation, PINCODE_LOCATIONS, saveDeliveryLocation, type DeliveryLocation } from "@/lib/pincode";
-import { getBrowserLocation, getCurrentIndianLocation } from "@/lib/live-location";
+import { getBrowserLocation } from "@/lib/live-location";
 import { useI18n } from "@/lib/i18n";
 import { PickupLocationPicker, type PickupLocation } from "@/components/PickupLocationPicker";
 import { searchProductByImage } from "@/lib/image-search";
@@ -77,7 +77,6 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
   const [placesLoading, setPlacesLoading] = useState(false);
   const cameraSearchRef = useRef<HTMLInputElement | null>(null);
   const gallerySearchRef = useRef<HTMLInputElement | null>(null);
-  const gpsBootstrapStarted = useRef(false);
 
   const { data: cart } = useGetCart({
     query: { enabled: !!user, queryKey: getGetCartQueryKey() },
@@ -257,33 +256,11 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
   }, []);
 
   useEffect(() => {
-    // Registration and login stay location-free. Ask for GPS only after a
-    // signed-in customer opens the shopping experience, and never replace an
-    // address the customer has already selected or saved.
-    if (user?.role !== "customer" || gpsBootstrapStarted.current || hasSavedDeliveryLocation()) return;
-    gpsBootstrapStarted.current = true;
-
-    void getCurrentIndianLocation().then((gps) => {
-      const nearest = nearestDeliveryLocation(gps.lat, gps.lng)?.location;
-      const current = getSavedDeliveryLocation();
-      saveDeliveryLocation({
-        ...current,
-        ...nearest,
-        pincode: gps.pincode || nearest?.pincode || current.pincode,
-        city: gps.city || nearest?.city || current.city,
-        district: gps.district || nearest?.district || current.district,
-        state: gps.state || nearest?.state || current.state,
-        area: gps.area || nearest?.area || current.area,
-        lat: gps.lat,
-        lng: gps.lng,
-        source: "gps",
-        accuracy: gps.accuracy,
-        capturedAt: gps.capturedAt,
-      });
-    }).catch(() => {
-      // GPS is optional for browsing. The location selector remains available
-      // when permission is denied or the browser cannot provide a position.
-    });
+    // Ask explicitly through the location selector so browser permission is
+    // tied to a customer action and saved addresses are never overwritten.
+    if (user?.role === "customer" && !hasSavedDeliveryLocation()) {
+      setLocationOpen(true);
+    }
   }, [user]);
 
   useEffect(() => {

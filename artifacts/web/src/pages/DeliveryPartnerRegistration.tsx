@@ -26,6 +26,7 @@ type SignupForm = {
 };
 
 const DRAFT_KEY = "cm_delivery_simple_signup";
+const VERIFIED_PHONE_KEY = `${DRAFT_KEY}_verified_phone`;
 const steps = ["Personal details", "Documents", "Live selfie", "Review & submit"];
 const emptyForm: SignupForm = { name: "", phone: "", email: "", otp: "", aadhaarDocument: "", panDocument: "", profilePhoto: "", liveSelfie: "" };
 
@@ -44,7 +45,14 @@ export default function DeliveryPartnerRegistration() {
   const [form, setForm] = useState<SignupForm>(loadDraft);
   const [step, setStep] = useState(0);
   const [otpSent, setOtpSent] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(() => {
+    try {
+      const draft = loadDraft();
+      return !!draft.phone && localStorage.getItem(VERIFIED_PHONE_KEY) === draft.phone;
+    } catch {
+      return false;
+    }
+  });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -52,7 +60,18 @@ export default function DeliveryPartnerRegistration() {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(safe));
   }, [form]);
 
-  const update = <K extends keyof SignupForm>(key: K, value: SignupForm[K]) => setForm((current) => ({ ...current, [key]: value }));
+  const update = <K extends keyof SignupForm>(key: K, value: SignupForm[K]) => {
+    if (key === "phone" && value !== form.phone) {
+      setOtpSent(false);
+      setOtpVerified(false);
+      localStorage.removeItem(VERIFIED_PHONE_KEY);
+    }
+    setForm((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "phone" && value !== current.phone) next.otp = "";
+      return next;
+    });
+  };
   const message = (title: string, description?: string, destructive = false) => toast({ title, description, variant: destructive ? "destructive" : undefined, duration: 2500 });
 
   const sendOtp = async (): Promise<void> => {
@@ -60,7 +79,7 @@ export default function DeliveryPartnerRegistration() {
     setBusy(true);
     try {
       await customFetch("/api/auth/delivery-otp/send", { method: "POST", body: JSON.stringify({ phone: form.phone }) });
-      setOtpSent(true); setStep(0);
+      setOtpSent(true); setOtpVerified(false); localStorage.removeItem(VERIFIED_PHONE_KEY); setStep(0);
       message("OTP sent", testMode.allowDemoOtp ? `Demo OTP: ${testMode.demoOtpCode}` : "Enter the code sent to your phone.");
     } catch (error) { message("OTP failed", getFriendlyErrorMessage(error, "Could not send OTP."), true); } finally { setBusy(false); }
   };
@@ -69,7 +88,7 @@ export default function DeliveryPartnerRegistration() {
     setBusy(true);
     try {
       await customFetch("/api/auth/delivery-otp/verify", { method: "POST", body: JSON.stringify({ phone: form.phone, otp: form.otp }) });
-      setOtpVerified(true); message("Mobile verified");
+      setOtpVerified(true); localStorage.setItem(VERIFIED_PHONE_KEY, form.phone); message("Mobile verified"); setStep(1);
     } catch (error) { message("OTP failed", getFriendlyErrorMessage(error, "Invalid or expired OTP."), true); } finally { setBusy(false); }
   };
 
@@ -111,7 +130,7 @@ export default function DeliveryPartnerRegistration() {
         method: "POST",
         body: JSON.stringify({ ...form, role: "delivery_partner", selectedZoneId: zone.id, currentLatitude: gps.lat, currentLongitude: gps.lng }),
       });
-      localStorage.removeItem(DRAFT_KEY); login(response.token); message("Application submitted", "Your delivery partner application is now under admin review."); setLocation("/delivery");
+      localStorage.removeItem(DRAFT_KEY); localStorage.removeItem(VERIFIED_PHONE_KEY); login(response.token); message("Application submitted", "Your delivery partner application is now under admin review."); setLocation("/delivery");
     } catch (error) { message("Registration failed", getFriendlyErrorMessage(error, "Could not submit your application."), true); } finally { setBusy(false); }
   };
 
@@ -132,7 +151,7 @@ export default function DeliveryPartnerRegistration() {
         {step === 0 && <section className="space-y-4"><Field label="Full name *" value={form.name} onChange={(value) => update("name", value.replace(/[^A-Za-z .]/g, ""))} /><Field label="Mobile number *" value={form.phone} onChange={(value) => update("phone", value.replace(/\D/g, "").slice(0, 10))} inputMode="tel" disabled={otpVerified} /><Field label="Email *" value={form.email} onChange={(value) => update("email", value)} type="email" /><Button type="button" variant="outline" className="h-12 w-full" onClick={sendOtp} disabled={busy || otpVerified}>{otpVerified ? "Mobile verified" : otpSent ? "Resend OTP" : "Send mobile OTP"}</Button>{otpSent && <div className="space-y-2"><Field label="OTP" value={form.otp} onChange={(value) => update("otp", value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" /><Button type="button" className="h-12 w-full" onClick={verifyOtp} disabled={busy || otpVerified}>{otpVerified ? "OTP verified" : "Verify OTP"}</Button></div>}</section>}
         {step === 1 && <section className="space-y-5"><DocumentCard label="Aadhaar card *" value={form.aadhaarDocument} onFile={(file) => setFile("aadhaarDocument", file)} /><DocumentCard label="PAN card *" value={form.panDocument} onFile={(file) => setFile("panDocument", file)} /><DocumentCard label="Profile photo *" value={form.profilePhoto} onFile={(file) => setFile("profilePhoto", file)} imageOnly capture /><p className="flex items-start gap-2 rounded-xl bg-blue-50 p-3 text-xs text-blue-800"><LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" /> Aadhaar and PAN files are stored privately for admin review only.</p></section>}
         {step === 2 && <section className="space-y-4"><div className="rounded-2xl bg-blue-50 p-4 text-sm text-blue-900"><p className="font-bold">Camera-only live selfie</p><p className="mt-1">Gallery and file upload are not available. Keep one face visible and follow the camera check.</p></div><LiveFaceCapture value={form.liveSelfie} onCapture={(image) => update("liveSelfie", image)} /></section>}
-        {step === 3 && <section className="space-y-4"><Review label="Name" value={form.name} /><Review label="Mobile" value={`${form.phone} ${otpVerified ? "(verified)" : ""}`} /><Review label="Email" value={form.email} /><Review label="Aadhaar" value={form.aadhaarDocument ? "Document ready" : "Missing"} /><Review label="PAN" value={form.panDocument ? "Document ready" : "Missing"} /><Review label="Profile photo" value={form.profilePhoto ? "Ready" : "Missing"} /><Review label="Live selfie" value={form.liveSelfie ? "Camera capture ready" : "Missing"} /><div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 className="mb-2 h-5 w-5" />Submit করলে current GPS থেকে active rider zone যাচাই হবে। Application status হবে Under Review.</div></section>}
+        {step === 3 && <section className="space-y-4"><Review label="Name" value={form.name} /><Review label="Mobile" value={`${form.phone} ${otpVerified ? "(verified)" : ""}`} /><Review label="Email" value={form.email} /><Review label="Aadhaar" value={form.aadhaarDocument ? "Document ready" : "Missing"} /><Review label="PAN" value={form.panDocument ? "Document ready" : "Missing"} /><Review label="Profile photo" value={form.profilePhoto ? "Ready" : "Missing"} /><Review label="Live selfie" value={form.liveSelfie ? "Camera capture ready" : "Missing"} /><div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 className="mb-2 h-5 w-5" />When you submit, your current GPS location will be checked against an active rider zone. Your application status will be Under Review.</div></section>}
         <div className="mt-7 flex gap-3"><Button type="button" variant="outline" className="h-12 flex-1" onClick={() => setStep((current) => Math.max(0, current - 1))} disabled={step === 0 || busy}>Back</Button>{step < 3 ? <Button type="button" className="h-12 flex-1" onClick={next} disabled={busy}>{step === 0 && !otpVerified ? "Verify mobile first" : "Continue"}</Button> : <Button type="button" className="h-12 flex-1" onClick={submit} disabled={busy}>{busy ? "Submitting..." : "Submit application"}</Button>}</div>
       </CardContent></Card>
     </div>
