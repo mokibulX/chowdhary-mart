@@ -6,6 +6,7 @@ loadEnv();
 export default defineConfig({
   schema: "./src/schema/*.ts",
   dialect: "postgresql",
+  schemaFilter: ["public"],
   dbCredentials: {
     url: getDatabaseUrl({ direct: true, required: true })!,
   },
