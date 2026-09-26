@@ -1,12 +1,13 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowLeft, Home, LayoutDashboard, Package, ShoppingBag, Store, LogOut, Menu, Wallet, Boxes, Search } from "lucide-react";
+import { ArrowLeft, Home, LayoutDashboard, Package, ShoppingBag, Store, LogOut, Menu, Wallet, Boxes, Search, ChefHat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
-const NAV = [
+const VENDOR_NAV = [
   { href: "/vendor", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/food-partner", label: "Food Partner", icon: ChefHat },
   { href: "/vendor/orders", label: "Orders", icon: ShoppingBag },
   { href: "/vendor/find-order", label: "Find Order", icon: Search },
   { href: "/vendor/stock", label: "Stock", icon: Boxes },
@@ -15,14 +16,22 @@ const NAV = [
   { href: "/vendor/wallet", label: "Wallet", icon: Wallet },
 ];
 
+const FOOD_PARTNER_NAV = [
+  { href: "/food-partner", label: "Food Partner", icon: ChefHat },
+  { href: "/food-partner/orders", label: "Food Orders", icon: ShoppingBag },
+  { href: "/food-partner/menu", label: "Food Menu", icon: Package },
+  { href: "/food-partner/restaurant", label: "Restaurant", icon: Store },
+];
+
 export function VendorLayout({ children }: { children: ReactNode }) {
   const { user, confirmLogout } = useAuth();
   const [location] = useLocation();
+  const navigation = String(user?.role ?? "").toLowerCase() === "food_partner" ? FOOD_PARTNER_NAV : VENDOR_NAV;
 
   const navItems = (mobile = false) => (
     <nav className={mobile ? "space-y-1" : "flex-1 p-3 space-y-1"}>
-      {NAV.map(({ href, label, icon: Icon }) => {
-        const active = href === "/" ? location === href : href === "/vendor" ? location === href : location.startsWith(href);
+      {navigation.map(({ href, label, icon: Icon }) => {
+        const active = href === "/" ? location === href : ["/vendor", "/food-partner"].includes(href) ? location === href : location.startsWith(href);
         const item = (
           <div
             className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${

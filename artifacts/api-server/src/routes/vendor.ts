@@ -14,7 +14,7 @@ import { advanceDeliveryOffer, cancelDeliveryOffers } from "../lib/delivery-offe
 
 const router = Router();
 
-router.use(requireAuth, requireRole("vendor", "admin"), requireApprovedVendor);
+router.use(requireAuth, requireRole("vendor", "food_partner", "admin"), requireApprovedVendor);
 
 let mediaLibraryReady: Promise<void> | null = null;
 let barcodeMasterReady: Promise<void> | null = null;

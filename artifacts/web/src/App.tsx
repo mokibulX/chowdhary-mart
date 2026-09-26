@@ -8,6 +8,8 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 
 const NotFound = lazy(() => import("@/pages/not-found"));
 const Home = lazy(() => import("@/pages/Home"));
+const Food = lazy(() => import("@/pages/Food"));
+const Travels = lazy(() => import("@/pages/Travels"));
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
 const SellerRegister = lazy(() => import("@/pages/SellerRegister"));
@@ -38,6 +40,7 @@ const VendorOrders = lazy(() => import("@/pages/vendor/VendorOrders"));
 const VendorProducts = lazy(() => import("@/pages/vendor/VendorProducts"));
 const VendorStock = lazy(() => import("@/pages/vendor/VendorStock"));
 const VendorStore = lazy(() => import("@/pages/vendor/VendorStore"));
+const FoodPartner = lazy(() => import("@/pages/vendor/FoodPartner"));
 
 const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
 const AdminIncentives = lazy(() => import("@/pages/admin/AdminIncentives"));
@@ -91,6 +94,7 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: s
   if (roles && !roles.includes(role)) {
     if (role === "delivery_partner") setLocation("/delivery");
     else if (role === "vendor") setLocation("/vendor");
+    else if (role === "food_partner") setLocation("/food-partner");
     else if (role === "admin") setLocation("/admin/dashboard");
     else setLocation("/");
     return null;
@@ -107,6 +111,7 @@ function DeliveryPartnerCustomerBlock({ children }: { children: React.ReactNode 
   const role = canonicalRole(user?.role);
   if (role === "delivery_partner") return <Redirect to="/delivery" />;
   if (role === "vendor") return <Redirect to="/vendor" />;
+  if (role === "food_partner") return <Redirect to="/food-partner" />;
   return <>{children}</>;
 }
 
@@ -142,10 +147,22 @@ function VendorRoute({ component: Component }: { component: ComponentType }) {
   );
 }
 
+function FoodPartnerRoute({ component: Component }: { component: ComponentType }) {
+  return (
+    <RequireAuth roles={["food_partner", "admin"]}>
+      <VendorLayout>
+        <ApprovedVendorGate>
+          <Component />
+        </ApprovedVendorGate>
+      </VendorLayout>
+    </RequireAuth>
+  );
+}
+
 function ApprovedVendorGate({ children }: { children: React.ReactNode }) {
   const { user, confirmLogout } = useAuth();
   const role = canonicalRole(user?.role);
-  if (role === "admin" || (role === "vendor" && (user as any)?.vendorStatus === "approved")) {
+  if (role === "admin" || (["vendor", "food_partner"].includes(role) && (user as any)?.vendorStatus === "approved")) {
     return <>{children}</>;
   }
   return (
@@ -256,6 +273,10 @@ function Router() {
       <Route path="/vendor/products">{() => <VendorRoute component={VendorProducts} />}</Route>
       <Route path="/vendor/stock">{() => <VendorRoute component={VendorStock} />}</Route>
       <Route path="/vendor/store">{() => <VendorRoute component={VendorStore} />}</Route>
+      <Route path="/food-partner">{() => <FoodPartnerRoute component={FoodPartner} />}</Route>
+      <Route path="/food-partner/restaurant">{() => <FoodPartnerRoute component={VendorStore} />}</Route>
+      <Route path="/food-partner/menu">{() => <FoodPartnerRoute component={VendorProducts} />}</Route>
+      <Route path="/food-partner/orders">{() => <FoodPartnerRoute component={VendorOrders} />}</Route>
       <Route path="/vendor/wallet">{() => <VendorRoute component={Wallet} />}</Route>
       <Route path="/vendor/find-order">{() => <VendorRoute component={FindOrder} />}</Route>
 
@@ -269,7 +290,7 @@ function Router() {
       {/* Protected customer routes */}
       <Route path="/cart">{() => <ProtectedCustomerRoute component={Cart} />}</Route>
       <Route path="/checkout">{() => <ProtectedCustomerRoute component={Checkout} />}</Route>
-      <Route path="/orders">{() => <ProtectedCustomerRoute component={Orders} />}</Route>
+      <Route path="/orders">{() => <CustomerRoute component={Orders} />}</Route>
       <Route path="/orders/:orderId/confirmed">{(params) => <ProtectedCustomerRoute component={() => <OrderConfirmation />} />}</Route>
       <Route path="/orders/:orderId">{(params) => <ProtectedCustomerRoute component={() => <OrderDetail />} />}</Route>
       <Route path="/track/:orderId">{(params) => <ProtectedCustomerRoute component={() => <Track />} />}</Route>
@@ -284,6 +305,8 @@ function Router() {
       <Route path="/privacy">{() => <ProtectedCustomerRoute component={PrivacySettings} />}</Route>
 
       {/* Public customer routes */}
+      <Route path="/food">{() => <CustomerRoute component={Food} />}</Route>
+      <Route path="/travels">{() => <CustomerRoute component={Travels} />}</Route>
       <Route path="/coupons">{() => <CustomerRoute component={Coupons} />}</Route>
       <Route path="/search">{() => <CustomerRoute component={Search} />}</Route>
       <Route path="/store/:storeId">{(params) => <CustomerRoute component={() => <Store />} />}</Route>

@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowRightLeft, Clock, MapPin, Navigation, Phone, Search, ShoppingBag, Store, Trash2, Truck, UserRound, X } from "lucide-react";
@@ -59,6 +60,17 @@ export default function AdminOrders() {
     } catch (error) {
       toast({ title: "Order update failed", description: getFriendlyErrorMessage(error, "Please try again."), variant: "destructive" });
       return false;
+    }
+  };
+  const updatePreparationTime = async (id: number, preparationMins: number) => {
+    try {
+      const updated = await customFetch<any>(`/api/admin/orders/${id}`, { method: "PATCH", body: JSON.stringify({ preparationMins }), responseType: "json" });
+      toast({ title: "Preparation time updated", description: `${preparationMins} minutes is now visible to the customer.` });
+      refresh();
+      return updated;
+    } catch (error) {
+      toast({ title: "Preparation time update failed", description: getFriendlyErrorMessage(error, "Enter a time between 5 and 120 minutes."), variant: "destructive" });
+      return null;
     }
   };
   const deleteOrder = async (id: number) => {
@@ -268,6 +280,11 @@ export default function AdminOrders() {
             if (ok) setSelectedOrder((current: any) => current ? { ...current, status } : current);
             return ok;
           }}
+          onPreparationTime={async (id, minutes) => {
+            const updated = await updatePreparationTime(id, minutes);
+            if (updated) setSelectedOrder((current: any) => current ? { ...current, ...updated } : current);
+            return Boolean(updated);
+          }}
         />
       )}
     </div>
@@ -281,6 +298,7 @@ function AdminOrderDetail({
   onDelete,
   onClose,
   onStatusChange,
+  onPreparationTime,
 }: {
   order: any;
   actionBusy: string | null;
@@ -288,6 +306,7 @@ function AdminOrderDetail({
   onDelete: (id: number) => void;
   onClose: () => void;
   onStatusChange: (id: number, status: string) => Promise<boolean>;
+  onPreparationTime: (id: number, minutes: number) => Promise<boolean>;
 }) {
   const customer = order.customer;
   const seller = order.seller ?? order.store;
@@ -295,6 +314,7 @@ function AdminOrderDetail({
   const partnerUser = partner?.user;
   const location = order.address ?? {};
   const terminal = ["delivered", "cancelled", "returned"].includes(order.status);
+  const [preparationMins, setPreparationMins] = useState(String(order.estimatedDeliveryMins ?? 30));
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-3 sm:p-6" onClick={onClose}>
@@ -325,6 +345,11 @@ function AdminOrderDetail({
           <Button variant="ghost" className="text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => onDelete(order.id)}>
             <Trash2 className="mr-2 h-4 w-4" /> Delete
           </Button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-orange-200 bg-orange-50 p-3">
+          <label className="grid gap-1 text-sm font-semibold text-orange-950">Food preparation time (minutes)<Input className="h-9 w-44 bg-white" type="number" min={5} max={120} value={preparationMins} onChange={(event) => setPreparationMins(event.target.value)} /></label>
+          <Button size="sm" onClick={() => onPreparationTime(order.id, Number(preparationMins))}>Update customer ETA</Button>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">

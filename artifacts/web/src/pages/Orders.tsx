@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Package, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { readFoodOrders, type FoodOrder } from "@/lib/food-orders";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-yellow-100 text-yellow-700 border-yellow-200",
@@ -28,13 +29,28 @@ const FILTERS = ["all", "confirmed", "preparing", "on_the_way", "delivered", "ca
 export default function Orders() {
   const { user } = useAuth();
   const [filter, setFilter] = useState("all");
+  const [foodOrders, setFoodOrders] = useState<FoodOrder[]>(readFoodOrders);
+
+  useEffect(() => {
+    const refreshFoodOrders = () => setFoodOrders(readFoodOrders());
+    window.addEventListener("focus", refreshFoodOrders);
+    window.addEventListener("storage", refreshFoodOrders);
+    return () => {
+      window.removeEventListener("focus", refreshFoodOrders);
+      window.removeEventListener("storage", refreshFoodOrders);
+    };
+  }, []);
 
   const params = filter !== "all" ? { status: filter } : {};
   const { data: orders, isLoading } = useListOrders(params, {
     query: { enabled: !!user, queryKey: getListOrdersQueryKey(params), refetchInterval: 5000 },
   });
 
-  if (!user) {
+  const visibleFoodOrders = filter === "all"
+    ? foodOrders
+    : foodOrders.filter((order) => order.status.toLowerCase() === filter);
+
+  if (!user && !foodOrders.length) {
     return (
       <div className="text-center py-16">
         <Package className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
@@ -75,7 +91,7 @@ export default function Orders() {
 
       {isLoading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-xl" />)}</div>
-      ) : !orders?.length ? (
+      ) : !orders?.length && !visibleFoodOrders.length ? (
         <div className="rounded-2xl border bg-white px-4 py-16 text-center shadow-sm">
           <Package className="w-14 h-14 mx-auto text-muted-foreground opacity-40" />
           <p className="mt-3 font-medium text-muted-foreground">No orders yet</p>
@@ -83,7 +99,27 @@ export default function Orders() {
         </div>
       ) : (
         <div className="space-y-3">
-          {orders.map((order: any) => (
+          {visibleFoodOrders.map((order) => (
+            <div key={order.id} className="rounded-2xl border border-[#e23744]/30 bg-white p-4 shadow-sm sm:p-5" data-testid={`food-order-${order.id}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">#{order.id}</span>
+                    <Badge className="border border-blue-200 bg-blue-100 text-xs text-blue-700" variant="outline">Confirmed</Badge>
+                    <Badge className="border border-[#e23744]/20 bg-red-50 text-xs text-[#e23744]" variant="outline">Food</Badge>
+                  </div>
+                  <p className="text-sm font-medium">{order.restaurant}</p>
+                  <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{order.items.map((item) => `${item.quantity}x ${item.dish}`).join(", ")}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+                </div>
+                <div className="flex-shrink-0 text-right">
+                  <p className="font-bold">Rs.{Number(order.total).toFixed(0)}</p>
+                  <p className="text-xs text-muted-foreground">{order.paymentMethod.toUpperCase()}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+          {orders?.map((order: any) => (
             <Link key={order.id} href={`/orders/${order.id}`}>
               <div className="cursor-pointer rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md sm:p-5" data-testid={`order-${order.id}`}>
                 <div className="flex items-start justify-between gap-3">

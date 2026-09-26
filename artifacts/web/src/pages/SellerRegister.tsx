@@ -66,6 +66,7 @@ const initialForm: SellerForm = {
 
 export default function SellerRegister() {
   const [, setLocation] = useLocation();
+  const isFoodPartner = new URLSearchParams(window.location.search).get("role") === "food_partner";
   const { login } = useAuth();
   const { toast } = useToast();
   const authToast = (options: Parameters<typeof toast>[0]) => toast({ duration: 2000, ...options });
@@ -263,7 +264,7 @@ export default function SellerRegister() {
           email: form.email.trim().toLowerCase(),
           otp,
           upiId: form.upiId.trim(),
-          role: "vendor",
+          role: isFoodPartner ? "food_partner" : "vendor",
           gstNumber: form.gstNumber || undefined,
           panNumber: form.panNumber || undefined,
           selectedZoneId: Number(form.selectedZoneId),
@@ -275,7 +276,7 @@ export default function SellerRegister() {
       });
       login(res.token);
       authToast({ title: "Shop registration submitted", description: "Admin approve korle seller panel-e product add korte parben. Existing account thakleo application submit hoyeche." });
-      setLocation("/vendor");
+      setLocation(isFoodPartner ? "/food-partner" : "/vendor");
     } catch (err) {
       authToast({ title: "Registration failed", description: getFriendlyErrorMessage(err, "Could not submit shop registration. Please check the details."), variant: "destructive" });
     } finally {

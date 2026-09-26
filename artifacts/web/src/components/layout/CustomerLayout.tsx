@@ -6,6 +6,7 @@ import { customFetch, getGetCartQueryKey, useGetCart } from "@workspace/api-clie
 import {
   Bell,
   Camera,
+  CarFront,
   ChevronDown,
   Grid2X2,
   Headphones,
@@ -23,6 +24,8 @@ import {
   Settings,
   ShoppingCart,
   Store,
+  BusFront,
+  UtensilsCrossed,
   User,
   X,
   Zap,
@@ -49,6 +52,12 @@ const MOBILE_LINKS = [
   { href: "/search", label: "Search", icon: Search },
   { href: "/orders", label: "Orders", icon: Package, auth: true },
   { href: "/profile", label: "Profile", icon: User, auth: true },
+];
+
+const SERVICE_LINKS = [
+  { href: "/", label: "Shopping", icon: Store },
+  { href: "/food", label: "Food", icon: UtensilsCrossed },
+  { href: "/travels", label: "Travels", icon: BusFront },
 ];
 
 export function CustomerLayout({ children }: CustomerLayoutProps) {
@@ -83,20 +92,29 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
   });
   const cartItemCount = cart?.itemCount || 0;
   const zoneId = (deliveryLocation as DeliveryLocation & { zoneId?: number }).zoneId;
+  const activeService = location.startsWith("/food") ? "food" : location.startsWith("/travels") ? "travels" : "shopping";
+  const serviceCopy = activeService === "food"
+    ? { placeholder: "Search restaurants, dishes and cuisines", locationLabel: "Food delivery to", locationHint: "Nearby kitchens" }
+    : activeService === "travels"
+      ? { placeholder: "Search routes, cities or rides", locationLabel: "Trip start near", locationHint: "Choose pickup location" }
+      : { placeholder: "Search products, brands and local shops", locationLabel: "Deliver to", locationHint: "Live GPS near you" };
 
   const { data: suggestions, isFetching: loadingSuggestions } = useQuery({
     queryKey: ["/api/search/suggestions", debouncedSearch, zoneId],
     queryFn: () => customFetch<{ items: any[] }>(`/api/search/suggestions?q=${encodeURIComponent(debouncedSearch)}${zoneId ? `&zoneId=${zoneId}` : ""}&limit=8`),
-    enabled: suggestOpen && debouncedSearch.trim().length >= 1,
+    enabled: activeService === "shopping" && suggestOpen && debouncedSearch.trim().length >= 1,
   });
   const suggestionItems = suggestions?.items ?? [];
 
+  const serviceNavLinks = activeService === "food"
+    ? [{ href: "/food", label: "Restaurants", icon: UtensilsCrossed }, { href: "/food?q=biryani", label: "Biryani", icon: UtensilsCrossed }, { href: "/food?q=pizza", label: "Pizza", icon: UtensilsCrossed }, { href: "/food?q=burgers", label: "Burgers", icon: UtensilsCrossed }]
+    : activeService === "travels"
+      ? [{ href: "/travels?tab=bus", label: "Bus tickets", icon: BusFront }, { href: "/travels?tab=cab", label: "Book a car", icon: CarFront }, { href: "/travels?tab=bus", label: "My trips", icon: Package }]
+      : [{ href: "/search", label: "Categories", icon: Grid2X2 }, { href: "/search?category=grocery", label: "Grocery", icon: Store }, { href: "/search?category=electronics", label: "Electronics", icon: Zap }, { href: "/search?category=fashion", label: "Fashion", icon: Heart }];
+
   const desktopNavLinks = [
-    { href: "/", label: "Home", icon: Home },
-    { href: "/search", label: "Categories", icon: Grid2X2 },
-    { href: "/search?category=grocery", label: "Grocery", icon: Store },
-    { href: "/search?category=electronics", label: "Electronics", icon: Zap },
-    { href: "/search?category=fashion", label: "Fashion", icon: Heart },
+    ...SERVICE_LINKS,
+    ...serviceNavLinks,
     ...(user ? [{ href: "/orders", label: "Orders", icon: Package }] : []),
     { href: "/help", label: "Help", icon: Headphones },
     ...(user?.role === "vendor" ? [{ href: "/vendor", label: "Seller Dashboard", icon: Store }] : []),
@@ -113,6 +131,16 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
     const q = search.trim();
+    if (activeService === "food") {
+      setLocation(q ? `/food?q=${encodeURIComponent(q)}` : "/food");
+      setSuggestOpen(false);
+      return;
+    }
+    if (activeService === "travels") {
+      setLocation(q ? `/travels?search=${encodeURIComponent(q)}` : "/travels");
+      setSuggestOpen(false);
+      return;
+    }
     if (q) saveRecentSearch(q);
     setLocation(q ? `/search?q=${encodeURIComponent(q)}` : "/search");
     setSuggestOpen(false);
@@ -415,13 +443,13 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
         <Search className="ml-4 h-4 w-4 flex-shrink-0 text-gray-500" />
         <Input
           value={search}
-          onFocus={() => setSuggestOpen(true)}
+          onFocus={() => activeService === "shopping" && setSuggestOpen(true)}
           onKeyDown={handleSearchKey}
           onChange={(event) => {
             setSearch(event.target.value);
-            setSuggestOpen(true);
+            if (activeService === "shopping") setSuggestOpen(true);
           }}
-          placeholder={t("Search products, brands and local shops")}
+          placeholder={serviceCopy.placeholder}
           className="h-full min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-gray-950 shadow-none outline-none placeholder:text-gray-500 focus-visible:ring-0"
         />
         {search && (
@@ -439,7 +467,7 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
         >
           <Mic className="h-4 w-4" />
         </button>
-        <DropdownMenu>
+        {activeService === "shopping" && <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -459,12 +487,12 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
               <ImagePlus className="h-4 w-4" /> Upload photo
             </DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu>
+        </DropdownMenu>}
         <Button type="submit" size="sm" className="mr-1.5 hidden h-8 rounded-xl bg-orange-500 px-4 text-xs font-bold hover:bg-orange-600 lg:inline-flex">
           Search
         </Button>
       </div>
-      {suggestOpen && (
+      {activeService === "shopping" && suggestOpen && (
         <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 max-h-[70vh] overflow-hidden rounded-2xl border bg-white text-gray-950 shadow-2xl shadow-blue-950/20 animate-in fade-in-0 zoom-in-95 duration-150">
           {debouncedSearch.length >= 1 ? (
             loadingSuggestions ? (
@@ -539,11 +567,22 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
           <button type="button" onClick={() => setLocationOpen(true)} className="flex w-full items-center gap-2 rounded-2xl border border-[#ffb36b]/35 bg-white/10 px-3 py-2 text-left text-xs leading-tight shadow-inner shadow-white/5">
             <MapPin className="h-4 w-4 flex-shrink-0 text-[#ffd166]" />
             <span className="min-w-0">
-              <span className="block truncate font-semibold">Deliver to {deliveryLocation.area || "Live GPS"}</span>
+              <span className="block truncate font-semibold">{serviceCopy.locationLabel} {deliveryLocation.area || "Live GPS"}</span>
               <span className="block truncate text-white/80">{deliveryLocation.pincode || "Select location"}</span>
             </span>
           </button>
           {renderSearchBox({ mobile: true })}
+          <nav className="grid grid-cols-3 gap-2" aria-label="Services">
+            {SERVICE_LINKS.map(({ href, label, icon: Icon }) => {
+              const active = href === "/" ? location === "/" : location.startsWith(href);
+              return (
+                <Link key={label} href={href} className={`flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-bold transition-colors ${active ? "border-[#ffd166] bg-[#ff6b00] text-white" : "border-white/20 bg-white/10 text-white/85 hover:bg-white/15"}`}>
+                  <Icon className="h-4 w-4" />
+                  <span>{label}</span>
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
         <div className="hidden md:block">
@@ -552,8 +591,8 @@ export function CustomerLayout({ children }: CustomerLayoutProps) {
             <button type="button" onClick={() => setLocationOpen(true)} className="flex min-w-0 items-center gap-2 rounded-2xl border border-[#ffb36b]/35 bg-white/10 px-3 py-2.5 text-left text-xs leading-tight shadow-inner shadow-white/5 transition-colors hover:bg-white/15">
               <MapPin className="h-4 w-4 flex-shrink-0 text-[#ffd166]" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[11px] font-semibold uppercase tracking-wide text-white/65">Deliver to</span>
-                <span className="block truncate font-bold">{deliveryLocation.area || "Live GPS near you"}</span>
+                <span className="block truncate text-[11px] font-semibold uppercase tracking-wide text-white/65">{serviceCopy.locationLabel}</span>
+                <span className="block truncate font-bold">{deliveryLocation.area || serviceCopy.locationHint}</span>
                 <span className="block truncate text-white/80">{deliveryLocation.pincode || "Select pincode"}</span>
               </span>
               <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-white/70" />

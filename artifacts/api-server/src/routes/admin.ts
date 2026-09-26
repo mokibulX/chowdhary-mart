@@ -18,6 +18,7 @@ import { ensureFinanceTables, ensureWallet, getFinanceSettings, settleCompletedO
 import { ensurePricingSchema } from "../lib/pricing";
 import { DEFAULT_LOCATION } from "../lib/default-location";
 import { advanceDeliveryOffer, cancelDeliveryOffers } from "../lib/delivery-offers";
+import { createAndPushNotification } from "../lib/push-service";
 
 const router = Router();
 
@@ -1456,6 +1457,35 @@ router.patch("/orders/:orderId", async (req: AuthRequest, res) => {
       await cancelDeliveryOffers(orderId);
       void advanceDeliveryOffer(orderId).catch((error) => req.log.error(error));
       res.json({ message: "Delivery handover started", orderId });
+      return;
+    }
+    if (req.body?.preparationMins !== undefined) {
+      const preparationMins = Math.round(Number(req.body.preparationMins));
+      if (!Number.isFinite(preparationMins) || preparationMins < 5 || preparationMins > 120) {
+        res.status(400).json({ error: "Preparation time must be between 5 and 120 minutes." });
+        return;
+      }
+      const [existing] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).limit(1);
+      if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
+      const nextStatus = ["pending", "confirmed"].includes(existing.status) ? "preparing" : existing.status;
+      const [order] = await db.update(ordersTable).set({
+        estimatedDeliveryMins: preparationMins,
+        status: nextStatus,
+        updatedAt: new Date(),
+      }).where(eq(ordersTable.id, orderId)).returning();
+      await db.insert(orderTrackingTable).values({
+        orderId,
+        status: nextStatus,
+        message: `Admin set food preparation time to ${preparationMins} minutes`,
+      });
+      void createAndPushNotification({
+        userId: existing.userId,
+        type: "order_confirmed",
+        title: "Food preparation update",
+        body: `Your order #${existing.orderNumber} is being prepared. Estimated preparation time: ${preparationMins} minutes.`,
+        data: { orderId, orderNumber: existing.orderNumber, status: nextStatus, preparationMins },
+      }).catch((error: unknown) => req.log.warn({ err: error, orderId }, "Food preparation notification failed"));
+      res.json(order);
       return;
     }
     const status = String(req.body.status ?? "");
