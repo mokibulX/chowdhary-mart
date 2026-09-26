@@ -3,7 +3,7 @@ services:
     name: chowdharymart-api
     runtime: node
     plan: starter
-    buildCommand: pnpm install --frozen-lockfile && pnpm run render:build
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm run render:build
     startCommand: pnpm run start
     healthCheckPath: /api/health
     autoDeploy: true
@@ -42,7 +42,7 @@ services:
   - type: web
     name: chowdharymart-web
     runtime: static
-    buildCommand: pnpm install --frozen-lockfile && pnpm run render:web:build
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm run render:web:build
     staticPublishPath: artifacts/web/dist/public
     autoDeploy: true
     envVars:
