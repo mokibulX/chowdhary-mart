@@ -17,16 +17,19 @@ export function deliveryOtp(orderId: number) {
 export async function expireOrderIfNeeded(order: typeof ordersTable.$inferSelect) {
   if (["cancelled", "delivered", "picked_up", "on_the_way", "arriving"].includes(order.status)) return order;
   const tracking = await db.select().from(orderTrackingTable).where(eq(orderTrackingTable.orderId, order.id));
-  const sellerAccepted = tracking.find((item) => item.message?.includes("Seller accepted"));
+  const sellerAccepted = tracking.find((item) => item.message?.includes("Seller accepted") || item.message?.includes("Restaurant auto-accepted"));
   const riderAccepted = tracking.find((item) => item.message?.includes("Delivery partner accepted"));
+  const latestPreparation = [...tracking].reverse().find((item) => /Preparation time set to \d+ minutes/i.test(item.message ?? ""));
+  const preparationMatch = latestPreparation?.message?.match(/Preparation time set to (\d+) minutes/i);
+  const preparationWindowMs = (Number(preparationMatch?.[1]) || SELLER_PREPARATION_MS / 60_000) * 60_000;
   const now = Date.now();
   let reason = "";
   // Keep the pending order visible throughout the seller's five-minute
   // decision window. Refreshing the page does not shorten that window.
   if (order.status === "pending" && now > new Date(order.createdAt).getTime() + SELLER_DECISION_MS) {
     reason = "Seller did not respond within 5 minutes";
-  } else if (["confirmed", "preparing"].includes(order.status) && sellerAccepted && now > new Date(sellerAccepted.updatedAt).getTime() + SELLER_PREPARATION_MS) {
-    reason = "Seller did not mark the order ready within 10 minutes";
+  } else if (["confirmed", "preparing"].includes(order.status) && sellerAccepted && now > new Date(sellerAccepted.updatedAt).getTime() + preparationWindowMs) {
+    reason = `Seller did not mark the order ready within ${Math.round(preparationWindowMs / 60_000)} minutes`;
   }
   if (!reason) return order;
 
@@ -60,13 +63,17 @@ export async function expireOrderIfNeeded(order: typeof ordersTable.$inferSelect
   return cancelled;
 }
 
-export async function lifecycleMeta(order: typeof ordersTable.$inferSelect) {
+export async function lifecycleMeta(order: typeof ordersTable.$inferSelect, defaultPreparationMinutes = 10) {
   const tracking = await db.select().from(orderTrackingTable).where(eq(orderTrackingTable.orderId, order.id));
-  const sellerAccepted = tracking.find((item) => item.message?.includes("Seller accepted"));
+  const sellerAccepted = tracking.find((item) => item.message?.includes("Seller accepted") || item.message?.includes("Restaurant auto-accepted"));
   const riderAccepted = tracking.find((item) => item.message?.includes("Delivery partner accepted"));
+  const latestPreparation = [...tracking].reverse().find((item) => /Preparation time set to \d+ minutes/i.test(item.message ?? ""));
+  const overrideMatch = latestPreparation?.message?.match(/Preparation time set to (\d+) minutes/i);
+  const preparationMinutes = Math.max(1, Number(overrideMatch?.[1] ?? defaultPreparationMinutes) || defaultPreparationMinutes);
   return {
     sellerDecisionDeadline: new Date(new Date(order.createdAt).getTime() + SELLER_DECISION_MS).toISOString(),
-    preparationDeadline: sellerAccepted ? new Date(new Date(sellerAccepted.updatedAt).getTime() + SELLER_PREPARATION_MS).toISOString() : null,
+    preparationDeadline: sellerAccepted ? new Date(new Date(sellerAccepted.updatedAt).getTime() + preparationMinutes * 60_000).toISOString() : null,
+    preparationMinutes,
     pickupDeadline: riderAccepted ? new Date(new Date(riderAccepted.updatedAt).getTime() + RIDER_PICKUP_MS).toISOString() : null,
     pickupOtp: pickupOtp(order.id),
     deliveryOtp: deliveryOtp(order.id),

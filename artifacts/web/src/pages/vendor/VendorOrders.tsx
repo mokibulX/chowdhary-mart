@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { customFetch, getGetVendorDashboardQueryKey, getListVendorOrdersQueryKey, useListVendorOrders, useUpdateOrderStatus } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, Eye, FileText, Package, Printer, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, Clock3, Eye, FileText, MoreVertical, Package, Printer, Trash2, XCircle } from "lucide-react";
 
 const NEXT_STATUS: Record<string, string> = { pending: "confirmed", confirmed: "packed", preparing: "packed" };
 const STATUS_COLORS: Record<string, string> = {
@@ -52,6 +52,9 @@ export default function VendorOrders() {
   const [customReason, setCustomReason] = useState("");
   const [clearingOrderId, setClearingOrderId] = useState<number | null>(null);
   const [isClearingAll, setIsClearingAll] = useState(false);
+  const [actionMenuOrderId, setActionMenuOrderId] = useState<number | null>(null);
+  const [updatingPreparationFor, setUpdatingPreparationFor] = useState<number | null>(null);
+  const isFoodPartner = user?.role === "food_partner";
 
   const params = filter !== "all" ? { status: filter } : {};
   const { data: orders, isLoading, isError, refetch } = useListVendorOrders(params, {
@@ -93,6 +96,26 @@ export default function VendorOrders() {
         },
       },
     );
+  };
+
+  const extendPreparationTime = async (order: any, additionalMinutes: number) => {
+    const currentMinutes = Number(order.lifecycle?.preparationMinutes ?? 10);
+    const minutes = Math.min(240, currentMinutes + additionalMinutes);
+    setUpdatingPreparationFor(Number(order.id));
+    try {
+      await customFetch(`/api/vendor/orders/${order.id}/preparation-time`, {
+        method: "PATCH",
+        body: JSON.stringify({ minutes }),
+        responseType: "json",
+      });
+      refresh();
+      toast({ title: "Preparation time updated", description: `Customer now sees ${minutes} minutes.` });
+      setActionMenuOrderId(null);
+    } catch (error: any) {
+      toast({ title: "Could not update time", description: error?.data?.error ?? "Please try again.", variant: "destructive" });
+    } finally {
+      setUpdatingPreparationFor(null);
+    }
   };
 
   const openDecision = (order: any, type: "reject" | "cancel") => {
@@ -209,29 +232,52 @@ export default function VendorOrders() {
           <p>No orders {filter !== "all" ? `with status "${STATUS_LABEL[filter]}"` : "yet"}</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className={isFoodPartner ? "grid gap-4 lg:grid-cols-4" : "space-y-3"}>
           {(orders as any[]).map((order: any) => {
             const nextStatus = NEXT_STATUS[order.status];
-            const pickupOtp = order.tracking?.pickupOtp ?? order.liveTracking?.pickupOtp;
+            const isKitchenOrder = isFoodPartner && ["confirmed", "preparing"].includes(order.status);
+            const isPickedUp = isFoodPartner && ["picked_up", "on_the_way", "arriving", "delivered"].includes(order.status);
+            const billTail = String(order.invoiceNumber ?? order.orderNumber ?? order.id).replace(/[^a-zA-Z0-9]/g, "").slice(-4).toUpperCase();
             return (
-              <div key={order.id} className="rounded-xl border bg-white p-4" data-testid={`order-${order.id}`}>
+              <div key={order.id} className={`relative border bg-white p-4 shadow-sm ${isFoodPartner ? "flex min-w-0 flex-col rounded-lg" : "rounded-xl"}`} data-testid={`order-${order.id}`}>
                 <div className="mb-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="max-w-full break-all font-bold">#{order.orderNumber}</span>
                       <Badge className={`border-0 text-xs ${STATUS_COLORS[order.status] ?? "bg-gray-100 text-gray-700"}`}>{STATUS_LABEL[order.status] ?? order.status}</Badge>
-                      <Badge variant="outline" className="text-xs capitalize">{order.paymentMethod} / {order.paymentStatus}</Badge>
+                      {!isFoodPartner && <Badge variant="outline" className="text-xs capitalize">{order.paymentMethod} / {order.paymentStatus}</Badge>}
                     </div>
                     <p className="mt-0.5 text-sm text-muted-foreground">{new Date(order.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
-                    <p className="text-xs text-muted-foreground">Invoice: {order.invoiceNumber ?? "Will generate on print"}</p>
+                    {!isFoodPartner && <p className="text-xs text-muted-foreground">Invoice: {order.invoiceNumber ?? "Will generate on print"}</p>}
                   </div>
-                  <span className="whitespace-nowrap text-base font-bold sm:text-lg">Rs.{Number(order.total).toFixed(0)}</span>
+                  {isFoodPartner ? (
+                    <div className="flex items-start gap-1">
+                      <button type="button" onClick={() => logAndPrint(order, "customer_bill")} className="rounded-md bg-amber-50 px-2 py-1 text-right hover:bg-amber-100" title="Print bill" data-testid={`btn-bill-${order.id}`}>
+                        <span className="block text-[10px] font-semibold uppercase text-amber-700">Bill #{billTail}</span>
+                        <span className="block text-lg font-extrabold leading-5 text-amber-950">Rs.{Number(order.total).toFixed(0)}</span>
+                      </button>
+                      <div className="relative">
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setActionMenuOrderId((current) => current === order.id ? null : order.id)} aria-label="Order actions" data-testid={`btn-order-actions-${order.id}`}>
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                        {actionMenuOrderId === order.id && (
+                          <div className="absolute right-0 z-20 mt-1 w-48 rounded-lg border bg-white p-1 shadow-lg">
+                            {isKitchenOrder && <>
+                              <button type="button" className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => void extendPreparationTime(order, 5)} disabled={updatingPreparationFor === order.id}>Add 5 minutes</button>
+                              <button type="button" className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-gray-50" onClick={() => void extendPreparationTime(order, 10)} disabled={updatingPreparationFor === order.id}>Add 10 minutes</button>
+                            </>}
+                            {["pending", "confirmed", "packed", "preparing"].includes(order.status) && <button type="button" className="w-full rounded-md px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50" onClick={() => { setActionMenuOrderId(null); openDecision(order, order.status === "pending" ? "reject" : "cancel"); }}>Cancel order</button>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : <span className="whitespace-nowrap text-base font-bold sm:text-lg">Rs.{Number(order.total).toFixed(0)}</span>}
                 </div>
 
-                {order.addressSnapshot && (
+                {(order.customerAddress ?? order.addressSnapshot) && (
                   <div className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-muted-foreground">
-                    <p className="font-medium text-foreground">Deliver to: {maskIfClosed(order, order.addressSnapshot.name)} · {maskIfClosed(order, order.addressSnapshot.phone)}</p>
-                    <p>{maskAddressIfClosed(order, order.addressSnapshot)}</p>
+                    <p className="font-medium text-foreground">Customer: {maskIfClosed(order, (order.customerAddress ?? order.addressSnapshot).name)} · {maskIfClosed(order, (order.customerAddress ?? order.addressSnapshot).phone)}</p>
+                    <p>{isFoodPartner ? shortCustomerAddress(order, order.customerAddress ?? order.addressSnapshot) : maskAddressIfClosed(order, order.customerAddress ?? order.addressSnapshot)}</p>
                   </div>
                 )}
 
@@ -239,33 +285,39 @@ export default function VendorOrders() {
                   {(order.items ?? []).map((item: any) => <OrderItemRow key={item.orderItemId ?? item.id} item={item} />)}
                 </div>
 
-                {["confirmed", "packed"].includes(order.status) && pickupOtp && (
-                  <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-                    <p className="font-semibold">Pickup OTP for delivery partner</p>
-                    <p className="mt-1 text-2xl font-bold tracking-widest">{pickupOtp}</p>
-                    <p className="text-xs">Give this OTP only after the partner reaches your shop and receives the product.</p>
+                {isKitchenOrder && <KitchenPreparationCard order={order} />}
+
+                {isPickedUp && (
+                  <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                    <p className="font-semibold">Order picked up</p>
+                    <p className="mt-1 text-xs">The delivery partner has collected this order and is taking it to the customer.</p>
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  <Button size="sm" variant="outline" onClick={() => setSelectedOrder(order)} data-testid={`btn-view-${order.id}`}>
+                {isFoodPartner && String(order.notes ?? order.deliveryInstruction ?? "").trim() && (
+                  <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+                    <p className="font-semibold">Customer message</p>
+                    <p className="mt-1 text-xs leading-5">{String(order.notes ?? order.deliveryInstruction).trim()}</p>
+                  </div>
+                )}
+
+                <div className={`mt-auto grid grid-cols-2 gap-2 ${isFoodPartner ? "pt-1" : "sm:grid-cols-3"}`}>
+                  {!isFoodPartner && <Button size="sm" variant="outline" onClick={() => setSelectedOrder(order)} data-testid={`btn-view-${order.id}`}>
                     <Eye className="mr-2 h-4 w-4" />Details
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => logAndPrint(order, "customer_bill")} data-testid={`btn-print-${order.id}`}>
+                  </Button>}
+                  {!isFoodPartner && <Button size="sm" variant="outline" onClick={() => logAndPrint(order, "customer_bill")} data-testid={`btn-print-${order.id}`}>
                     <Printer className="mr-2 h-4 w-4" />Print bill
-                  </Button>
+                  </Button>}
                   {order.status === "pending" && (
-                    <Button size="sm" variant="destructive" onClick={() => openDecision(order, "reject")} disabled={updateStatus.isPending} data-testid={`btn-reject-${order.id}`}>
-                      <XCircle className="mr-2 h-4 w-4" />Reject
-                    </Button>
+                    isFoodPartner ? <Button size="sm" className="col-span-2 bg-emerald-600 hover:bg-emerald-700" onClick={() => handleUpdate(order.id, "confirmed")} disabled={updateStatus.isPending} data-testid={`btn-next-${order.id}`}>Accept order</Button> : <Button size="sm" variant="destructive" onClick={() => openDecision(order, "reject")} disabled={updateStatus.isPending} data-testid={`btn-reject-${order.id}`}><XCircle className="mr-2 h-4 w-4" />Reject</Button>
                   )}
-                  {["confirmed", "packed", "preparing"].includes(order.status) && (
+                  {!isFoodPartner && ["confirmed", "packed", "preparing"].includes(order.status) && (
                     <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => openDecision(order, "cancel")} disabled={updateStatus.isPending} data-testid={`btn-cancel-accepted-${order.id}`}>
                       <AlertTriangle className="mr-2 h-4 w-4" />Cancel accepted
                     </Button>
                   )}
                   {nextStatus && !["delivered", "cancelled"].includes(order.status) && (
-                    <Button size="sm" onClick={() => handleUpdate(order.id, nextStatus)} disabled={updateStatus.isPending} data-testid={`btn-next-${order.id}`}>
+                    <Button size="sm" className={isFoodPartner && nextStatus === "packed" ? "col-span-2 bg-emerald-600 hover:bg-emerald-700" : ""} onClick={() => handleUpdate(order.id, nextStatus)} disabled={updateStatus.isPending} data-testid={`btn-next-${order.id}`}>
                       {NEXT_LABEL[order.status] ?? `Mark ${STATUS_LABEL[nextStatus]}`}
                     </Button>
                   )}
@@ -382,6 +434,28 @@ export default function VendorOrders() {
   );
 }
 
+function KitchenPreparationCard({ order }: { order: any }) {
+  const [, setNow] = useState(Date.now());
+  const minutes = Math.max(1, Number(order.lifecycle?.preparationMinutes ?? 10));
+  const deadline = order.lifecycle?.preparationDeadline ? new Date(order.lifecycle.preparationDeadline).getTime() : null;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const remaining = deadline ? Math.max(0, Math.ceil((deadline - Date.now()) / 60_000)) : minutes;
+  return (
+    <div className="mb-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-orange-950"><Clock3 className="h-4 w-4" />Kitchen preparation</div>
+      <div className="mt-1 flex items-end justify-between gap-2">
+        <span className="text-2xl font-extrabold text-orange-900">{minutes} min</span>
+        <span className="text-xs font-medium text-orange-800">{remaining > 0 ? `${remaining} min remaining` : "Time reached"}</span>
+      </div>
+    </div>
+  );
+}
+
 function OrderItemRow({ item, detailed = false }: { item: any; detailed?: boolean }) {
   const variant = [item.variantName, item.size && `Size ${item.size}`, (item.colour || item.color) && `Color ${item.colour ?? item.color}`, item.weight && `${item.weight} ${item.unit ?? ""}`].filter(Boolean).join(" · ") || "Standard";
   const details = item.productDetails ?? {};
@@ -399,6 +473,7 @@ function OrderItemRow({ item, detailed = false }: { item: any; detailed?: boolea
       <div className="min-w-0 text-sm">
         <p className="line-clamp-1 font-semibold">{item.productName ?? item.name}</p>
         <p className="text-xs text-muted-foreground">{variant}</p>
+        {!detailed && <p className="mt-1 text-xs font-medium text-slate-700">Quantity: {item.quantity ?? item.qty} · Unit price: Rs.{Number(item.sellingPrice ?? item.price ?? 0).toFixed(0)}</p>}
         {detailed && <>
           <p className="mt-1 text-xs text-muted-foreground">{detailLine || `Brand: ${item.brandName ?? "Chowdhary Mart"}`} </p>
           {details.description && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{details.description}</p>}
@@ -419,6 +494,12 @@ function Info({ label, value }: { label: string; value: string }) {
 
 function isClosedOrder(order: any) {
   return ["delivered", "cancelled"].includes(order?.status);
+}
+
+function shortCustomerAddress(order: any, address: any = {}) {
+  if (isClosedOrder(order)) return `${address.city ?? "Area"}${address.pincode ? ` - ${address.pincode}` : ""}`;
+  const line = String(address.line1 ?? address.address ?? "").split(",")[0].trim();
+  return [line, address.city, address.pincode].filter(Boolean).join(", ") || "Delivery address shared with partner";
 }
 
 function maskIfClosed(order: any, value = "") {

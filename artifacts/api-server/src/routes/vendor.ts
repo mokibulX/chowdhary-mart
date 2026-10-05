@@ -666,7 +666,6 @@ router.get("/orders", async (req: AuthRequest, res) => {
 
     const enriched = await Promise.all(orders.map(async (rawOrder) => {
       const order = await expireOrderIfNeeded(rawOrder);
-      const lifecycle = await lifecycleMeta(order);
       const [customer, savedAddress] = await Promise.all([
         db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone, email: usersTable.email })
           .from(usersTable).where(eq(usersTable.id, order.userId)).limit(1),
@@ -685,6 +684,11 @@ router.get("/orders", async (req: AuthRequest, res) => {
       const productIds = items.map((item) => item.productId).filter((id): id is number => id !== null);
       const products = productIds.length ? await db.select().from(productsTable).where(sql`${productsTable.id} in (${sql.join(productIds.map((id) => sql`${id}`), sql`, `)})`) : [];
       const productMap = new Map(products.map((product) => [product.id, product]));
+      const defaultPreparationMinutes = Math.max(1, ...products.map((product) => {
+        const specifications = product.specifications && typeof product.specifications === "object" ? product.specifications as Record<string, unknown> : {};
+        return Number(specifications.PreparationMinutes) || 0;
+      }), 10);
+      const lifecycle = await lifecycleMeta(order, defaultPreparationMinutes);
       return {
         ...order,
         store,
@@ -787,6 +791,45 @@ router.delete("/orders", async (req: AuthRequest, res) => {
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Unable to clear order history. Please try again." });
+  }
+});
+
+// PATCH /api/vendor/orders/:orderId/preparation-time
+// A restaurant can revise its kitchen estimate without changing the delivery state.
+router.patch("/orders/:orderId/preparation-time", async (req: AuthRequest, res) => {
+  try {
+    const orderId = Number(req.params.orderId);
+    const minutes = Number(req.body?.minutes);
+    if (!Number.isInteger(orderId) || orderId <= 0 || !Number.isInteger(minutes) || minutes < 1 || minutes > 240) {
+      res.status(400).json({ error: "Preparation time must be between 1 and 240 minutes." });
+      return;
+    }
+    const store = await getVendorStore(req.user!.userId);
+    if (!store || !(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "Order is outside your service zone." }); return; }
+    const [order] = await db.select().from(ordersTable)
+      .where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, store.id)))
+      .limit(1);
+    if (!order) { res.status(404).json({ error: "Order not found in your restaurant." }); return; }
+    if (!["confirmed", "preparing"].includes(order.status)) {
+      res.status(409).json({ error: "Preparation time can only be changed for an accepted order." });
+      return;
+    }
+    await db.insert(orderTrackingTable).values({
+      orderId,
+      status: order.status,
+      message: `Preparation time set to ${minutes} minutes`,
+    });
+    void createAndPushNotification({
+      userId: order.userId,
+      type: "order_confirmed",
+      title: "Preparation time updated",
+      body: `Your restaurant is preparing order #${order.orderNumber}. Estimated preparation time: ${minutes} minutes.`,
+      data: { orderId, orderNumber: order.orderNumber, preparationMinutes: minutes },
+    }).catch((notificationError) => req.log.warn({ err: notificationError, orderId }, "Preparation-time notification failed"));
+    res.json({ success: true, orderId, preparationMinutes: minutes });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Could not update the preparation time." });
   }
 });
 

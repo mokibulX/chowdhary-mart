@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { eq, ilike, and, desc, asc, inArray, sql, or } from "drizzle-orm";
-import { db, productsTable, categoriesTable, storesTable, reviewsTable } from "@workspace/db";
+import { db, productsTable, categoriesTable, storesTable, reviewsTable, usersTable } from "@workspace/db";
 import { toPublicStore } from "../lib/public-store";
 import { getActiveDeliveryZones } from "../lib/zones";
 import { ensureStoreDisplayColumns } from "../lib/store-display";
@@ -71,7 +71,7 @@ router.get("/", async (req, res) => {
   try {
     await ensureStoreDisplayColumns();
     const {
-      q, categoryId, storeId, featured,
+      q, categoryId, storeId, featured, surface = "shopping",
       limit: limitQ = "40", offset: offsetQ = "0",
       sort = "newest"
     } = req.query as Record<string, string>;
@@ -96,6 +96,16 @@ router.get("/", async (req, res) => {
       eq(storesTable.isVerified, true),
       eq(storesTable.isOpen, true),
     ];
+    // A restaurant menu is a different customer surface from shopping. This
+    // role boundary prevents prepared food appearing in Home, shopping search,
+    // category rows, or generic store browsing.
+    if (surface === "food") {
+      conditions.push(sql`${storesTable.userId} in (select ${usersTable.id} from ${usersTable} where ${usersTable.role}::text = 'food_partner')`);
+    } else if (surface === "travel") {
+      conditions.push(sql`${storesTable.userId} in (select ${usersTable.id} from ${usersTable} where ${usersTable.role}::text = 'travel_agency')`);
+    } else {
+      conditions.push(sql`${storesTable.userId} not in (select ${usersTable.id} from ${usersTable} where ${usersTable.role}::text in ('food_partner', 'travel_agency'))`);
+    }
     if (categoryId) conditions.push(eq(productsTable.categoryId, Number(categoryId)));
     if (storeId) conditions.push(eq(productsTable.storeId, Number(storeId)));
     if (featured === "true") conditions.push(eq(productsTable.isFeatured, true));
