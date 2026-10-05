@@ -95,6 +95,7 @@ function RequireAuth({ children, roles }: { children: React.ReactNode; roles?: s
     if (role === "delivery_partner") setLocation("/delivery");
     else if (role === "vendor") setLocation("/vendor");
     else if (role === "food_partner") setLocation("/food-partner");
+    else if (role === "travel_agency") setLocation("/travel-agency");
     else if (role === "admin") setLocation("/admin/dashboard");
     else setLocation("/");
     return null;
@@ -112,6 +113,7 @@ function DeliveryPartnerCustomerBlock({ children }: { children: React.ReactNode 
   if (role === "delivery_partner") return <Redirect to="/delivery" />;
   if (role === "vendor") return <Redirect to="/vendor" />;
   if (role === "food_partner") return <Redirect to="/food-partner" />;
+  if (role === "travel_agency") return <Redirect to="/travel-agency" />;
   return <>{children}</>;
 }
 
@@ -137,7 +139,7 @@ function ProtectedCustomerRoute({ component: Component }: { component: Component
 
 function VendorRoute({ component: Component }: { component: ComponentType }) {
   return (
-    <RequireAuth roles={["vendor", "admin"]}>
+    <RequireAuth roles={["vendor", "travel_agency", "admin"]}>
       <VendorLayout>
         <ApprovedVendorGate>
           <Component />
@@ -162,7 +164,7 @@ function FoodPartnerRoute({ component: Component }: { component: ComponentType }
 function ApprovedVendorGate({ children }: { children: React.ReactNode }) {
   const { user, confirmLogout } = useAuth();
   const role = canonicalRole(user?.role);
-  if (role === "admin" || (["vendor", "food_partner"].includes(role) && (user as any)?.vendorStatus === "approved")) {
+  if (role === "admin" || (["vendor", "food_partner", "travel_agency"].includes(role) && (user as any)?.vendorStatus === "approved")) {
     return <>{children}</>;
   }
   return (
@@ -245,6 +247,9 @@ function Router() {
       {/* Auth */}
       <Route path="/login" component={Login} />
       <Route path="/seller/login" component={Login} />
+      <Route path="/food-partner/login" component={Login} />
+      <Route path="/restaurant/login" component={Login} />
+      <Route path="/travel-agency/login" component={Login} />
       <Route path="/rider/login" component={Login} />
       <Route path="/admin/login" component={Login} />
       <Route path="/register" component={Register} />
@@ -277,6 +282,10 @@ function Router() {
       <Route path="/food-partner/restaurant">{() => <FoodPartnerRoute component={VendorStore} />}</Route>
       <Route path="/food-partner/menu">{() => <FoodPartnerRoute component={VendorProducts} />}</Route>
       <Route path="/food-partner/orders">{() => <FoodPartnerRoute component={VendorOrders} />}</Route>
+      <Route path="/food-partner/wallet">{() => <FoodPartnerRoute component={Wallet} />}</Route>
+      <Route path="/travel-agency">{() => <VendorRoute component={VendorDashboard} />}</Route>
+      <Route path="/travel-agency/orders">{() => <VendorRoute component={VendorOrders} />}</Route>
+      <Route path="/travel-agency/services">{() => <VendorRoute component={VendorProducts} />}</Route>
       <Route path="/vendor/wallet">{() => <VendorRoute component={Wallet} />}</Route>
       <Route path="/vendor/find-order">{() => <VendorRoute component={FindOrder} />}</Route>
 

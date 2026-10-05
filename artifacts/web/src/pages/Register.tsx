@@ -19,7 +19,7 @@ const schema = z.object({
   phone: z.string().min(10, "Enter a valid phone number"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string().min(6, "Confirm your password"),
-  role: z.enum(["customer", "vendor", "food_partner", "delivery_partner"]),
+  role: z.enum(["customer", "vendor", "food_partner", "travel_agency", "delivery_partner"]),
   referralCode: z.string().optional().or(z.literal("")),
   shopName: z.string().optional().or(z.literal("")),
   businessType: z.string().optional().or(z.literal("")),
@@ -67,6 +67,7 @@ export default function Register() {
     }
     if (requestedRole === "vendor") setLocation("/seller/register");
     if (requestedRole === "food_partner") setLocation("/seller/register?role=food_partner");
+    if (requestedRole === "travel_agency") setLocation("/seller/register?role=travel_agency");
     if (requestedRole === "delivery_partner") setLocation("/delivery/register");
   }, [requestedRole, user, setLocation]);
 
@@ -85,12 +86,13 @@ export default function Register() {
   const role = watch("role");
   const RoleIcon = UserRound;
 
-  const handleRoleChange = (nextRole: "customer" | "vendor" | "food_partner" | "delivery_partner") => {
+  const handleRoleChange = (nextRole: "customer" | "vendor" | "food_partner" | "travel_agency" | "delivery_partner") => {
     setValue("role", nextRole, { shouldDirty: true });
     setOtpSent(false);
     setOtp("");
     if (nextRole === "vendor") setLocation("/seller/register");
     if (nextRole === "food_partner") setLocation("/seller/register?role=food_partner");
+    if (nextRole === "travel_agency") setLocation("/seller/register?role=travel_agency");
     if (nextRole === "delivery_partner") setLocation("/delivery/register");
   };
 
@@ -158,6 +160,7 @@ export default function Register() {
       authToast({ title: "Welcome to Chowdhary Mart!", description: `Account created for ${res.user.name}` });
       if (res.user.role === "vendor" || res.user.role === "seller") setLocation("/vendor");
       else if (res.user.role === "food_partner") setLocation("/food-partner");
+      else if (res.user.role === "travel_agency") setLocation("/travel-agency");
       else if (["delivery_partner", "rider", "delivery"].includes(res.user.role)) setLocation("/delivery");
       else setLocation("/");
     } catch (err) {
@@ -175,7 +178,7 @@ export default function Register() {
     });
   };
 
-  if (requestedRole === "vendor" || requestedRole === "food_partner" || requestedRole === "delivery_partner") return null;
+  if (requestedRole === "vendor" || requestedRole === "food_partner" || requestedRole === "travel_agency" || requestedRole === "delivery_partner") return null;
 
   return (
     <div className="native-page-scroll relative min-h-[100dvh] overflow-x-hidden bg-[#f7f8fb] px-3 py-3 sm:px-4 sm:py-8">
@@ -211,7 +214,7 @@ export default function Register() {
           <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-4" autoComplete="off" noValidate>
             <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3">
               <Label className="mb-2 block text-xs font-bold uppercase tracking-wide text-muted-foreground">Account type</Label>
-              <Select value={role} onValueChange={(value) => handleRoleChange(value as "customer" | "vendor" | "food_partner" | "delivery_partner")}>
+              <Select value={role} onValueChange={(value) => handleRoleChange(value as "customer" | "vendor" | "food_partner" | "travel_agency" | "delivery_partner")}>
                 <SelectTrigger className="h-12 rounded-2xl bg-white text-base font-bold" data-testid="select-role">
                   <SelectValue placeholder="Select account type" />
                 </SelectTrigger>
@@ -219,6 +222,7 @@ export default function Register() {
                   <SelectItem value="customer">Customer</SelectItem>
                   <SelectItem value="vendor">Seller / shop owner</SelectItem>
                   <SelectItem value="food_partner">Food partner</SelectItem>
+                  <SelectItem value="travel_agency">Travel agency</SelectItem>
                   <SelectItem value="delivery_partner">Delivery partner</SelectItem>
                 </SelectContent>
               </Select>

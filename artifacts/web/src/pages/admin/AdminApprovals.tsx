@@ -73,8 +73,8 @@ export default function AdminApprovals() {
       {approvalTab === "shops" ? (
         <section className="space-y-4">
           <div>
-            <h2 className="text-xl font-bold">Shop Owner Approvals</h2>
-            <p className="text-sm text-muted-foreground">Review seller details before allowing product upload and order management.</p>
+            <h2 className="text-xl font-bold">Shop & Restaurant Approvals</h2>
+            <p className="text-sm text-muted-foreground">Review seller and food partner details before allowing menu upload and order management.</p>
           </div>
           {isLoading ? (
             <div className="space-y-3">{Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-48 rounded-xl" />)}</div>

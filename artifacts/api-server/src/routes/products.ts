@@ -3,6 +3,7 @@ import { eq, ilike, and, desc, asc, inArray, sql, or } from "drizzle-orm";
 import { db, productsTable, categoriesTable, storesTable, reviewsTable } from "@workspace/db";
 import { toPublicStore } from "../lib/public-store";
 import { getActiveDeliveryZones } from "../lib/zones";
+import { ensureStoreDisplayColumns } from "../lib/store-display";
 
 const router = Router();
 
@@ -68,6 +69,7 @@ function storeDistanceCondition(lat: number, lng: number, radiusKm: number) {
 // GET /api/products
 router.get("/", async (req, res) => {
   try {
+    await ensureStoreDisplayColumns();
     const {
       q, categoryId, storeId, featured,
       limit: limitQ = "40", offset: offsetQ = "0",
@@ -91,6 +93,8 @@ router.get("/", async (req, res) => {
       eq(productsTable.isAvailable, true),
       sql`${productsTable.stock} > 0`,
       eq(storesTable.isActive, true),
+      eq(storesTable.isVerified, true),
+      eq(storesTable.isOpen, true),
     ];
     if (categoryId) conditions.push(eq(productsTable.categoryId, Number(categoryId)));
     if (storeId) conditions.push(eq(productsTable.storeId, Number(storeId)));
@@ -122,7 +126,7 @@ router.get("/", async (req, res) => {
         .innerJoin(storesTable, eq(productsTable.storeId, storesTable.id))
         .leftJoin(categoriesTable, eq(productsTable.categoryId, categoriesTable.id))
         .where(and(...conditions))
-        .orderBy(orderBy)
+        .orderBy(sql`coalesce(stores.is_featured, false) desc`, sql`coalesce(stores.display_order, 0) desc`, orderBy)
         .limit(limit)
         .offset(offset),
       db.select({ count: sql<number>`count(distinct ${productsTable.id})` })
@@ -169,6 +173,8 @@ router.get("/:productId/related", async (req, res) => {
       .where(and(
         eq(productsTable.isAvailable, true),
         eq(storesTable.isActive, true),
+        eq(storesTable.isVerified, true),
+        eq(storesTable.isOpen, true),
         sql`${productsTable.id} <> ${productId}`,
         sql`${productsTable.stock} > 0`,
       ))
@@ -256,6 +262,10 @@ router.get("/:productId", async (req, res) => {
       db.select().from(storesTable).where(eq(storesTable.id, product.storeId)).limit(1).then(r => r[0]),
     ]);
 
+    if (!store || !store.isActive || !store.isVerified || !store.isOpen) {
+      res.status(404).json({ error: "Product not found" });
+      return;
+    }
     res.json({ ...product, category, store: toPublicStore(store) });
   } catch (err) {
     req.log.error(err);

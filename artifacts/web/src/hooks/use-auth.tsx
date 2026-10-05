@@ -71,6 +71,7 @@ function isUnauthorizedError(error: unknown) {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem(TOKEN_KEY));
+  const [sessionCheckTimedOut, setSessionCheckTimedOut] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -81,6 +82,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (stored) setToken(stored);
     });
   }, []);
+
+  useEffect(() => {
+    setSessionCheckTimedOut(false);
+    if (!token) return;
+    const timeout = window.setTimeout(() => setSessionCheckTimedOut(true), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [token]);
 
   const { data: user, isLoading, error } = useGetMe({
     query: {
@@ -134,9 +142,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       logout,
       confirmLogout,
-      // Keep protected routes mounted while the session check is temporarily
-      // unavailable. A 401 is handled above; other failures are retryable.
-      isLoading: isLoading || Boolean(token && error && !isUnauthorizedError(error)),
+      // A failed session refresh must not leave the whole app behind an
+      // endless loading screen. A 401 is handled above; other errors leave
+      // the public app usable and can recover on the next refetch.
+      isLoading: isLoading && !sessionCheckTimedOut,
     }}>
       {children}
     </AuthContext.Provider>

@@ -17,7 +17,8 @@ import { createAndPushNotification } from "../lib/push-service";
 import { deliveryOtp } from "../lib/order-lifecycle";
 import { calculateOrderPricing, ensurePricingSchema, getPricingSettings } from "../lib/pricing";
 import { DEFAULT_LOCATION } from "../lib/default-location";
-import { cancelDeliveryOffers } from "../lib/delivery-offers";
+import { advanceDeliveryOffer, cancelDeliveryOffers } from "../lib/delivery-offers";
+import { ensureFoodOperationColumns } from "../lib/food-operations";
 
 const router = Router();
 
@@ -110,6 +111,7 @@ router.get("/", async (req: AuthRequest, res) => {
 // POST /api/orders — place order from cart
 router.post("/", async (req: AuthRequest, res) => {
   try {
+    await ensureFoodOperationColumns();
     await ensurePricingSchema();
     const userId = req.user!.userId;
     const idempotencyKey = getIdempotencyKey(req.headers);
@@ -391,7 +393,25 @@ router.post("/", async (req: AuthRequest, res) => {
     });
 
     const [storeData] = await tx.select().from(storesTable).where(eq(storesTable.id, order.storeId)).limit(1);
-    return { status: 201, body: { ...order, store: storeData } };
+    const setting = await tx.execute(sql`select auto_accept_orders as "autoAcceptOrders" from stores where id = ${order.storeId}`);
+    const autoAcceptOrders = Boolean(((setting as any).rows ?? setting)?.[0]?.autoAcceptOrders);
+    const [owner] = storeData
+      ? await tx.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.id, storeData.userId)).limit(1)
+      : [];
+    const shouldAutoAccept = autoAcceptOrders && String(owner?.role) === "food_partner";
+    if (shouldAutoAccept) {
+      const [acceptedOrder] = await tx.update(ordersTable)
+        .set({ status: "confirmed", updatedAt: new Date() })
+        .where(eq(ordersTable.id, order.id))
+        .returning();
+      await tx.insert(orderTrackingTable).values({
+        orderId: order.id,
+        status: "confirmed",
+        message: "Restaurant auto-accepted the order. Kitchen preparation has started.",
+      });
+      return { status: 201, body: { ...acceptedOrder, store: storeData, autoAccepted: true } };
+    }
+    return { status: 201, body: { ...order, store: storeData, autoAccepted: false } };
     });
 
     await saveIdempotencyResponse({
@@ -403,19 +423,26 @@ router.post("/", async (req: AuthRequest, res) => {
       body: result.body as Record<string, unknown>,
       resourceId: String((result.body as { id?: number }).id ?? ""),
     });
-    const createdOrder = result.body as { id: number; orderNumber: string; total: string; store?: { userId?: number } };
+    const createdOrder = result.body as { id: number; orderNumber: string; total: string; autoAccepted?: boolean; store?: { userId?: number } };
     if (createdOrder.store?.userId) {
       try {
         await createAndPushNotification({
           userId: createdOrder.store.userId,
           type: "new_order",
           title: "New order received",
-          body: `Order #${createdOrder.orderNumber} for Rs.${Number(createdOrder.total).toFixed(0)} is waiting for your decision.`,
-          data: { orderId: createdOrder.id, orderNumber: createdOrder.orderNumber, status: "pending" },
+          body: createdOrder.autoAccepted
+            ? `Order #${createdOrder.orderNumber} was auto-accepted and is ready for kitchen preparation.`
+            : `Order #${createdOrder.orderNumber} for Rs.${Number(createdOrder.total).toFixed(0)} is waiting for your decision.`,
+          data: { orderId: createdOrder.id, orderNumber: createdOrder.orderNumber, status: createdOrder.autoAccepted ? "confirmed" : "pending" },
         });
       } catch (notificationError) {
         req.log.warn({ err: notificationError, orderId: createdOrder.id }, "Seller new-order notification failed");
       }
+    }
+    if (createdOrder.autoAccepted) {
+      void advanceDeliveryOffer(createdOrder.id).catch((offerError) => {
+        req.log.warn({ err: offerError, orderId: createdOrder.id }, "Auto-accepted order could not be offered to delivery partners");
+      });
     }
     res.status(result.status).json(result.body);
   } catch (err) {

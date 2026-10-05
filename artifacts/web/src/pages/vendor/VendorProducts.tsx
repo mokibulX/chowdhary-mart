@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
 import {
   useListVendorProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useListCategories,
-  getListVendorProductsQueryKey, getListCategoriesQueryKey, customFetch
+  getListVendorProductsQueryKey, getListCategoriesQueryKey, getGetVendorStoreQueryKey, customFetch, useGetVendorStore
 } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -43,6 +43,9 @@ const schema = z.object({
   warranty: z.string().optional().or(z.literal("")),
   paymentOptions: z.string().optional().or(z.literal("")),
   deliveryNote: z.string().optional().or(z.literal("")),
+  preparationMinutes: z.string().optional().or(z.literal("")),
+  dietaryType: z.string().optional().or(z.literal("")),
+  route: z.string().optional().or(z.literal("")),
   isAvailable: z.boolean(),
   isFeatured: z.boolean(),
 });
@@ -52,6 +55,8 @@ const CLOTHING_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL", "28", "30", "32
 const FOOTWEAR_SIZES = ["UK 5", "UK 6", "UK 7", "UK 8", "UK 9", "UK 10", "UK 11"];
 const PRODUCT_COLORS = ["Black", "White", "Blue", "Red", "Green", "Yellow", "Brown", "Grey", "Navy", "Pink", "Purple", "Orange", "Beige", "Gold", "Silver"];
 const PRODUCT_STEPS = ["Basics", "Variants", "Media", "Policy", "Preview"];
+const FOOD_STEPS = ["Dish", "Availability", "Photos"];
+const TRAVEL_STEPS = ["Service", "Availability", "Photo", "Preview"];
 const PRODUCT_PLACEHOLDER_IMAGE = "https://images.unsplash.com/photo-1607082349566-187342175e2f?auto=format&fit=crop&w=900&q=80";
 const COLOR_SWATCHES: Record<string, string> = {
   black: "#111827",
@@ -188,10 +193,15 @@ export default function VendorProducts() {
   const [imageUploading, setImageUploading] = useState(false);
   const [barcodeProduct, setBarcodeProduct] = useState<any | null>(null);
   const [importedSpecifications, setImportedSpecifications] = useState<Record<string, unknown>>({});
+  const isFoodPartner = user?.role === "food_partner";
+  const isTravelAgency = user?.role === "travel_agency";
+  const isShopVendor = !isFoodPartner && !isTravelAgency;
+  const formSteps = isFoodPartner ? FOOD_STEPS : isTravelAgency ? TRAVEL_STEPS : PRODUCT_STEPS;
 
   const { data: products, isLoading } = useListVendorProducts({
     query: { enabled: !!user, queryKey: getListVendorProductsQueryKey() },
   });
+  const { data: store } = useGetVendorStore({ query: { enabled: !!user, queryKey: getGetVendorStoreQueryKey() } });
   const { data: categories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
   const create = useCreateProduct();
   const update = useUpdateProduct();
@@ -210,13 +220,34 @@ export default function VendorProducts() {
     enabled: !!user && !!selectedCategoryId && dialogOpen,
   });
   const selectedCategory = (categories as any[] | undefined)?.find((item) => Number(item.id) === Number(selectedCategoryId));
+  const visibleCategories = ((categories as any[] | undefined) ?? []).filter((category) => {
+    const name = String(category.name ?? "").toLowerCase();
+    if (isFoodPartner) return /(food|restaurant|meal|dish|snack|drink|beverage|bakery|dessert|cafe|grocery)/.test(name);
+    if (isTravelAgency) return /(travel|bus|car|cab|taxi|ticket|tour|hotel)/.test(name);
+    return !/(travel|bus|car|cab|taxi|ticket|tour|hotel|restaurant|meal|dish)/.test(name);
+  });
+  const categoryChoices = visibleCategories.length ? visibleCategories : ((categories as any[] | undefined) ?? []);
+  const preferredCategoryNames = String((store as any)?.preferredCategories ?? "")
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  const preferredCategory = categoryChoices.find((category) => {
+    const categoryName = String(category.name ?? "").trim().toLowerCase();
+    return preferredCategoryNames.some((preferred) => categoryName === preferred || categoryName.includes(preferred) || preferred.includes(categoryName));
+  });
   const isFashionCategory = selectedCategory?.name?.toLowerCase().includes("fashion") || selectedCategory?.name?.toLowerCase().includes("cloth");
   const isFootwearProduct = watch("name")?.toLowerCase().includes("shoe") || watch("name")?.toLowerCase().includes("sandal") || watch("name")?.toLowerCase().includes("chappal");
   const activeSizeOptions = isFootwearProduct ? FOOTWEAR_SIZES : CLOTHING_SIZES;
 
   useEffect(() => {
+    // Prepared food does not use inventory manufacturing or expiry dates, even
+    // when the restaurant's fallback catalogue category is Grocery.
+    if (isFoodPartner) {
+      setValue("expiryRequired", false, { shouldDirty: false });
+      return;
+    }
     if (dialogOpen && !editId && selectedCategory?.name) setValue("expiryRequired", categoryRequiresExpiry(selectedCategory.name), { shouldDirty: false });
-  }, [dialogOpen, editId, selectedCategory?.name, setValue]);
+  }, [dialogOpen, editId, isFoodPartner, selectedCategory?.name, setValue]);
 
   const openCreate = (asOffer = false) => {
     setEditId(null);
@@ -229,7 +260,7 @@ export default function VendorProducts() {
     setBarcodeProduct(null);
     setImportedSpecifications({});
     reset({
-      categoryId: Number((categories as any[] | undefined)?.[0]?.id ?? 2),
+      categoryId: Number(preferredCategory?.id ?? categoryChoices[0]?.id ?? 2),
       barcode: "",
       productDate: "",
       mfgDate: "",
@@ -237,6 +268,10 @@ export default function VendorProducts() {
       expiryRequired: false,
       isAvailable: true,
       isFeatured: asOffer,
+      name: "",
+      description: "",
+      price: 1,
+      mrp: 1,
       stock: 10,
       weight: "1",
       unit: "pc",
@@ -244,6 +279,9 @@ export default function VendorProducts() {
       warranty: "Seller assured",
       paymentOptions: "Cash on Delivery, UPI",
       deliveryNote: "40 minute local target",
+      preparationMinutes: "20",
+      dietaryType: "veg",
+      route: "",
     });
     setDialogOpen(true);
   };
@@ -270,6 +308,9 @@ export default function VendorProducts() {
       warranty: p.warranty ?? p.specifications?.Warranty ?? "Seller assured",
       paymentOptions: p.paymentOptions ?? p.specifications?.Payment ?? "Cash on Delivery, UPI",
       deliveryNote: p.deliveryNote ?? p.specifications?.Delivery ?? "40 minute local target",
+      preparationMinutes: String(p.specifications?.PreparationMinutes ?? "20"),
+      dietaryType: p.specifications?.DietaryType ?? "veg",
+      route: p.specifications?.Route ?? "",
       isAvailable: !!p.isAvailable, isFeatured: !!p.isFeatured,
     });
     setDialogOpen(true);
@@ -282,7 +323,7 @@ export default function VendorProducts() {
       return;
     }
     const sellerPrice = Number(data.price);
-    const productMrp = Number(data.mrp);
+    const productMrp = isShopVendor ? Number(data.mrp) : Number(data.price);
     if (!data.name?.trim()) {
       toast({ title: "Product name required", description: "Enter a product name before saving.", variant: "destructive" });
       setProductStep(0);
@@ -303,7 +344,7 @@ export default function VendorProducts() {
       setProductStep(0);
       return;
     }
-    if (data.expiryRequired) {
+    if (!isFoodPartner && data.expiryRequired) {
       if (!data.mfgDate || !data.expiryDate) {
         toast({ title: "Expiry dates required", description: "Enter both manufacturing date and expiry date for this product.", variant: "destructive" });
         setProductStep(0);
@@ -327,15 +368,15 @@ export default function VendorProducts() {
       setProductStep(0);
       return;
     }
-    const duplicateBarcode = data.barcode && (products as any[] | undefined)?.some((product) => product.id !== editId && String(product.sku ?? product.specifications?.Barcode ?? "") === data.barcode);
+    const duplicateBarcode = isShopVendor && data.barcode && (products as any[] | undefined)?.some((product) => product.id !== editId && String(product.sku ?? product.specifications?.Barcode ?? "") === data.barcode);
     if (duplicateBarcode) {
       toast({ title: "Barcode already exists", description: "A product with this barcode is already in your inventory. Edit the existing product instead.", variant: "destructive" });
       setProductStep(0);
       return;
     }
     if (!cleanImages.length) cleanImages.push(PRODUCT_PLACEHOLDER_IMAGE);
-    const sizes = normalizeSizes([...selectedSizes, ...normalizeSizes(data.sizes)]);
-    const colors = normalizeSizes([...selectedColors, ...normalizeSizes(data.colors)]);
+    const sizes = isShopVendor ? normalizeSizes([...selectedSizes, ...normalizeSizes(data.sizes)]) : [];
+    const colors = isShopVendor ? normalizeSizes([...selectedColors, ...normalizeSizes(data.colors)]) : [];
     const colorImages = Object.fromEntries(
       colors
         .map((color) => [color, String(colorImageUrls[color] ?? "").trim()])
@@ -345,14 +386,18 @@ export default function VendorProducts() {
       ...importedSpecifications,
       ...(sizes.length ? { Sizes: sizes.join(", ") } : {}),
       ...(colors.length ? { Colors: colors.join(", ") } : {}),
-      Return: data.returnWindow || "Damaged items only",
-      Warranty: data.warranty || "Seller assured",
-      Payment: data.paymentOptions || "Cash on Delivery, UPI",
-      Delivery: data.deliveryNote || "40 minute local target",
-      ...(data.productDate ? { ProductDate: data.productDate } : {}),
-      ExpiryRequired: String(data.expiryRequired),
-      ...(data.expiryRequired ? { MFGDate: data.mfgDate, ExpiryDate: data.expiryDate } : {}),
-      ...(data.barcode ? { Barcode: data.barcode } : {}),
+      ...(isShopVendor ? {
+        Return: data.returnWindow || "Damaged items only",
+        Warranty: data.warranty || "Seller assured",
+        Payment: data.paymentOptions || "Cash on Delivery, UPI",
+        Delivery: data.deliveryNote || "40 minute local target",
+        ...(data.productDate ? { ProductDate: data.productDate } : {}),
+        ExpiryRequired: String(data.expiryRequired),
+        ...(data.expiryRequired ? { MFGDate: data.mfgDate, ExpiryDate: data.expiryDate } : {}),
+        ...(data.barcode ? { Barcode: data.barcode } : {}),
+      } : {}),
+      ...(isFoodPartner ? { PreparationMinutes: Number(data.preparationMinutes || 20), DietaryType: data.dietaryType || "veg" } : {}),
+      ...(isTravelAgency ? { Route: data.route || "", ServiceType: data.unit || "service", SeatsAvailable: data.stock } : {}),
     };
     const payload = {
       name: data.name,
@@ -363,15 +408,15 @@ export default function VendorProducts() {
       stock: data.stock,
       weight: data.weight,
       unit: data.unit,
-      sku: data.barcode || undefined,
+      sku: isShopVendor ? data.barcode || undefined : undefined,
       images: cleanImages,
       colorImages,
       sizes,
       colors,
-      returnWindow: data.returnWindow || "Damaged items only",
-      warranty: data.warranty || "Seller assured",
-      paymentOptions: data.paymentOptions || "Cash on Delivery, UPI",
-      deliveryNote: data.deliveryNote || "40 minute local target",
+      returnWindow: isShopVendor ? data.returnWindow || "Damaged items only" : undefined,
+      warranty: isShopVendor ? data.warranty || "Seller assured" : undefined,
+      paymentOptions: isShopVendor ? data.paymentOptions || "Cash on Delivery, UPI" : undefined,
+      deliveryNote: isShopVendor ? data.deliveryNote || "40 minute local target" : undefined,
       specifications,
       isAvailable: data.isAvailable,
       isFeatured: data.isFeatured,
@@ -520,17 +565,23 @@ export default function VendorProducts() {
     setColorImageUrls((prev) => ({ ...prev, [color]: value }));
   };
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []).filter(file => file.type.startsWith("image/"));
+    const remainingSlots = Math.max(0, 12 - imageUrls.filter(Boolean).length);
+    const files = Array.from(event.target.files ?? []).filter(file => file.type.startsWith("image/")).slice(0, remainingSlots);
     event.target.value = "";
-    if (!files.length) return;
+    if (!files.length) {
+      toast({ title: remainingSlots ? "Choose an image file" : "Image limit reached", description: remainingSlots ? "Select JPG, PNG, WEBP or GIF images." : "A menu item can have up to 12 images.", variant: "destructive" });
+      return;
+    }
 
     setImageUploading(true);
-    Promise.all(files.map((file) => uploadImageFile(file, "seller-products"))).then((uploads) => {
-      const urls = uploads.map((item) => item.imageUrl).filter(Boolean);
-      setImageUrls(prev => [...prev, ...urls]);
-      toast({ title: `${urls.length} photo uploaded`, description: "Storage URL saved for this product." });
-    }).catch((error) => {
-      toast({ title: "Photo upload failed", description: getFriendlyErrorMessage(error, "Please try another image."), variant: "destructive" });
+    Promise.allSettled(files.map((file) => uploadImageFile(file, isFoodPartner ? "food-menu" : isTravelAgency ? "travel-services" : "seller-products"))).then((results) => {
+      const urls = results.flatMap((result) => result.status === "fulfilled" && result.value.imageUrl
+        ? [result.value.imageUrl]
+        : []);
+      if (urls.length) setImageUrls((previous) => [...previous, ...urls].slice(0, 12));
+      const failed = results.length - urls.length;
+      if (urls.length) toast({ title: `${urls.length} image${urls.length === 1 ? "" : "s"} added`, description: failed ? `${failed} image${failed === 1 ? "" : "s"} could not be uploaded.` : "You can select more images or set any image as the main one." });
+      else toast({ title: "Image upload failed", description: "Please use a JPG, PNG, WEBP or GIF image under 5 MB.", variant: "destructive" });
     }).finally(() => setImageUploading(false));
   };
   const addLibraryImage = (url: string) => {
@@ -540,11 +591,11 @@ export default function VendorProducts() {
   };
 
   const goNextStep = async () => {
-    if (productStep === 0 && (!watch("name")?.trim() || !selectedCategoryId || !watch("price") || !watch("mrp"))) {
-      toast({ title: "Basic details required", description: "Enter the name, category, price and MRP.", variant: "destructive" });
+    if (productStep === 0 && (!watch("name")?.trim() || !selectedCategoryId || !watch("price") || (isShopVendor && !watch("mrp")))) {
+      toast({ title: "Basic details required", description: isFoodPartner ? "Enter the dish name, menu group and price." : "Enter the name, category, price and MRP.", variant: "destructive" });
       return;
     }
-    setProductStep((step) => Math.min(PRODUCT_STEPS.length - 1, step + 1));
+    setProductStep((step) => Math.min(formSteps.length - 1, step + 1));
   };
 
   const onInvalid = (formErrors: unknown) => {
@@ -560,30 +611,30 @@ export default function VendorProducts() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Products</h1>
-          <p className="text-sm text-muted-foreground">Manage stock, pricing, photos and offer placement from one place.</p>
+          <h1 className="text-2xl font-bold">{isFoodPartner ? "Menu" : isTravelAgency ? "Travel services" : "Products"}</h1>
+          <p className="text-sm text-muted-foreground">{isFoodPartner ? "Add dishes, portions, preparation time and menu photos." : isTravelAgency ? "Add bus, cab and travel services with route, fare and available seats." : "Manage stock, pricing, photos and offer placement from one place."}</p>
         </div>
         <Button onClick={() => openCreate(false)} data-testid="btn-add-product">
-          <Plus className="w-4 h-4 mr-2" />Add Product
+          <Plus className="w-4 h-4 mr-2" />{isFoodPartner ? "Add dish" : isTravelAgency ? "Add service" : "Add Product"}
         </Button>
       </div>
 
       <section className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-muted-foreground">Total products</p>
+          <p className="text-sm text-muted-foreground">Total {isFoodPartner ? "dishes" : isTravelAgency ? "services" : "products"}</p>
           <p className="mt-1 text-2xl font-bold">{products?.length ?? 0}</p>
         </div>
         <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-muted-foreground">Live products</p>
+          <p className="text-sm text-muted-foreground">Live {isFoodPartner ? "dishes" : isTravelAgency ? "services" : "products"}</p>
           <p className="mt-1 text-2xl font-bold">{(products as any[] | undefined)?.filter((item) => item.isAvailable).length ?? 0}</p>
         </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
+        {isShopVendor && <div className="rounded-xl border bg-white p-4 shadow-sm">
           <p className="text-sm text-muted-foreground">Offer products</p>
           <p className="mt-1 text-2xl font-bold">{(products as any[] | undefined)?.filter((item) => item.isFeatured).length ?? 0}</p>
-        </div>
+        </div>}
       </section>
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm">
+      {isShopVendor && <section className="rounded-xl border bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-bold"><BadgePercent className="h-5 w-5 text-primary" />Offer products</h2>
@@ -611,7 +662,7 @@ export default function VendorProducts() {
             </div>
           )}
         </div>
-      </section>
+      </section>}
 
       {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -696,7 +747,7 @@ export default function VendorProducts() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editId ? "Edit Product" : "Add New Product"}</DialogTitle>
+            <DialogTitle>{editId ? `Edit ${isFoodPartner ? "dish" : isTravelAgency ? "service" : "product"}` : `Add new ${isFoodPartner ? "dish" : isTravelAgency ? "service" : "product"}`}</DialogTitle>
           </DialogHeader>
           <form
             onSubmitCapture={(event) => {
@@ -713,8 +764,8 @@ export default function VendorProducts() {
             className="space-y-3"
             noValidate
           >
-            <div className="grid grid-cols-5 gap-1 rounded-xl border bg-gray-50 p-2">
-              {PRODUCT_STEPS.map((step, index) => (
+            <div className={`grid gap-1 rounded-xl border bg-gray-50 p-2 ${formSteps.length === 5 ? "grid-cols-5" : formSteps.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}>
+              {formSteps.map((step, index) => (
                 <button
                   key={step}
                   type="button"
@@ -731,7 +782,7 @@ export default function VendorProducts() {
 
             {productStep === 0 && (
               <section className="space-y-3">
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                {isShopVendor && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
                   <div className="mb-2 flex items-start gap-2">
                     <ScanBarcode className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
                     <div>
@@ -765,12 +816,12 @@ export default function VendorProducts() {
                     </label>
                   </div>
                   {errors.barcode && <p className="mt-1 text-xs text-red-500">{errors.barcode.message}</p>}
-                </div>
-                {barcodeProduct && (
+                </div>}
+                {isShopVendor && barcodeProduct && (
                   <BarcodeResultCard product={barcodeProduct} />
                 )}
                 <div className="space-y-1">
-                  <Label>Product Name *</Label>
+                  <Label>{isFoodPartner ? "Dish name" : isTravelAgency ? "Service name" : "Product Name"} *</Label>
                   <Input {...register("name")} data-testid="input-name" />
                   {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
                 </div>
@@ -783,50 +834,66 @@ export default function VendorProducts() {
                   <Select value={selectedCategoryId ? String(selectedCategoryId) : undefined} onValueChange={v => setValue("categoryId", Number(v))}>
                     <SelectTrigger data-testid="select-category"><SelectValue placeholder="Select category" /></SelectTrigger>
                     <SelectContent>
-                      {categories?.map((c: any) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                      {categoryChoices.map((c: any) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   {errors.categoryId && <p className="text-xs text-red-500">{errors.categoryId.message}</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label>Selling Price (Rs.) *</Label>
-                    <Input type="number" step="0.01" {...register("price")} data-testid="input-price" />
+                    <Label>{isFoodPartner ? "Menu price" : isTravelAgency ? "Fare / starting price" : "Selling Price"} (Rs.) *</Label>
+                    <Input type="number" step="0.01" {...register("price", { onChange: (event) => { if (!isShopVendor) setValue("mrp", Number(event.target.value || 0)); } })} data-testid="input-price" />
                     {errors.price && <p className="text-xs text-red-500">{errors.price.message}</p>}
                   </div>
-                  <div className="space-y-1">
+                  {isShopVendor && <div className="space-y-1">
                     <Label>MRP (Rs.) *</Label>
                     <Input type="number" step="0.01" {...register("mrp")} data-testid="input-mrp" />
                     {errors.mrp && <p className="text-xs text-red-500">{errors.mrp.message}</p>}
-                  </div>
+                  </div>}
                 </div>
-                <div className="space-y-1">
+                {isShopVendor && <div className="space-y-1">
                   <Label htmlFor="product-date">Product / stock date</Label>
                   <Input id="product-date" type="date" {...register("productDate")} data-testid="input-product-date" />
                   <p className="text-xs text-muted-foreground">Optional stock reference date.</p>
-                </div>
-                <div className="rounded-lg border bg-gray-50 p-3">
+                </div>}
+                {isShopVendor && <div className="rounded-lg border bg-gray-50 p-3">
                   <div className="flex items-center justify-between gap-3"><div><Label>Expiry tracking</Label><p className="text-xs text-muted-foreground">Enable only when this product has a manufacturing and expiry date.</p></div><Switch checked={expiryRequired} onCheckedChange={(value) => setValue("expiryRequired", value, { shouldDirty: true })} /></div>
                   {expiryRequired && <div className="mt-3 grid grid-cols-2 gap-3"><div className="space-y-1"><Label>Manufacturing date *</Label><Input type="date" {...register("mfgDate")} /></div><div className="space-y-1"><Label>Expiry date *</Label><Input type="date" {...register("expiryDate")} /></div></div>}
-                </div>
+                </div>}
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">
-                    <Label>Stock</Label>
+                    <Label>{isFoodPartner ? "Available portions" : isTravelAgency ? "Available seats" : "Stock"}</Label>
                     <Input type="number" {...register("stock")} data-testid="input-stock" />
                   </div>
                   <div className="space-y-1">
-                    <Label>Weight</Label>
-                    <Input placeholder="e.g. 500" {...register("weight")} data-testid="input-weight" />
+                    <Label>{isFoodPartner ? "Serving size" : isTravelAgency ? "Travel duration" : "Weight"}</Label>
+                    <Input placeholder={isFoodPartner ? "e.g. 1" : isTravelAgency ? "e.g. 6" : "e.g. 500"} {...register("weight")} data-testid="input-weight" />
                   </div>
                   <div className="space-y-1">
-                    <Label>Unit</Label>
-                    <Input placeholder="g, ml, pcs" {...register("unit")} data-testid="input-unit" />
+                    <Label>{isFoodPartner ? "Serving unit" : isTravelAgency ? "Service type" : "Unit"}</Label>
+                    <Input placeholder={isFoodPartner ? "plate, bowl, piece" : isTravelAgency ? "bus, cab, tour" : "g, ml, pcs"} {...register("unit")} data-testid="input-unit" />
                   </div>
                 </div>
               </section>
             )}
 
-            {productStep === 1 && (
+            {productStep === 1 && !isShopVendor && (
+              <section className="space-y-3">
+                {isFoodPartner ? <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1"><Label>Preparation time (minutes)</Label><Input type="number" min="1" {...register("preparationMinutes")} /></div>
+                    <div className="space-y-1"><Label>Dietary type</Label><Select value={watch("dietaryType") || "veg"} onValueChange={(value) => setValue("dietaryType", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="veg">Vegetarian</SelectItem><SelectItem value="non_veg">Non-vegetarian</SelectItem><SelectItem value="egg">Contains egg</SelectItem></SelectContent></Select></div>
+                  </div>
+                  <div className="rounded-lg border bg-orange-50 p-3 text-sm text-orange-900">Customers see the preparation time after the restaurant accepts their order.</div>
+                </> : <>
+                  <div className="space-y-1"><Label>Route / service area</Label><Input placeholder="e.g. Kolkata to Digha" {...register("route")} /></div>
+                  <div className="rounded-lg border bg-sky-50 p-3 text-sm text-sky-900">Use available seats above for a bus. For cab or tour service, use it as the daily booking capacity.</div>
+                </>}
+                <div className="flex items-center justify-between rounded-lg border bg-gray-50 p-3"><div><Label>{isFoodPartner ? "Dish available" : "Service available"}</Label><p className="text-xs text-muted-foreground">Customers can only order when this is enabled.</p></div><Switch checked={isAvailable} onCheckedChange={(value) => setValue("isAvailable", value)} /></div>
+              </section>
+            )}
+
+            {productStep === 1 && isShopVendor && (
               <section className="space-y-3">
                 <div className="rounded-lg border bg-blue-50 p-3">
                   <Label>Category-wise measurement</Label>
@@ -923,15 +990,15 @@ export default function VendorProducts() {
             {productStep === 2 && (
               <section className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Product Photos</Label>
+                  <div><Label>{isFoodPartner ? "Dish photos" : isTravelAgency ? "Service photos" : "Product photos"}</Label><p className="text-xs text-muted-foreground">Add up to 12 images. The first image is the main customer image.</p></div>
                   <div className="flex gap-2">
                     <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs font-medium hover:bg-muted">
                       <ImagePlus className="mr-1 h-3.5 w-3.5" />
-                      Upload
+                      Add images
                       <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} data-testid="input-product-images" />
                     </label>
                     <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-orange-200 bg-orange-50 px-3 text-xs font-medium text-orange-700 hover:bg-orange-100">
-                      <Camera className="mr-1 h-3.5 w-3.5" /> Camera
+                      <Camera className="mr-1 h-3.5 w-3.5" /> Add from camera
                       <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} data-testid="input-product-camera" />
                     </label>
                     <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addImageField}>
@@ -970,7 +1037,7 @@ export default function VendorProducts() {
                 </div>
                 {!imageUrls.length ? (
                   <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-center text-sm text-muted-foreground">
-                    Add one or more product photos. Main image will be the first image.
+                    Add one or more images. The first image will be shown as the main image.
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -998,7 +1065,7 @@ export default function VendorProducts() {
               </section>
             )}
 
-            {productStep === 3 && (
+            {productStep === 3 && isShopVendor && (
               <section className="space-y-3">
                 <div className="space-y-3 rounded-lg border bg-white p-3">
                   <div>
@@ -1037,7 +1104,7 @@ export default function VendorProducts() {
               </section>
             )}
 
-            {productStep === 4 && (
+            {((isShopVendor && productStep === 4) || (isTravelAgency && productStep === 3)) && (
               <section className="space-y-3">
                 <div className="rounded-xl border bg-white p-3 shadow-sm">
                   <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Customer preview</p>
@@ -1046,13 +1113,13 @@ export default function VendorProducts() {
                       {imageUrls[0] ? <img src={imageUrls[0]} alt="" referrerPolicy="no-referrer" loading="lazy" decoding="async" className="h-full w-full object-contain p-3" /> : <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No image</div>}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="line-clamp-2 text-lg font-bold">{watch("name") || "Product title"}</h3>
+                      <h3 className="line-clamp-2 text-lg font-bold">{watch("name") || (isFoodPartner ? "Dish name" : isTravelAgency ? "Service name" : "Product title")}</h3>
                       <p className="mt-1 text-sm text-muted-foreground">{selectedCategory?.name ?? "Category"} · {watch("weight") || "1"} {watch("unit") || "pc"}</p>
                       <div className="mt-3 flex items-baseline gap-2">
                         <span className="text-2xl font-bold">Rs.{Number(watch("price") || 0).toFixed(0)}</span>
                         <span className="text-sm text-muted-foreground line-through">Rs.{Number(watch("mrp") || 0).toFixed(0)}</span>
                       </div>
-                      <p className="mt-2 text-sm text-green-700">{watch("deliveryNote") || "40 minute local target"}</p>
+                      <p className="mt-2 text-sm text-green-700">{isFoodPartner ? `${watch("preparationMinutes") || 20} minute preparation time` : isTravelAgency ? (watch("route") || "Route details added by travel agency") : (watch("deliveryNote") || "40 minute local target")}</p>
                       <div className="mt-3 flex flex-wrap gap-1">
                         {[...selectedSizes, ...normalizeSizes(watch("sizes"))].slice(0, 6).map((size) => <Badge key={size} variant="outline">{size}</Badge>)}
                         {[...selectedColors, ...normalizeSizes(watch("colors"))].slice(0, 6).map((color) => <Badge key={color} variant="outline">{color}</Badge>)}
@@ -1280,13 +1347,20 @@ export default function VendorProducts() {
               <Button type="button" variant="outline" onClick={() => productStep === 0 ? setDialogOpen(false) : setProductStep((step) => Math.max(0, step - 1))}>
                 {productStep === 0 ? "Cancel" : "Back"}
               </Button>
-              {productStep < PRODUCT_STEPS.length - 1 ? (
-                <Button type="button" onClick={goNextStep}>Continue</Button>
-              ) : (
+              <div className="flex flex-wrap justify-end gap-2">
+                {isFoodPartner && productStep < formSteps.length - 1 && (
+                  <Button type="submit" disabled={create.isPending || update.isPending} data-testid="btn-save-dish-now">
+                    {create.isPending || update.isPending ? "Saving..." : "Save dish"}
+                  </Button>
+                )}
+                {productStep < formSteps.length - 1 ? (
+                  <Button type="button" onClick={goNextStep}>Continue</Button>
+                ) : (
                 <Button type="submit" disabled={create.isPending || update.isPending} data-testid="btn-save">
-                  {create.isPending || update.isPending ? "Saving..." : "Publish Product"}
+                  {create.isPending || update.isPending ? "Saving..." : isFoodPartner ? "Save dish" : isTravelAgency ? "Save service" : "Publish Product"}
                 </Button>
-              )}
+                )}
+              </div>
             </DialogFooter>
           </form>
         </DialogContent>

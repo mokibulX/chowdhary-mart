@@ -7,7 +7,7 @@ import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth";
 
 const router = Router();
 
-router.use(requireAuth, requireRole("admin", "vendor", "delivery_partner", "customer"));
+router.use(requireAuth, requireRole("admin", "vendor", "food_partner", "travel_agency", "delivery_partner", "customer"));
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);

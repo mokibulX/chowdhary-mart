@@ -17,7 +17,7 @@ type AuthResponse = {
 };
 
 type LoginMode = "password" | "otp" | "forgot";
-type LoginRole = "customer" | "vendor" | "delivery_partner" | "admin";
+type LoginRole = "customer" | "vendor" | "food_partner" | "travel_agency" | "delivery_partner" | "admin";
 type DemoAccount = { role: LoginRole; label: string; email: string; password: string };
 
 const env = import.meta.env as Record<string, string | undefined>;
@@ -31,6 +31,8 @@ const adminDemoAccount: DemoAccount = { role: "admin", label: "Login as Admin", 
 const roleContent: Record<LoginRole, { heading: string; subtitle: string; icon: typeof UserRound; accent: string }> = {
   customer: { heading: "Customer Login", subtitle: "Login to shop from your nearby local stores.", icon: UserRound, accent: "from-orange-500 to-amber-400" },
   vendor: { heading: "Seller Login", subtitle: "Manage your products, orders and store.", icon: Store, accent: "from-blue-600 to-cyan-500" },
+  food_partner: { heading: "Restaurant Partner Login", subtitle: "Manage your menu, kitchen orders and restaurant wallet.", icon: Store, accent: "from-rose-600 to-orange-500" },
+  travel_agency: { heading: "Travel Agency Login", subtitle: "Manage your travel services and bookings.", icon: Store, accent: "from-indigo-600 to-sky-500" },
   delivery_partner: { heading: "Delivery Partner Login", subtitle: "Go online, accept orders and start delivering.", icon: Truck, accent: "from-green-600 to-emerald-400" },
   admin: { heading: "Admin Control Panel", subtitle: "Secure access for authorised administrators only.", icon: LockKeyhole, accent: "from-slate-950 to-slate-700" },
 };
@@ -39,6 +41,8 @@ function routeForRole(role: string) {
   const normalized = String(role || "").trim().toLowerCase();
   if (normalized === "admin") return "/admin/dashboard";
   if (normalized === "vendor" || normalized === "seller") return "/vendor";
+  if (normalized === "food_partner") return "/food-partner";
+  if (normalized === "travel_agency") return "/travel-agency";
   if (["delivery_partner", "rider", "delivery"].includes(normalized)) return "/delivery";
   if (normalized === "customer") return "/customer/home";
   return "/login";
@@ -51,6 +55,8 @@ function splitIdentifier(identifier: string) {
 
 function roleFromPath(path: string): LoginRole {
   if (path.startsWith("/admin")) return "admin";
+  if (path.startsWith("/food-partner") || path.startsWith("/restaurant")) return "food_partner";
+  if (path.startsWith("/travel-agency")) return "travel_agency";
   if (path.startsWith("/seller")) return "vendor";
   if (path.startsWith("/rider")) return "delivery_partner";
   return "customer";
@@ -87,6 +93,10 @@ export default function Login() {
     ? { href: "/register", label: "Create customer account" }
     : role === "vendor"
       ? { href: "/seller/register", label: "Register your shop" }
+      : role === "food_partner"
+        ? { href: "/seller/register?role=food_partner", label: "Register your restaurant" }
+        : role === "travel_agency"
+          ? { href: "/seller/register?role=travel_agency", label: "Register your travel agency" }
       : role === "delivery_partner"
         ? { href: "/delivery/register", label: "Register as delivery partner" }
         : null;
@@ -247,6 +257,11 @@ export default function Login() {
           {role === "vendor" && (
             <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs font-medium text-blue-800">
               Seller dashboard opens only after admin approval. Use the same seller account you created during shop registration.
+            </div>
+          )}
+          {role === "food_partner" && (
+            <div className="mb-4 rounded-2xl border border-rose-100 bg-rose-50 p-3 text-xs font-medium text-rose-800">
+              Restaurant dashboard opens after admin approval. Sign in using the email or mobile number from your restaurant registration.
             </div>
           )}
           {role === "delivery_partner" && (

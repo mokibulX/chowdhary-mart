@@ -1,14 +1,16 @@
 import { Router } from "express";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
-import { db, storesTable, bannersTable } from "@workspace/db";
+import { db, storesTable, bannersTable, usersTable } from "@workspace/db";
 import { getActiveDeliveryZones, isInsideZone } from "../lib/zones";
 import { toPublicStore } from "../lib/public-store";
+import { ensureStoreDisplayColumns } from "../lib/store-display";
 
 const router = Router();
 
 // GET /api/stores
 router.get("/", async (req, res) => {
   try {
+    await ensureStoreDisplayColumns();
     const limit = Math.min(Number(req.query.limit) || 20, 50);
     const lat = Number(req.query.lat);
     const lng = Number(req.query.lng);
@@ -17,6 +19,7 @@ router.get("/", async (req, res) => {
     let eligibleZones: any[] = [];
     const conditions = [
       eq(storesTable.isActive, true),
+      eq(storesTable.isVerified, true),
       eq(storesTable.isOpen, true),
     ];
     if (hasLocation) {
@@ -36,17 +39,23 @@ router.get("/", async (req, res) => {
       const ids = eligibleZones.map((zone) => zone.id);
       conditions.push(ids.length ? inArray(storesTable.zoneId, ids) : sql`false`);
     }
-    const stores = await db.select().from(storesTable)
+    const stores = await db.select({
+      store: storesTable,
+      partnerType: usersTable.role,
+      displayOrder: sql<number>`coalesce(stores.display_order, 0)`,
+      isFeatured: sql<boolean>`coalesce(stores.is_featured, false)`,
+    }).from(storesTable)
+      .innerJoin(usersTable, eq(storesTable.userId, usersTable.id))
       .where(and(...conditions))
-      .orderBy(desc(storesTable.rating))
+      .orderBy(sql`coalesce(stores.is_featured, false) desc`, sql`coalesce(stores.display_order, 0) desc`, desc(storesTable.rating))
       .limit(limit);
     const eligibleStores = hasLocation
-      ? stores.filter((store) => {
+      ? stores.filter(({ store }) => {
           const zone = eligibleZones.find((item) => item.id === store.zoneId);
           return Boolean(zone && isInsideZone(zone, Number(store.lat), Number(store.lng)));
         })
       : stores;
-    res.json(eligibleStores.map(toPublicStore));
+    res.json(eligibleStores.map(({ store, partnerType, displayOrder, isFeatured }) => ({ ...toPublicStore(store), partnerType: String(partnerType), displayOrder: Number(displayOrder), isFeatured: Boolean(isFeatured) })));
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -56,9 +65,10 @@ router.get("/", async (req, res) => {
 // GET /api/stores/:storeId
 router.get("/:storeId", async (req, res) => {
   try {
+    await ensureStoreDisplayColumns();
     const id = Number(req.params.storeId);
     const [store] = await db.select().from(storesTable).where(eq(storesTable.id, id)).limit(1);
-    if (!store) {
+    if (!store || !store.isActive || !store.isVerified || !store.isOpen) {
       res.status(404).json({ error: "Store not found" });
       return;
     }

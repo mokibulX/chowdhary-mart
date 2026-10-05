@@ -101,8 +101,13 @@ router.post("/items", async (req: AuthRequest, res) => {
     const userId = req.user!.userId;
 
     const [product] = await db.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
-    if (!product) {
+    if (!product || !product.isAvailable || Number(product.stock) <= 0) {
       res.status(404).json({ error: "Product not found" });
+      return;
+    }
+    const [store] = await db.select().from(storesTable).where(eq(storesTable.id, product.storeId)).limit(1);
+    if (!store || !store.isActive || !store.isVerified || !store.isOpen || store.holidayMode) {
+      res.status(400).json({ error: "This seller is not active right now." });
       return;
     }
 

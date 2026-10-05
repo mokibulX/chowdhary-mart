@@ -21,12 +21,16 @@ const FOOD_PARTNER_NAV = [
   { href: "/food-partner/orders", label: "Food Orders", icon: ShoppingBag },
   { href: "/food-partner/menu", label: "Food Menu", icon: Package },
   { href: "/food-partner/restaurant", label: "Restaurant", icon: Store },
+  { href: "/food-partner/wallet", label: "Wallet", icon: Wallet },
 ];
 
 export function VendorLayout({ children }: { children: ReactNode }) {
   const { user, confirmLogout } = useAuth();
   const [location] = useLocation();
-  const navigation = String(user?.role ?? "").toLowerCase() === "food_partner" ? FOOD_PARTNER_NAV : VENDOR_NAV;
+  const isFoodPartner = String(user?.role ?? "").toLowerCase() === "food_partner";
+  const navigation = isFoodPartner ? FOOD_PARTNER_NAV : VENDOR_NAV;
+  const homeHref = isFoodPartner ? "/food-partner" : "/vendor";
+  const panelLabel = isFoodPartner ? "Food Partner Panel" : "Seller Panel";
 
   const navItems = (mobile = false) => (
     <nav className={mobile ? "space-y-1" : "flex-1 p-3 space-y-1"}>
@@ -60,12 +64,12 @@ export function VendorLayout({ children }: { children: ReactNode }) {
             <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => window.history.back()}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <Link href="/vendor">
+            <Link href={homeHref}>
               <div className="flex min-w-0 items-center gap-2">
                 <img src="/app-logo.png" alt="Chowdhary Mart" className="h-9 w-9 rounded-xl object-cover" />
                 <div className="min-w-0">
                 <div className="truncate text-base font-bold text-primary">Chowdhary Mart</div>
-                <div className="text-xs text-muted-foreground">Seller Panel</div>
+                <div className="text-xs text-muted-foreground">{panelLabel}</div>
                 </div>
               </div>
             </Link>
@@ -82,7 +86,7 @@ export function VendorLayout({ children }: { children: ReactNode }) {
                   <img src="/app-logo.png" alt="Chowdhary Mart" className="h-10 w-10 rounded-xl bg-white object-cover" />
                   Chowdhary Mart
                 </div>
-                <div className="text-xs opacity-80">Seller Panel</div>
+                <div className="text-xs opacity-80">{panelLabel}</div>
               </div>
               <div className="p-3">{navItems(true)}</div>
               <div className="mt-auto border-t p-3">
@@ -103,18 +107,18 @@ export function VendorLayout({ children }: { children: ReactNode }) {
           <Button variant="ghost" size="sm" className="mb-3 w-full justify-start text-muted-foreground" onClick={() => window.history.back()}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back
           </Button>
-          <Link href="/vendor">
+          <Link href={homeHref}>
             <Button variant="outline" size="sm" className="mb-3 w-full justify-start">
               <Home className="mr-2 h-4 w-4" /> Seller Home
             </Button>
           </Link>
-          <Link href="/vendor">
+          <Link href={homeHref}>
           <div className="flex items-center gap-2 text-lg font-bold text-primary">
             <img src="/app-logo.png" alt="Chowdhary Mart" className="h-10 w-10 rounded-xl object-cover" />
             Chowdhary Mart
           </div>
           </Link>
-          <div className="text-xs text-muted-foreground mt-0.5">Seller Panel</div>
+          <div className="text-xs text-muted-foreground mt-0.5">{panelLabel}</div>
         </div>
         {navItems()}
         <div className="p-3 border-t">

@@ -161,6 +161,8 @@ router.get("/suggestions", async (req, res) => {
         eq(productsTable.isAvailable, true),
         sql`${productsTable.stock} > 0`,
         eq(storesTable.isActive, true),
+        eq(storesTable.isVerified, true),
+        eq(storesTable.isOpen, true),
         allowedZoneIds.length ? inArray(storesTable.zoneId, allowedZoneIds) : hasLocation ? sql`false` : undefined,
         or(
           ilike(productsTable.name, `${q}%`),
@@ -233,6 +235,8 @@ router.post("/image", async (req, res) => {
         eq(productsTable.isAvailable, true),
         sql`${productsTable.stock} > 0`,
         eq(storesTable.isActive, true),
+        eq(storesTable.isVerified, true),
+        eq(storesTable.isOpen, true),
         hasLocation ? nearbyStoreCondition(lat, lng, radiusKm) : undefined,
         hasLocation ? (allowedZoneIds.length ? inArray(storesTable.zoneId, allowedZoneIds) : sql`false`) : undefined,
       ))

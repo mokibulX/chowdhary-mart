@@ -11,7 +11,7 @@ import { validateZoneSelection } from "../lib/zones";
 import { requestOtp, resolveOtpChannel, verifyOtp } from "../lib/otp-service";
 
 const router = Router();
-const publicRoles = ["customer", "vendor", "food_partner", "delivery_partner"] as const;
+const publicRoles = ["customer", "vendor", "food_partner", "travel_agency", "delivery_partner"] as const;
 type PublicRole = (typeof publicRoles)[number];
 const publicRoleSet = new Set<string>(publicRoles);
 const blockedPublicRoles = new Set(["admin", "super_admin", "platform_admin", "city_admin", "zone_admin", "support_admin", "finance_admin", "content_admin"]);
@@ -246,6 +246,7 @@ router.post("/register", async (req, res) => {
     }
 
     await db.execute(sql`alter type user_role add value if not exists 'food_partner'`);
+    await db.execute(sql`alter type user_role add value if not exists 'travel_agency'`);
     const userRole = resolvePublicRole(role);
     if (!userRole || blockedPublicRoles.has(normalizeRole(role))) {
       res.status(403).json({ error: "This account type cannot be created from the public application." });
@@ -289,7 +290,7 @@ router.post("/register", async (req, res) => {
 
     const passwordHash = await hashPassword(password || randomBytes(32).toString("base64url"));
     const referralCode = generateReferralCode();
-    const isSellerRole = userRole === "vendor" || userRole === "food_partner";
+    const isSellerRole = userRole === "vendor" || userRole === "food_partner" || userRole === "travel_agency";
     const zoneValidation = isSellerRole
       ? await validateZoneSelection("seller", req.body.selectedZoneId ?? req.body.zoneId, req.body.shopLatitude ?? req.body.lat, req.body.shopLongitude ?? req.body.lng)
       : userRole === "delivery_partner"
@@ -341,7 +342,7 @@ router.post("/register", async (req, res) => {
           userId: created.id,
           zoneId: zoneValidation?.ok ? zoneValidation.zone.id : null,
           name: shopName,
-          description: cleanText(req.body.businessType) ?? "Seller registration pending admin approval",
+          description: [cleanText(req.body.businessType), cleanText(req.body.shopCategory) ? `Categories: ${cleanText(req.body.shopCategory)}` : null].filter(Boolean).join(" | ") || "Seller registration pending admin approval",
           logoUrl: cleanText(req.body.logoUrl) ?? null,
           bannerUrl: cleanText(req.body.bannerUrl) ?? null,
           lat: safeCoordinate(req.body.shopLatitude ?? req.body.lat),
@@ -646,14 +647,14 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
     const [deliveryPartner] = user.role === "delivery_partner"
       ? await db.select().from(deliveryPartnersTable).where(eq(deliveryPartnersTable.userId, user.id)).limit(1)
       : [null];
-    const [store] = ["vendor", "food_partner"].includes(user.role)
+    const [store] = ["vendor", "food_partner", "travel_agency"].includes(String(user.role))
       ? await db.select().from(storesTable).where(eq(storesTable.userId, user.id)).limit(1)
       : [null];
     const deliveryStatusRows = user.role === "delivery_partner"
       ? await db.execute(sql`select delivery_status as "deliveryStatus" from delivery_partners where user_id = ${user.id} limit 1`)
       : null;
     const deliveryReviewStatus = deliveryStatusRows ? (((deliveryStatusRows as any).rows ?? deliveryStatusRows)?.[0]?.deliveryStatus ?? null) : null;
-    res.json({
+    res.set("Cache-Control", "no-store").json({
       id: user.id,
       email: user.email,
       phone: user.phone,
@@ -670,7 +671,7 @@ router.get("/me", requireAuth, async (req: AuthRequest, res) => {
       deliveryStatus: deliveryPartner ? (deliveryReviewStatus ?? (deliveryPartner.isVerified ? "approved" : "pending")) : null,
       currentZoneId: deliveryPartner?.currentZoneId ?? store?.zoneId ?? null,
       storeId: store?.id ?? null,
-      vendorStatus: store ? (store.isVerified && store.isActive ? "approved" : !store.isActive ? "rejected" : "pending") : (["vendor", "food_partner"].includes(user.role) ? "pending" : null),
+      vendorStatus: store ? (store.isVerified && store.isActive ? "approved" : !store.isActive ? "rejected" : "pending") : (["vendor", "food_partner", "travel_agency"].includes(String(user.role)) ? "pending" : null),
       storeIsOpen: store?.isOpen ?? null,
       storeIsActive: store?.isActive ?? null,
       createdAt: user.createdAt,

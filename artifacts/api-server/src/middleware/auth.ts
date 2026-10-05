@@ -55,7 +55,7 @@ export async function requireApprovedVendor(req: AuthRequest, res: Response, nex
     next();
     return;
   }
-  if (!["vendor", "food_partner"].includes(req.user.role)) {
+  if (!["vendor", "food_partner", "travel_agency"].includes(req.user.role)) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }

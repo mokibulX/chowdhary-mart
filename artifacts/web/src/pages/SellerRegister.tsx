@@ -66,7 +66,13 @@ const initialForm: SellerForm = {
 
 export default function SellerRegister() {
   const [, setLocation] = useLocation();
-  const isFoodPartner = new URLSearchParams(window.location.search).get("role") === "food_partner";
+  const partnerRole = new URLSearchParams(window.location.search).get("role");
+  const isFoodPartner = partnerRole === "food_partner";
+  const isTravelAgency = partnerRole === "travel_agency";
+  const partnerName = isFoodPartner ? "Restaurant" : isTravelAgency ? "Travel agency" : "Shop";
+  const businessTypeLabel = isFoodPartner ? "Cuisine / restaurant type" : isTravelAgency ? "Travel service type" : "Business type";
+  const categoryLabel = isFoodPartner ? "Food categories" : isTravelAgency ? "Travel services" : "Main categories";
+  const premisesPhotoLabel = isFoodPartner ? "Restaurant front photo *" : isTravelAgency ? "Office / booking counter photo *" : "Shop front photo *";
   const { login } = useAuth();
   const { toast } = useToast();
   const authToast = (options: Parameters<typeof toast>[0]) => toast({ duration: 2000, ...options });
@@ -94,11 +100,11 @@ export default function SellerRegister() {
     : null;
 
   useEffect(() => {
-    setForm({ ...initialForm });
+    setForm({ ...initialForm, businessType: isFoodPartner ? "Restaurant" : isTravelAgency ? "Travel agency" : "Retail shop" });
     setOtpSent(false);
     setOtp("");
     setCredentialFieldsReady(false);
-  }, []);
+  }, [isFoodPartner, isTravelAgency]);
 
   const update = (key: keyof SellerForm, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -109,7 +115,12 @@ export default function SellerRegister() {
     .map((value) => value.trim())
     .filter(Boolean);
 
-  const availableCategoryOptions = Array.from(new Set([...categoryOptions, ...selectedCategories]));
+  const availableCategoryOptions = Array.from(new Set([...categoryOptions, ...selectedCategories])).filter((category) => {
+    const name = category.toLowerCase();
+    if (isFoodPartner) return /(food|restaurant|meal|dish|snack|drink|beverage|bakery|dessert|cafe|grocery)/.test(name);
+    if (isTravelAgency) return /(travel|bus|car|cab|taxi|ticket|tour|hotel)/.test(name);
+    return !/(travel|bus|car|cab|taxi|ticket|tour|hotel|restaurant|meal|dish)/.test(name);
+  });
 
   const toggleCategory = (category: string) => {
     setForm((current) => {
@@ -138,13 +149,13 @@ export default function SellerRegister() {
         const rows = Array.isArray(response)
           ? response
           : response?.categories ?? response?.items ?? response?.data ?? [];
-        const names = rows
+        const names: string[] = rows
           .map((item: any) =>
             typeof item === "string" ? item : item?.name ?? item?.title ?? item?.category ?? item?.label,
           )
           .filter((value: unknown): value is string => typeof value === "string" && value.trim().length > 0)
-          .map((name) => name.trim());
-        if (active) setCategoryOptions([...new Set(names)]);
+          .map((name: string) => name.trim());
+        if (active) setCategoryOptions(Array.from(new Set<string>(names)));
       })
       .catch(() => {
         if (active) setCategoryOptions([]);
@@ -264,7 +275,7 @@ export default function SellerRegister() {
           email: form.email.trim().toLowerCase(),
           otp,
           upiId: form.upiId.trim(),
-          role: isFoodPartner ? "food_partner" : "vendor",
+          role: isFoodPartner ? "food_partner" : isTravelAgency ? "travel_agency" : "vendor",
           gstNumber: form.gstNumber || undefined,
           panNumber: form.panNumber || undefined,
           selectedZoneId: Number(form.selectedZoneId),
@@ -275,8 +286,8 @@ export default function SellerRegister() {
         }),
       });
       login(res.token);
-      authToast({ title: "Shop registration submitted", description: "Admin approve korle seller panel-e product add korte parben. Existing account thakleo application submit hoyeche." });
-      setLocation(isFoodPartner ? "/food-partner" : "/vendor");
+      authToast({ title: `${partnerName} registration submitted`, description: "Admin approval er por apnar partner dashboard unlock hobe." });
+      setLocation(isFoodPartner ? "/food-partner" : isTravelAgency ? "/travel-agency" : "/vendor");
     } catch (err) {
       authToast({ title: "Registration failed", description: getFriendlyErrorMessage(err, "Could not submit shop registration. Please check the details."), variant: "destructive" });
     } finally {
@@ -293,7 +304,7 @@ export default function SellerRegister() {
           </Button>
           <div className="min-w-0">
             <p className="text-xs font-semibold text-primary">Chowdhary Mart Seller</p>
-            <h1 className="truncate text-base font-bold">Shop registration</h1>
+            <h1 className="truncate text-base font-bold">{partnerName} registration</h1>
           </div>
         </div>
       </header>
@@ -304,9 +315,9 @@ export default function SellerRegister() {
           </Link>
           <div className="mt-8 max-w-md">
             <Badge className="mb-4 bg-yellow-400 text-gray-950">Seller Panel</Badge>
-            <h1 className="text-3xl font-bold leading-tight md:text-4xl">Register your shop and sell locally.</h1>
+            <h1 className="text-3xl font-bold leading-tight md:text-4xl">{isFoodPartner ? "Register your restaurant." : isTravelAgency ? "Register your travel agency." : "Register your shop and sell locally."}</h1>
             <p className="mt-3 text-sm leading-6 text-white/80">
-              Shop owner details submit korun. Admin approve korle apnar seller dashboard unlock hobe, sekhan theke product, stock, sizes, photos and orders manage korte parben.
+              {isFoodPartner ? "Restaurant details submit korun. Approval er por menu, kitchen orders and restaurant wallet manage korte parben." : isTravelAgency ? "Travel service details submit korun. Approval er por bus, cab and travel bookings manage korte parben." : "Shop owner details submit korun. Admin approve korle apnar seller dashboard unlock hobe, sekhan theke product, stock, sizes, photos and orders manage korte parben."}
             </p>
           </div>
           <div className="mt-8 grid gap-3">
@@ -336,7 +347,7 @@ export default function SellerRegister() {
                 <Store className="h-6 w-6" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-lg font-bold leading-tight sm:text-xl">Shop owner registration</h2>
+                <h2 className="text-lg font-bold leading-tight sm:text-xl">{partnerName} registration</h2>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">GST optional. Admin approval required.</p>
               </div>
             </div>
@@ -368,11 +379,11 @@ export default function SellerRegister() {
                     </button>
                   </div>
                 </div>
-                <Field label="Shop name *" value={form.shopName} onChange={(value) => update("shopName", value)} />
-                <Field label="Business type" value={form.businessType} onChange={(value) => update("businessType", value)} />
+                <Field label={`${partnerName} name *`} value={form.shopName} onChange={(value) => update("shopName", value)} />
+                <Field label={businessTypeLabel} value={form.businessType} onChange={(value) => update("businessType", value)} placeholder={isFoodPartner ? "e.g. Bengali, cafe, bakery" : isTravelAgency ? "e.g. Bus operator, cab service, tour operator" : undefined} />
                 <div className="space-y-1.5">
                   <label htmlFor="seller-main-categories" className="block text-sm font-medium">
-                    Main categories
+                    {categoryLabel}
                   </label>
                   <div className="relative">
                     <button
@@ -384,7 +395,7 @@ export default function SellerRegister() {
                       aria-expanded={categoryMenuOpen}
                     >
                       <span className={selectedCategories.length ? "leading-6" : "leading-6 text-slate-500"}>
-                        {selectedCategories.length ? selectedCategories.join(", ") : "Select existing categories"}
+                        {selectedCategories.length ? selectedCategories.join(", ") : `Select ${isTravelAgency ? "services" : "categories"}`}
                       </span>
                       <ChevronDown className={`h-5 w-5 shrink-0 transition-transform ${categoryMenuOpen ? "rotate-180" : ""}`} />
                     </button>
@@ -392,7 +403,7 @@ export default function SellerRegister() {
                       <div
                         className="absolute z-30 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg"
                         role="listbox"
-                        aria-label="Main categories"
+                        aria-label={categoryLabel}
                       >
                         {availableCategoryOptions.length ? availableCategoryOptions.map((category) => {
                           const selected = selectedCategories.some((value) => value.toLowerCase() === category.toLowerCase());
@@ -444,7 +455,7 @@ export default function SellerRegister() {
                     onFile={(file) => setPhoto("ownerPhoto", file)}
                   />
                   <SellerPhotoInput
-                    label="Shop front photo *"
+                    label={premisesPhotoLabel}
                     value={form.shopFrontPhoto}
                     icon={<Store className="h-5 w-5" />}
                     camera="environment"
@@ -456,8 +467,8 @@ export default function SellerRegister() {
               <div className="rounded-3xl border bg-white p-2 shadow-sm sm:p-4">
                 <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="font-bold">Exact shop pickup point</p>
-                    <p className="text-xs text-muted-foreground">Delivery partner ei pin-e giye item receive korbe.</p>
+                    <p className="font-bold">Exact {isFoodPartner ? "restaurant" : isTravelAgency ? "agency office" : "shop"} location</p>
+                    <p className="text-xs text-muted-foreground">Delivery partner or customer navigation er jonno ei pin use hobe.</p>
                   </div>
                   <Badge className={currentPickupLocation ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}>
                     {currentPickupLocation ? "Selected" : "Required"}
@@ -467,9 +478,9 @@ export default function SellerRegister() {
                   mode="inline"
                   initial={currentPickupLocation}
                   locateFirst={!currentPickupLocation}
-                  title="Set exact shop location"
+                  title={`Set exact ${partnerName.toLowerCase()} location`}
                   subtitle="GPS use korun, map move korun, ba tap kore pickup pin set korun."
-                  confirmLabel="Use This Shop Pickup Point"
+                  confirmLabel={`Use This ${partnerName} Location`}
                   compact
                   onClose={() => undefined}
                   onConfirm={(location) => {
@@ -525,8 +536,8 @@ export default function SellerRegister() {
               </div>
 
               <div className="space-y-1.5">
-                <Label>Shop / pickup address *</Label>
-                <Textarea value={form.shopAddress} onChange={(event) => update("shopAddress", event.target.value)} rows={3} placeholder="Full shop address with landmark" />
+                <Label>{partnerName} address *</Label>
+                <Textarea value={form.shopAddress} onChange={(event) => update("shopAddress", event.target.value)} rows={3} placeholder={`Full ${partnerName.toLowerCase()} address with landmark`} />
               </div>
 
               {otpSent && (

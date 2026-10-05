@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BadgePercent, MapPin, Power, Save, Star, Store, Trash2 } from "lucide-react";
+import { BadgePercent, MapPin, Power, Save, Sparkles, Star, Store, Trash2 } from "lucide-react";
 
 export default function AdminStores() {
   const { user } = useAuth();
@@ -22,14 +22,15 @@ export default function AdminStores() {
     const freeDeliveryAbove = row?.querySelector<HTMLInputElement>('[name="freeDeliveryAbove"]')?.value ?? store.freeDeliveryAbove ?? "0";
     const minOrderValue = row?.querySelector<HTMLInputElement>('[name="minOrderValue"]')?.value ?? store.minOrderValue ?? "0";
     const estimatedDeliveryMins = row?.querySelector<HTMLInputElement>('[name="estimatedDeliveryMins"]')?.value ?? store.estimatedDeliveryMins ?? "40";
+    const displayOrder = row?.querySelector<HTMLInputElement>('[name="displayOrder"]')?.value ?? store.displayOrder ?? "0";
     try {
       await customFetch(`/api/admin/stores/${store.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ deliveryFee, freeDeliveryAbove, minOrderValue, estimatedDeliveryMins }),
+        body: JSON.stringify({ deliveryFee, freeDeliveryAbove, minOrderValue, estimatedDeliveryMins, displayOrder }),
       });
       qc.invalidateQueries({ queryKey: getListAdminStoresQueryKey() });
       qc.invalidateQueries({ queryKey: getGetAdminDashboardQueryKey() });
-      toast({ title: "Store delivery rules updated", description: "Delivery fee, discount rule and ETA saved." });
+      toast({ title: "Store settings updated", description: "Delivery rules and customer display order saved." });
     } catch (error) {
       toast({ title: "Fee update failed", description: (error as Error).message, variant: "destructive" });
     }
@@ -48,6 +49,16 @@ export default function AdminStores() {
       });
     } catch (error) {
       toast({ title: "Status update failed", description: (error as Error).message, variant: "destructive" });
+    }
+  };
+
+  const toggleFeatured = async (store: any) => {
+    try {
+      await customFetch(`/api/admin/stores/${store.id}`, { method: "PATCH", body: JSON.stringify({ isFeatured: !store.isFeatured }) });
+      qc.invalidateQueries({ queryKey: getListAdminStoresQueryKey() });
+      toast({ title: !store.isFeatured ? "Featured placement enabled" : "Featured placement removed" });
+    } catch (error) {
+      toast({ title: "Placement update failed", description: (error as Error).message, variant: "destructive" });
     }
   };
 
@@ -75,7 +86,7 @@ export default function AdminStores() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold">Stores ({stores?.length ?? 0})</h1>
-        <p className="text-sm text-muted-foreground">Admin controls delivery fees, free-delivery discount rules and pickup GPS visibility.</p>
+        <p className="text-sm text-muted-foreground">Admin decides which shops and restaurants are visible, online and available for customer orders.</p>
       </div>
 
       {isLoading ? (
@@ -107,7 +118,9 @@ export default function AdminStores() {
                     <Badge variant={store.isOpen ? "default" : "secondary"} className={`text-xs ${store.isOpen ? "bg-green-500" : ""}`}>
                       {store.isOpen ? "Open" : "Closed"}
                     </Badge>
-                    {store.isVerified && <Badge variant="outline" className="border-blue-200 text-xs text-blue-600">Verified</Badge>}
+                    {store.isVerified && <Badge variant="outline" className="border-blue-200 text-xs text-blue-600">Approved</Badge>}
+                    {!store.isActive && <Badge variant="outline" className="border-red-200 text-xs text-red-600">Hidden by admin</Badge>}
+                    {store.isFeatured && <Badge className="bg-amber-500 text-xs text-white">Featured</Badge>}
                   </div>
                   <p className="line-clamp-1 text-xs text-muted-foreground">{store.address}, {store.city}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -132,7 +145,7 @@ export default function AdminStores() {
                 <div>
                   <p className="text-sm font-semibold">Seller order status</p>
                   <p className="text-xs text-muted-foreground">
-                    {store.isOpen ? "Active sellers can receive product orders." : "Inactive sellers are blocked from checkout."}
+                    {store.isOpen && store.isActive ? "Visible to customers and able to receive orders." : "Products are hidden from customers until admin activates this shop."}
                   </p>
                 </div>
                 <Button size="sm" variant={store.isOpen ? "destructive" : "default"} onClick={() => toggleStore(store)}>
@@ -147,15 +160,19 @@ export default function AdminStores() {
                 <div className="mb-2 flex items-center gap-2 text-sm font-bold text-green-800">
                   <BadgePercent className="h-4 w-4" /> Delivery fee discount control
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                   <Input name="deliveryFee" type="number" defaultValue={Number(store.deliveryFee ?? 0)} placeholder="Delivery fee" />
                   <Input name="freeDeliveryAbove" type="number" defaultValue={Number(store.freeDeliveryAbove ?? 0)} placeholder="Free above" />
                   <Input name="minOrderValue" type="number" defaultValue={Number(store.minOrderValue ?? 0)} placeholder="Min order" />
                   <Input name="estimatedDeliveryMins" type="number" min={5} max={120} defaultValue={Number(store.estimatedDeliveryMins ?? 40)} placeholder="ETA (mins)" />
+                  <Input name="displayOrder" type="number" min={0} max={9999} defaultValue={Number(store.displayOrder ?? 0)} placeholder="Display order" />
                 </div>
-                <p className="mt-2 text-xs text-green-700">Admin controls the delivery fee, free-delivery threshold, minimum order and ETA shown to customers.</p>
+                <p className="mt-2 text-xs text-green-700">Higher display order appears first. Featured partners always appear before non-featured partners.</p>
                 <Button size="sm" className="mt-3" onClick={() => saveFees(store)}>
-                  <Save className="mr-2 h-4 w-4" /> Save fee rule
+                  <Save className="mr-2 h-4 w-4" /> Save settings
+                </Button>
+                <Button size="sm" variant={store.isFeatured ? "secondary" : "outline"} className="ml-2 mt-3" onClick={() => toggleFeatured(store)}>
+                  <Sparkles className="mr-2 h-4 w-4" /> {store.isFeatured ? "Remove featured" : "Feature first"}
                 </Button>
               </div>
             </div>

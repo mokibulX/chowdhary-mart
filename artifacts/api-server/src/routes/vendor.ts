@@ -11,10 +11,11 @@ import { createAndPushNotification } from "../lib/push-service";
 import { expireOrderIfNeeded, lifecycleMeta } from "../lib/order-lifecycle";
 import { storePublicImage } from "./uploads";
 import { advanceDeliveryOffer, cancelDeliveryOffers } from "../lib/delivery-offers";
+import { ensureFoodOperationColumns } from "../lib/food-operations";
 
 const router = Router();
 
-router.use(requireAuth, requireRole("vendor", "food_partner", "admin"), requireApprovedVendor);
+router.use(requireAuth, requireRole("vendor", "food_partner", "travel_agency", "admin"), requireApprovedVendor);
 
 let mediaLibraryReady: Promise<void> | null = null;
 let barcodeMasterReady: Promise<void> | null = null;
@@ -155,10 +156,10 @@ function categoryRequiresExpiry(value: string) {
   return /(food|grocery|beverage|drink|snack|chocolate|dairy|milk|cosmetic|beauty|medicine|supplement|pet food)/i.test(value);
 }
 
-async function prepareProductSpecifications(categoryId: unknown, input: unknown, isAvailable: unknown) {
+async function prepareProductSpecifications(categoryId: unknown, input: unknown, isAvailable: unknown, options: { skipExpiryRules?: boolean } = {}) {
   const source = input && typeof input === "object" ? { ...(input as Record<string, unknown>) } : {};
   const [category] = categoryId ? await db.select({ name: categoriesTable.name }).from(categoriesTable).where(eq(categoriesTable.id, Number(categoryId))).limit(1) : [];
-  const required = categoryRequiresExpiry(String(category?.name ?? "")) || String(source.ExpiryRequired ?? "false").toLowerCase() === "true";
+  const required = !options.skipExpiryRules && (categoryRequiresExpiry(String(category?.name ?? "")) || String(source.ExpiryRequired ?? "false").toLowerCase() === "true");
   const mfgDate = textValue(source.MFGDate);
   const expiryDate = textValue(source.ExpiryDate);
   if (required && (!mfgDate || !expiryDate)) throw new Error("This product requires a manufacturing date and expiry date.");
@@ -563,13 +564,18 @@ router.get("/barcode/:barcode", async (req: AuthRequest, res) => {
 // GET /api/vendor/store
 router.get("/store", async (req: AuthRequest, res) => {
   try {
+    await ensureFoodOperationColumns();
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(404).json({ error: "Store not found" }); return; }
     if (!(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "You cannot manage another service zone." }); return; }
     const [serviceZone] = store.zoneId
       ? await db.select().from(serviceZonesTable).where(eq(serviceZonesTable.id, store.zoneId)).limit(1)
       : [];
-    res.json({ ...store, serviceZone: serviceZone ?? null });
+    const setting = await db.execute(sql`select auto_accept_orders as "autoAcceptOrders" from stores where id = ${store.id}`);
+    const settings = ((setting as any).rows ?? setting)?.[0] ?? {};
+    const autoAcceptOrders = Boolean(settings.autoAcceptOrders);
+    const categoryMatch = String(store.description ?? "").match(/categories:\s*([^|]+)/i);
+    res.json({ ...store, serviceZone: serviceZone ?? null, autoAcceptOrders, preferredCategories: categoryMatch?.[1]?.trim() ?? null });
   } catch (err) {
     req.log.error(err);
     res.status(400).json({ error: err instanceof Error ? err.message : "Could not save product" });
@@ -579,6 +585,7 @@ router.get("/store", async (req: AuthRequest, res) => {
 // PATCH /api/vendor/store
 router.patch("/store", async (req: AuthRequest, res) => {
   try {
+    await ensureFoodOperationColumns();
     const store = await getVendorStore(req.user!.userId);
     if (!store) { res.status(404).json({ error: "Store not found" }); return; }
     if (!(await assertSellerZoneScope(req.user!.userId, store.zoneId))) { res.status(403).json({ error: "You cannot manage another service zone." }); return; }
@@ -596,6 +603,7 @@ router.patch("/store", async (req: AuthRequest, res) => {
       address,
       city,
       pincode,
+      autoAcceptOrders,
     } = req.body;
     const updates: Partial<typeof storesTable.$inferInsert> = { updatedAt: new Date() };
     if (name !== undefined) updates.name = String(name).trim();
@@ -610,6 +618,9 @@ router.patch("/store", async (req: AuthRequest, res) => {
     if (nextAddress !== undefined && String(nextAddress).trim()) updates.address = String(nextAddress).trim();
     if (city !== undefined) updates.city = city;
     if (pincode !== undefined) updates.pincode = pincode;
+    if (autoAcceptOrders !== undefined) {
+      await db.execute(sql`update stores set auto_accept_orders = ${Boolean(autoAcceptOrders)}, updated_at = now() where id = ${store.id}`);
+    }
 
     const nextShopFrontPhoto = bannerUrl !== undefined ? String(bannerUrl).trim() : String(store.bannerUrl ?? "").trim();
     if (!nextShopFrontPhoto) {
@@ -622,7 +633,7 @@ router.patch("/store", async (req: AuthRequest, res) => {
       .where(eq(storesTable.id, store.id))
       .returning();
 
-    res.json(updated);
+    res.json({ ...updated, autoAcceptOrders: autoAcceptOrders === undefined ? undefined : Boolean(autoAcceptOrders) });
   } catch (err) {
     req.log.error(err);
     res.status(400).json({ error: err instanceof Error ? err.message : "Could not update product" });
@@ -934,7 +945,12 @@ router.post("/products", async (req: AuthRequest, res) => {
         .where(eq(serviceZonesTable.id, store.zoneId)).limit(1)
       : [];
     const productImages = cleanProductImages(images);
-    const preparedSpecifications = await prepareProductSpecifications(normalizedCategoryId, specifications, isAvailable ?? true);
+    const preparedSpecifications = await prepareProductSpecifications(
+      normalizedCategoryId,
+      specifications,
+      isAvailable ?? true,
+      { skipExpiryRules: req.user!.role === "food_partner" },
+    );
     const discountPercent = normalizedMrp > 0 ? (((normalizedMrp - normalizedPrice) / normalizedMrp) * 100).toFixed(2) : "0";
     const normalizedSku = textValue(sku);
     if (normalizedSku) {
@@ -1013,7 +1029,12 @@ router.patch("/products/:productId", async (req: AuthRequest, res) => {
       }
     }
     const nextImages = images === undefined ? existing.images : cleanProductImages(images);
-    const preparedSpecifications = await prepareProductSpecifications(categoryId, specifications, isAvailable);
+    const preparedSpecifications = await prepareProductSpecifications(
+      categoryId,
+      specifications,
+      isAvailable,
+      { skipExpiryRules: req.user!.role === "food_partner" },
+    );
 
     const [product] = await db.update(productsTable)
       .set({ name, description, categoryId, price, mrp, weight, unit, sku: normalizedSku || null, specifications: preparedSpecifications, stock, isAvailable, isFeatured, images: nextImages, discountPercent, updatedAt: new Date() })

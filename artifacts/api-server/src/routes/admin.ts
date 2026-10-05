@@ -19,6 +19,7 @@ import { ensurePricingSchema } from "../lib/pricing";
 import { DEFAULT_LOCATION } from "../lib/default-location";
 import { advanceDeliveryOffer, cancelDeliveryOffers } from "../lib/delivery-offers";
 import { createAndPushNotification } from "../lib/push-service";
+import { ensureStoreDisplayColumns } from "../lib/store-display";
 
 const router = Router();
 
@@ -966,7 +967,7 @@ router.get("/store-applications", async (req: AuthRequest, res) => {
     const rows = await db.select({ store: storesTable, owner: usersTable })
       .from(storesTable)
       .innerJoin(usersTable, eq(storesTable.userId, usersTable.id))
-      .where(eq(usersTable.role, "vendor"))
+      .where(sql`${usersTable.role}::text in ('vendor', 'food_partner', 'travel_agency')`)
       .orderBy(desc(storesTable.createdAt));
     res.json(rows.map(({ store, owner }) => ({
       id: store.id,
@@ -978,7 +979,8 @@ router.get("/store-applications", async (req: AuthRequest, res) => {
       avatarUrl: owner.avatarUrl,
       shopName: store.name,
       businessType: store.description,
-      category: "Local store",
+      category: String(owner.role) === "food_partner" ? "Restaurant or cafe" : String(owner.role) === "travel_agency" ? "Travel agency" : "Local store",
+      partnerType: String(owner.role) === "food_partner" ? "food_partner" : String(owner.role) === "travel_agency" ? "travel_agency" : "vendor",
       gstNumber: store.gstin,
       address: store.address,
       city: store.city,
@@ -1700,8 +1702,12 @@ router.post("/catalog/clear-products-sellers", async (req: AuthRequest, res) => 
 // GET /api/admin/stores
 router.get("/stores", async (req: AuthRequest, res) => {
   try {
-    const stores = await db.select().from(storesTable).where(eq(storesTable.isActive, true)).orderBy(desc(storesTable.createdAt));
-    res.json(stores);
+    await ensureStoreDisplayColumns();
+    const result = await db.execute(sql`
+      select stores.*, coalesce(stores.display_order, 0) as "displayOrder", coalesce(stores.is_featured, false) as "isFeatured"
+      from stores order by coalesce(stores.is_featured, false) desc, coalesce(stores.display_order, 0) desc, stores.created_at desc
+    `);
+    res.json((result as any).rows ?? result);
   } catch (err) {
     req.log.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -1711,6 +1717,7 @@ router.get("/stores", async (req: AuthRequest, res) => {
 // PATCH /api/admin/stores/:storeId
 router.patch("/stores/:storeId", async (req: AuthRequest, res) => {
   try {
+    await ensureStoreDisplayColumns();
     const storeId = Number(req.params.storeId);
     if (!Number.isInteger(storeId) || storeId <= 0) {
       res.status(400).json({ error: "Invalid store id" });
@@ -1737,6 +1744,17 @@ router.patch("/stores/:storeId", async (req: AuthRequest, res) => {
     }
     if (req.body.isOpen !== undefined) patch.isOpen = Boolean(req.body.isOpen);
     if (req.body.isActive !== undefined) patch.isActive = Boolean(req.body.isActive);
+    if (req.body.displayOrder !== undefined) {
+      const displayOrder = Number(req.body.displayOrder);
+      if (!Number.isInteger(displayOrder) || displayOrder < 0 || displayOrder > 9999) {
+        res.status(400).json({ error: "Display order must be a whole number between 0 and 9999." });
+        return;
+      }
+      await db.execute(sql`update stores set display_order = ${displayOrder}, updated_at = now() where id = ${storeId}`);
+    }
+    if (req.body.isFeatured !== undefined) {
+      await db.execute(sql`update stores set is_featured = ${Boolean(req.body.isFeatured)}, updated_at = now() where id = ${storeId}`);
+    }
     if (req.body.zoneId !== undefined) {
       const zoneId = req.body.zoneId === null || req.body.zoneId === "" ? null : Number(req.body.zoneId);
       if (zoneId !== null) {
@@ -1752,7 +1770,7 @@ router.patch("/stores/:storeId", async (req: AuthRequest, res) => {
     if (req.body.isActive !== undefined) {
       await db.update(usersTable)
         .set({ isActive: Boolean(req.body.isActive), updatedAt: new Date() })
-        .where(and(eq(usersTable.id, existing.userId), eq(usersTable.role, "vendor")));
+        .where(and(eq(usersTable.id, existing.userId), sql`${usersTable.role}::text in ('vendor', 'food_partner', 'travel_agency')`));
     }
     res.json(store);
   } catch (err) {
