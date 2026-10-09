@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
+import { customFetch } from "@workspace/api-client-react";
 
 const BUSES = [
   { name: "Green Line Express", leave: "07:30", arrive: "13:10", duration: "5h 40m", type: "AC Sleeper", seats: 14, price: 699 },
@@ -29,6 +31,10 @@ export default function Travels() {
   const [drop, setDrop] = useState("");
   const [selectedCar, setSelectedCar] = useState("Mini");
   const [activeTab, setActiveTab] = useState("bus");
+  const { data: travelCategories = [] } = useQuery({
+    queryKey: ["/api/categories", "travel"],
+    queryFn: () => customFetch<any[]>("/api/categories?surface=travel", { responseType: "json" }),
+  });
   const validBusSearch = from.trim() && to.trim() && date;
   const car = useMemo(() => CARS.find((item) => item.name === selectedCar)!, [selectedCar]);
   useEffect(() => {
@@ -47,6 +53,8 @@ export default function Travels() {
 
   return <div className="mx-auto max-w-5xl space-y-5 pb-8">
     <section className="overflow-hidden rounded-lg bg-[#073b4c] text-white shadow-sm"><div className="grid gap-5 p-5 sm:grid-cols-[1fr_250px] sm:p-7"><div><p className="flex items-center gap-2 text-sm font-semibold text-[#ffd166]"><BusFront className="h-4 w-4" /> CMART TRAVELS</p><h1 className="mt-3 text-3xl font-bold">Move around with ease.</h1><p className="mt-2 text-sm text-white/80">Book intercity bus tickets or find a car for your next ride.</p></div><img src="https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=900&q=85" alt="Intercity bus" className="hidden h-40 w-full rounded-lg object-cover sm:block" /></div></section>
+
+    {travelCategories.length > 0 && <section className="flex gap-2 overflow-x-auto pb-1">{travelCategories.map((category: any) => <button key={category.id} type="button" onClick={() => setActiveTab(/cab|car|ride/i.test(category.name) ? "cab" : "bus")} className="shrink-0 rounded-full border bg-white px-4 py-2 text-sm font-semibold hover:border-[#118ab2] hover:text-[#08769b]">{category.name}</button>)}</section>}
 
     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full"><TabsList className="grid h-12 w-full grid-cols-2 bg-slate-200"><TabsTrigger value="bus" className="gap-2 data-[state=active]:bg-white"><BusFront className="h-4 w-4" />Bus tickets</TabsTrigger><TabsTrigger value="cab" className="gap-2 data-[state=active]:bg-white"><CarFront className="h-4 w-4" />Book a car</TabsTrigger></TabsList>
       <TabsContent value="bus" className="space-y-5"><section className="rounded-lg border bg-white p-4 shadow-sm"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_180px_120px_auto]"><Field label="From" value={from} setValue={setFrom} icon={MapPin} /><Field label="To" value={to} setValue={setTo} icon={MapPin} /><label className="grid gap-1 text-xs font-semibold text-slate-600">Date<Input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-11" /></label><label className="grid gap-1 text-xs font-semibold text-slate-600">Passengers<select value={travellers} onChange={(event) => setTravellers(event.target.value)} className="h-11 rounded-md border bg-white px-3 text-sm"><option>1</option><option>2</option><option>3</option><option>4</option></select></label><Button className="h-11 bg-[#118ab2] hover:bg-[#08769b]" onClick={() => validBusSearch ? setBusSearched(true) : toast({ title: "Complete your journey", variant: "destructive" })}><Search className="mr-2 h-4 w-4" />Search</Button></div></section>

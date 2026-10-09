@@ -52,6 +52,7 @@ const AdminCatalog = lazy(() => import("@/pages/admin/AdminCatalog"));
 const AdminApprovals = lazy(() => import("@/pages/admin/AdminApprovals"));
 const AdminZones = lazy(() => import("@/pages/admin/AdminZones"));
 const AdminHomepage = lazy(() => import("@/pages/admin/AdminHomepage"));
+const AdminBusinessControls = lazy(() => import("@/pages/admin/AdminBusinessControls"));
 const DeliveryDashboard = lazy(() => import("@/pages/delivery/DeliveryDashboard"));
 
 import { CustomerLayout } from "@/components/layout/CustomerLayout";
@@ -267,6 +268,7 @@ function Router() {
       <Route path="/admin/zones">{() => <AdminRoute component={AdminZones} />}</Route>
       <Route path="/admin/catalog">{() => <AdminRoute component={AdminCatalog} />}</Route>
       <Route path="/admin/homepage">{() => <AdminRoute component={AdminHomepage} />}</Route>
+      <Route path="/admin/business-controls">{() => <AdminRoute component={AdminBusinessControls} />}</Route>
       <Route path="/admin/stores">{() => <AdminRoute component={AdminStores} />}</Route>
       <Route path="/admin/coupons">{() => <AdminRoute component={AdminCoupons} />}</Route>
       <Route path="/admin/wallet">{() => <AdminRoute component={Wallet} />}</Route>

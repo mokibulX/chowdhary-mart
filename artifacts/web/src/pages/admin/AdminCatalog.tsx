@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { customFetch } from "@workspace/api-client-react";
 import { uploadImageFile } from "@/lib/image-upload";
@@ -45,12 +45,19 @@ const EMPTY_BANNER = {
 
 const EMPTY_CATEGORY = {
   name: "",
+  surface: "shopping",
   iconEmoji: "C",
   imageUrl: "",
   colorClass: "bg-blue-50",
   sortOrder: "1",
   isActive: true,
 };
+
+const CATEGORY_SURFACES = [
+  { value: "shopping", label: "Shopping" },
+  { value: "food", label: "Food" },
+  { value: "travel", label: "Travels" },
+];
 
 const EMPTY_MEDIA = {
   title: "",
@@ -76,6 +83,8 @@ export default function AdminCatalog() {
   const [mediaPage, setMediaPage] = useState(0);
   const [mediaSearch, setMediaSearch] = useState("");
   const [mediaCategoryId, setMediaCategoryId] = useState("all");
+  const [categorySurface, setCategorySurface] = useState("shopping");
+  const [mediaCategorySurface, setMediaCategorySurface] = useState("shopping");
   const mediaLimit = 60;
 
   const { data: products = [], isLoading: loadingProducts } = useQuery({
@@ -102,7 +111,9 @@ export default function AdminCatalog() {
     queryFn: () => customFetch<any[]>("/api/admin/stores"),
   });
 
-  const activeData = mode === "products" ? products : mode === "banners" ? banners : mode === "categories" ? categories : mediaItems;
+  const surfaceCategories = useMemo(() => categories.filter((category: any) => (category.surface ?? "shopping") === categorySurface), [categories, categorySurface]);
+  const mediaCategories = useMemo(() => categories.filter((category: any) => (category.surface ?? "shopping") === mediaCategorySurface), [categories, mediaCategorySurface]);
+  const activeData = mode === "products" ? products : mode === "banners" ? banners : mode === "categories" ? surfaceCategories : mediaItems;
   const isLoading = mode === "products" ? loadingProducts : mode === "banners" ? loadingBanners : mode === "categories" ? loadingCategories : loadingMedia;
   const title = mode === "products" ? "Products" : mode === "banners" ? "Banners" : mode === "categories" ? "Categories" : "Image Library";
   const singularTitle = mode === "media-library" ? "Image" : title.slice(0, -1);
@@ -117,7 +128,14 @@ export default function AdminCatalog() {
   const openCreate = (nextMode = mode) => {
     setMode(nextMode);
     setEditing(null);
-    setForm(nextMode === "products" ? EMPTY_PRODUCT : nextMode === "banners" ? EMPTY_BANNER : nextMode === "categories" ? EMPTY_CATEGORY : EMPTY_MEDIA);
+    setForm(nextMode === "products" ? EMPTY_PRODUCT : nextMode === "banners" ? EMPTY_BANNER : nextMode === "categories" ? { ...EMPTY_CATEGORY, surface: categorySurface } : EMPTY_MEDIA);
+    setDialogOpen(true);
+  };
+  const openMediaCategoryCreate = (surface: string) => {
+    setCategorySurface(surface);
+    setMode("categories");
+    setEditing(null);
+    setForm({ ...EMPTY_CATEGORY, surface });
     setDialogOpen(true);
   };
 
@@ -294,14 +312,28 @@ export default function AdminCatalog() {
                 <h3 className="font-bold">Product Image Library for Sellers</h3>
                 <p className="text-sm text-muted-foreground">Admin ekhane image, name, category, tags upload korbe. Seller product add korar somoy same category-r approved image use korte parbe.</p>
               </div>
-              <Button type="button" onClick={() => openCreate("media-library")}>
-                <Plus className="mr-2 h-4 w-4" /> Add Library Image
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => openMediaCategoryCreate(mediaCategorySurface)}>
+                  <Grid3X3 className="mr-2 h-4 w-4" /> Add category
+                </Button>
+                <Button type="button" onClick={() => openCreate("media-library")}>
+                  <Plus className="mr-2 h-4 w-4" /> Add Library Image
+                </Button>
+              </div>
             </div>
           </div>
         )}
+        {mode === "categories" && (
+          <div className="flex flex-wrap gap-2 border-b bg-slate-50 p-4">
+            {CATEGORY_SURFACES.map((section) => <Button key={section.value} type="button" size="sm" variant={categorySurface === section.value ? "default" : "outline"} onClick={() => setCategorySurface(section.value)}>{section.label}</Button>)}
+          </div>
+        )}
         {mode === "media-library" && (
-          <div className="grid gap-3 border-b bg-gray-50/60 p-4 md:grid-cols-[1fr_220px_auto]">
+          <div className="space-y-3 border-b bg-gray-50/60 p-4">
+            <div className="flex flex-wrap gap-2">
+              {CATEGORY_SURFACES.map((section) => <Button key={section.value} type="button" size="sm" variant={mediaCategorySurface === section.value ? "default" : "outline"} onClick={() => { setMediaCategorySurface(section.value); setMediaCategoryId("all"); setMediaPage(0); }}>{section.label}</Button>)}
+            </div>
+            <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
             <Input
               value={mediaSearch}
               onChange={(event) => { setMediaPage(0); setMediaSearch(event.target.value); }}
@@ -311,12 +343,13 @@ export default function AdminCatalog() {
               <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All categories</SelectItem>
-                {categories.map((item: any) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}
+                {mediaCategories.map((item: any) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <div className="flex items-center gap-2">
               <Button type="button" variant="outline" disabled={mediaPage === 0 || loadingMedia} onClick={() => setMediaPage((page) => Math.max(0, page - 1))}>Prev</Button>
               <Button type="button" variant="outline" disabled={!mediaResponse?.hasMore || loadingMedia} onClick={() => setMediaPage((page) => page + 1)}>Next</Button>
+            </div>
             </div>
           </div>
         )}
@@ -337,10 +370,10 @@ export default function AdminCatalog() {
         <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? "Edit" : "Add"} {singularTitle}</DialogTitle></DialogHeader>
           <form onSubmit={submit} className="space-y-4">
-            {mode === "products" && <ProductForm form={form} setForm={setForm} categories={categories} stores={stores} />}
+            {mode === "products" && <ProductForm form={form} setForm={setForm} categories={categories} stores={stores} onAddCategory={openMediaCategoryCreate} />}
             {mode === "banners" && <BannerForm form={form} setForm={setForm} />}
             {mode === "categories" && <CategoryForm form={form} setForm={setForm} editing={editing} onUploadedForm={persistUploadedCategoryImage} />}
-            {mode === "media-library" && <MediaLibraryForm form={form} setForm={setForm} categories={categories} />}
+            {mode === "media-library" && <MediaLibraryForm form={form} setForm={setForm} categories={mediaCategories} />}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button type="submit">Save</Button>
@@ -388,6 +421,7 @@ function CatalogCard({ mode, item, onEdit, onDelete, onAddToLibrary }: { mode: M
             {item.isFeatured && <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100"><BadgePercent className="mr-1 h-3 w-3" />Offer</Badge>}
           </div>
         )}
+        {mode === "categories" && <Badge variant="outline">{CATEGORY_SURFACES.find((section) => section.value === (item.surface ?? "shopping"))?.label ?? "Shopping"}</Badge>}
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" className="min-w-28 flex-1" onClick={onEdit}><Pencil className="mr-2 h-3.5 w-3.5" />Edit</Button>
           {onAddToLibrary && (
@@ -400,14 +434,40 @@ function CatalogCard({ mode, item, onEdit, onDelete, onAddToLibrary }: { mode: M
   );
 }
 
-function ProductForm({ form, setForm, categories, stores }: any) {
+function ProductForm({ form, setForm, categories, stores, onAddCategory }: any) {
+  const selectedCategory = categories.find((item: any) => Number(item.id) === Number(form.categoryId));
+  const [surface, setSurface] = useState(() => selectedCategory?.surface ?? "shopping");
+  useEffect(() => {
+    if (selectedCategory?.surface) setSurface(selectedCategory.surface);
+  }, [selectedCategory?.id, selectedCategory?.surface]);
+  const sectionCategories = categories.filter((item: any) => (item.surface ?? "shopping") === surface);
+  const sectionStores = stores.filter((item: any) => {
+    const role = String(item.partnerRole ?? item.user?.role ?? "vendor");
+    return surface === "food" ? role === "food_partner" : surface === "travel" ? role === "travel_agency" : !["food_partner", "travel_agency"].includes(role);
+  });
+  const setProductSurface = (nextSurface: string) => {
+    setSurface(nextSurface);
+    const nextCategory = categories.find((item: any) => (item.surface ?? "shopping") === nextSurface);
+    const nextStore = stores.find((item: any) => {
+      const role = String(item.partnerRole ?? item.user?.role ?? "vendor");
+      return nextSurface === "food" ? role === "food_partner" : nextSurface === "travel" ? role === "travel_agency" : !["food_partner", "travel_agency"].includes(role);
+    });
+    setForm({ ...form, categoryId: Number(nextCategory?.id ?? 0), storeId: Number(nextStore?.id ?? 0) });
+  };
+
   return (
     <>
       <Field label="Name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required />
       <Field label="Description" value={form.description} onChange={(value) => setForm({ ...form, description: value })} textarea />
+      <div className="rounded-lg border bg-slate-50 p-3">
+        <p className="mb-2 text-sm font-semibold">Product section</p>
+        <div className="flex flex-wrap gap-2">
+          {CATEGORY_SURFACES.map((section) => <Button key={section.value} type="button" size="sm" variant={surface === section.value ? "default" : "outline"} onClick={() => setProductSurface(section.value)}>{section.label}</Button>)}
+        </div>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <SelectField label="Category" value={String(form.categoryId)} onChange={(value) => setForm({ ...form, categoryId: Number(value) })} items={categories.map((item: any) => ({ value: String(item.id), label: item.name }))} />
-        <SelectField label="Store" value={String(form.storeId)} onChange={(value) => setForm({ ...form, storeId: Number(value) })} items={stores.map((item: any) => ({ value: String(item.id), label: item.name }))} />
+        <div className="space-y-1"><SelectField label="Category" value={String(form.categoryId)} onChange={(value) => setForm({ ...form, categoryId: Number(value) })} items={sectionCategories.map((item: any) => ({ value: String(item.id), label: item.name }))} />{sectionCategories.length === 0 && <p className="text-xs text-amber-700">No {surface} category yet.</p>}<Button type="button" variant="link" size="sm" className="h-7 px-0 text-primary" onClick={() => onAddCategory(surface)}><Plus className="mr-1 h-3.5 w-3.5" />Add {CATEGORY_SURFACES.find((item) => item.value === surface)?.label} category</Button></div>
+        <div className="space-y-1"><SelectField label="Store" value={String(form.storeId)} onChange={(value) => setForm({ ...form, storeId: Number(value) })} items={sectionStores.map((item: any) => ({ value: String(item.id), label: item.name }))} />{sectionStores.length === 0 && <p className="text-xs text-amber-700">No {surface} store is available yet.</p>}</div>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Price" value={form.price} onChange={(value) => setForm({ ...form, price: value })} type="number" required />
@@ -448,6 +508,7 @@ function CategoryForm({ form, setForm, editing, onUploadedForm }: any) {
   return (
     <>
       <Field label="Name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required />
+      <SelectField label="Show this category in" value={form.surface ?? "shopping"} onChange={(value) => setForm({ ...form, surface: value })} items={CATEGORY_SURFACES} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Icon text" value={form.iconEmoji} onChange={(value) => setForm({ ...form, iconEmoji: value })} />
         <Field label="Sort order" value={form.sortOrder} onChange={(value) => setForm({ ...form, sortOrder: value })} type="number" />
@@ -605,7 +666,7 @@ function buildPayload(mode: Mode, form: any) {
       isApproved: !!form.isApproved,
     };
   }
-  return { ...form, imageUrl, sortOrder: Number(form.sortOrder ?? 0), isActive: !!form.isActive };
+  return { ...form, surface: form.surface ?? "shopping", imageUrl, sortOrder: Number(form.sortOrder ?? 0), isActive: !!form.isActive };
 }
 
 function normalizeImageUrl(value: unknown) {

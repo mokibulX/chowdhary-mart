@@ -135,8 +135,8 @@ export function LiveDeliveryMap({ tracking, compact = false, className = "" }: L
   }, [ready, partner?.lat, partner?.lng, destination?.lat, destination?.lng]);
 
   return (
-    <section className={className} style={{ display: "block" }}>
-      <div style={{ position: "relative", overflow: "hidden", borderRadius: 18, border: "1px solid #dbe3ec", background: "#e8eef2" }}>
+    <section className={`relative isolate z-0 ${className}`} style={{ display: "block" }}>
+      <div className="relative z-0" style={{ position: "relative", overflow: "hidden", borderRadius: 18, border: "1px solid #dbe3ec", background: "#e8eef2" }}>
         <div ref={mapElementRef} style={{ width: "100%", height: compact ? 250 : 360, minHeight: compact ? 250 : 360 }} />
         {!ready && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", background: "rgba(248,250,252,.75)" }}>Loading map...</div>}
       </div>

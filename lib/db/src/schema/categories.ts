@@ -9,6 +9,7 @@ export const categoriesTable = pgTable("categories", {
   imageUrl: text("image_url"),
   iconEmoji: varchar("icon_emoji", { length: 10 }),
   colorClass: varchar("color_class", { length: 50 }),
+  surface: varchar("surface", { length: 20 }).notNull().default("shopping"),
   parentId: integer("parent_id"),
   sortOrder: integer("sort_order").default(0),
   isActive: boolean("is_active").notNull().default(true),

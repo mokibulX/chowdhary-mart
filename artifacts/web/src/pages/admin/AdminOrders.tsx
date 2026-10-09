@@ -209,7 +209,27 @@ export default function AdminOrders() {
           <p>No orders found</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border bg-white">
+        <>
+        <div className="space-y-3 lg:hidden">
+          {visibleOrders.map((order: any) => (
+            <article key={order.id} className="rounded-xl border bg-white p-4 shadow-sm" data-testid={`order-card-${order.id}`}>
+              <div className="flex items-start justify-between gap-3">
+                <button type="button" className="min-w-0 text-left" onClick={() => openOrder(order)}>
+                  <p className="truncate font-bold">#{order.orderNumber}</p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{order.store?.name ?? `Store #${order.storeId}`}</p>
+                </button>
+                <Badge className={`shrink-0 text-xs border-0 ${STATUS_COLORS[order.status] ?? "bg-gray-100 text-gray-700"}`}>{STATUS_LABEL[order.status] ?? order.status}</Badge>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 border-y py-3 text-sm">
+                <div><p className="text-xs text-muted-foreground">Total</p><p className="mt-1 font-bold">₹{Number(order.total).toFixed(0)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Payment</p><p className="mt-1 capitalize">{order.paymentMethod ?? "Not set"}</p></div>
+                <div className="col-span-2"><p className="text-xs text-muted-foreground">Pickup location</p><p className="mt-1 line-clamp-2 text-sm">{order.pickupAddress ?? order.addressSnapshot?.line1 ?? "Not set"}</p></div>
+              </div>
+              <div className="mt-3"><OrderAdminControls order={order} onStatusChange={updateOrder} onDelete={deleteOrder} compact /></div>
+            </article>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto rounded-xl border bg-white lg:block">
           <table className="min-w-[860px] w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -262,6 +282,7 @@ export default function AdminOrders() {
             </tbody>
           </table>
         </div>
+        </>
       )}
       {detailLoading && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
@@ -317,8 +338,8 @@ function AdminOrderDetail({
   const [preparationMins, setPreparationMins] = useState(String(order.estimatedDeliveryMins ?? 30));
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-3 sm:p-6" onClick={onClose}>
-      <div className="mx-auto my-4 max-w-4xl rounded-2xl bg-white p-4 shadow-2xl sm:p-6" onClick={(event) => event.stopPropagation()}>
+    <div className="fixed inset-0 z-[1000] overflow-y-auto bg-black/50 p-3 sm:p-6" onClick={onClose}>
+      <div className="mx-auto my-4 max-w-4xl overflow-hidden rounded-2xl bg-white p-4 shadow-2xl sm:p-6" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-4 border-b pb-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Order details</p>

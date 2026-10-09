@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { customFetch, useListCategories, getListCategoriesQueryKey } from "@workspace/api-client-react";
+import { customFetch } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { ProductCard } from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -89,14 +90,21 @@ export default function Search() {
   const [productsLoading, setProductsLoading] = useState(false);
   const [deliveryLocation, setDeliveryLocation] = useState<DeliveryLocation>(() => getSavedDeliveryLocation());
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const { data: categories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
+  const { data: categories } = useQuery({
+    queryKey: ["/api/categories", "shopping"],
+    queryFn: () => customFetch<any[]>("/api/categories?surface=shopping", { responseType: "json" }),
+  });
+  const shoppingCategories = useMemo(
+    () => categories ?? [],
+    [categories],
+  );
 
   useEffect(() => {
     const nextParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     const nextQ = nextParams.get("q") ?? "";
     const categoryNameParam = nextParams.get("category");
-    const matchedCategory = categoryNameParam && categories
-      ? categories.find((cat: any) => String(cat.slug ?? cat.name).toLowerCase() === categoryNameParam.toLowerCase())
+    const matchedCategory = categoryNameParam && shoppingCategories.length
+      ? shoppingCategories.find((cat: any) => String(cat.slug ?? cat.name).toLowerCase() === categoryNameParam.toLowerCase())
       : undefined;
     const nextCategory = nextParams.get("categoryId") ? Number(nextParams.get("categoryId")) : matchedCategory?.id;
     const nextSort = nextParams.get("sort") ?? "newest";
@@ -114,7 +122,7 @@ export default function Search() {
     setBrand(nextParams.get("brand") ?? "all");
     setInStock(nextParams.get("inStock") ?? "true");
     setRadiusKm(nextParams.get("radiusKm") ?? "5");
-  }, [categories, location]);
+  }, [location, shoppingCategories]);
 
   useEffect(() => {
     const stored = localStorage.getItem("ekart_recent_searches");
@@ -224,7 +232,7 @@ export default function Search() {
 
   const products = productResult.items;
   const total = productResult.total;
-  const hasCategories = Boolean(categories?.length);
+  const hasCategories = Boolean(shoppingCategories.length);
   const isLoading = productsLoading;
   const hasNextPage = false;
   const fetchNextPage = async () => undefined;
@@ -244,13 +252,13 @@ export default function Search() {
   }, [inputVal]);
   const liveSuggestions = useMemo(() => {
     const typed = inputVal.trim().toLowerCase();
-    const base = [...recentSearches, ...SUGGESTIONS, ...(categories ?? []).map((cat: any) => cat.name)];
+    const base = [...recentSearches, ...SUGGESTIONS, ...shoppingCategories.map((cat: any) => cat.name)];
     const matches = base
       .filter(Boolean)
       .filter((item) => !typed || String(item).toLowerCase().includes(typed) || typed.includes(String(item).toLowerCase()))
       .slice(0, 8);
     return Array.from(new Set([correctedQuery, ...matches].filter(Boolean)));
-  }, [categories, correctedQuery, inputVal, recentSearches]);
+  }, [correctedQuery, inputVal, recentSearches, shoppingCategories]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -397,7 +405,7 @@ export default function Search() {
               </div>
               <p className="lch-category-luxury-text mt-2 line-clamp-1 text-[11px] font-extrabold">All</p>
             </button>
-            {(categories ?? []).map((cat, index) => (
+            {shoppingCategories.map((cat, index) => (
               <button key={cat.id} type="button" onClick={() => { setCategoryId(cat.id); setCategoryKeyword(cat.name); setInputVal(cat.name); setQ(""); setLocation(buildSearchUrl({ categoryId: cat.id, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }} className="group min-w-[76px] text-center">
                 <div className={`lch-category-orbit lch-category-tone-${index % 8} ${index % 2 ? "lch-category-reverse" : ""} mx-auto h-16 w-16 ${categoryId === cat.id ? "is-selected" : ""}`}>
                   <div className="lch-category-orbit-media">
@@ -413,11 +421,11 @@ export default function Search() {
 
       <section className="rounded-lg border bg-white p-3 shadow-sm">
         <div className="flex min-w-0 items-center gap-2">
-          <Select value={categoryId ? String(categoryId) : "all"} onValueChange={(value) => { const nextCategory = value === "all" ? undefined : Number(value); const nextName = categories?.find((cat: any) => cat.id === nextCategory)?.name ?? ""; setCategoryId(nextCategory); setCategoryKeyword(nextName); if (nextName) { setInputVal(nextName); setQ(""); } setLocation(buildSearchUrl({ categoryId: nextCategory, q: nextCategory ? undefined : q, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }} disabled={!hasCategories}>
+          <Select value={categoryId ? String(categoryId) : "all"} onValueChange={(value) => { const nextCategory = value === "all" ? undefined : Number(value); const nextName = shoppingCategories.find((cat: any) => cat.id === nextCategory)?.name ?? ""; setCategoryId(nextCategory); setCategoryKeyword(nextName); if (nextName) { setInputVal(nextName); setQ(""); } setLocation(buildSearchUrl({ categoryId: nextCategory, q: nextCategory ? undefined : q, sort, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }} disabled={!hasCategories}>
             <SelectTrigger className="h-9 min-w-0 flex-1"><SelectValue placeholder={hasCategories ? "Category" : "No category"} /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              {categories?.map((cat) => <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>)}
+              {shoppingCategories.map((cat) => <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={sort} onValueChange={(value) => { setSort(value); setLocation(buildSearchUrl({ q, categoryId, sort: value, minPrice, maxPrice, minRating, minDiscount, brand, inStock, radiusKm })); }}>

@@ -2,11 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   useListBanners,
-  useListCategories,
   useListStores,
   useListProducts,
   getListBannersQueryKey,
-  getListCategoriesQueryKey,
   getListStoresQueryKey,
   getListProductsQueryKey,
 } from "@workspace/api-client-react";
@@ -83,7 +81,10 @@ export default function Home() {
   const categoryLoadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const { data: banners, isLoading: loadingBanners } = useListBanners({ query: { queryKey: getListBannersQueryKey() } });
-  const { data: categories, isLoading: loadingCategories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
+  const { data: categories, isLoading: loadingCategories } = useQuery({
+    queryKey: ["/api/categories", "shopping"],
+    queryFn: () => customFetch<any[]>("/api/categories?surface=shopping", { responseType: "json" }),
+  });
   const zoneParams = { lat: deliveryLocation.lat, lng: deliveryLocation.lng, radiusKm: 5 };
   const { data: stores, isLoading: loadingStores } = useListStores({ limit: 5, ...zoneParams }, { query: { queryKey: getListStoresQueryKey({ limit: 5, ...zoneParams }) } });
   const { data: featured, isLoading: loadingFeatured } = useListProducts({ featured: true, limit: 12, ...zoneParams }, { query: { queryKey: getListProductsQueryKey({ featured: true, limit: 12, ...zoneParams }) } });

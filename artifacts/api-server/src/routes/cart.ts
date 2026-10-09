@@ -97,7 +97,7 @@ router.get("/", async (req: AuthRequest, res) => {
 // POST /api/cart/items
 router.post("/items", async (req: AuthRequest, res) => {
   try {
-    const { productId, qty = 1 } = req.body as { productId: number; qty?: number };
+    const { productId, qty = 1, replaceCart = false } = req.body as { productId: number; qty?: number; replaceCart?: boolean };
     const userId = req.user!.userId;
 
     const [product] = await db.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
@@ -115,10 +115,12 @@ router.post("/items", async (req: AuthRequest, res) => {
     let [cart] = await db.select().from(cartsTable).where(eq(cartsTable.userId, userId)).limit(1);
     if (!cart) {
       [cart] = await db.insert(cartsTable).values({ userId, storeId: product.storeId }).returning();
-    } else if (cart.storeId !== product.storeId) {
-      // Different store — clear cart and switch
+    } else if (replaceCart || cart.storeId !== product.storeId) {
+      // Food checkout explicitly replaces an existing cart; different stores do the same.
       await db.delete(cartItemsTable).where(eq(cartItemsTable.cartId, cart.id));
-      [cart] = await db.update(cartsTable).set({ storeId: product.storeId }).where(eq(cartsTable.id, cart.id)).returning();
+      if (cart.storeId !== product.storeId) {
+        [cart] = await db.update(cartsTable).set({ storeId: product.storeId }).where(eq(cartsTable.id, cart.id)).returning();
+      }
     }
 
     // Check if item already in cart

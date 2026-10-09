@@ -3,8 +3,8 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
 import {
-  useListVendorProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useListCategories,
-  getListVendorProductsQueryKey, getListCategoriesQueryKey, getGetVendorStoreQueryKey, customFetch, useGetVendorStore
+  useListVendorProducts, useCreateProduct, useUpdateProduct, useDeleteProduct,
+  getListVendorProductsQueryKey, getGetVendorStoreQueryKey, customFetch, useGetVendorStore
 } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -202,7 +202,12 @@ export default function VendorProducts() {
     query: { enabled: !!user, queryKey: getListVendorProductsQueryKey() },
   });
   const { data: store } = useGetVendorStore({ query: { enabled: !!user, queryKey: getGetVendorStoreQueryKey() } });
-  const { data: categories } = useListCategories({ query: { queryKey: getListCategoriesQueryKey() } });
+  const categorySurface = isFoodPartner ? "food" : isTravelAgency ? "travel" : "shopping";
+  const { data: categories } = useQuery({
+    queryKey: ["/api/categories", categorySurface],
+    queryFn: () => customFetch<any[]>(`/api/categories?surface=${categorySurface}`, { responseType: "json" }),
+    enabled: !!user,
+  });
   const create = useCreateProduct();
   const update = useUpdateProduct();
   const del = useDeleteProduct();
@@ -220,13 +225,7 @@ export default function VendorProducts() {
     enabled: !!user && !!selectedCategoryId && dialogOpen,
   });
   const selectedCategory = (categories as any[] | undefined)?.find((item) => Number(item.id) === Number(selectedCategoryId));
-  const visibleCategories = ((categories as any[] | undefined) ?? []).filter((category) => {
-    const name = String(category.name ?? "").toLowerCase();
-    if (isFoodPartner) return /(food|restaurant|meal|dish|snack|drink|beverage|bakery|dessert|cafe|grocery)/.test(name);
-    if (isTravelAgency) return /(travel|bus|car|cab|taxi|ticket|tour|hotel)/.test(name);
-    return !/(travel|bus|car|cab|taxi|ticket|tour|hotel|restaurant|meal|dish)/.test(name);
-  });
-  const categoryChoices = visibleCategories.length ? visibleCategories : ((categories as any[] | undefined) ?? []);
+  const categoryChoices = (categories as any[] | undefined) ?? [];
   const preferredCategoryNames = String((store as any)?.preferredCategories ?? "")
     .split(",")
     .map((name) => name.trim().toLowerCase())

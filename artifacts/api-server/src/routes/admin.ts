@@ -20,6 +20,7 @@ import { DEFAULT_LOCATION } from "../lib/default-location";
 import { advanceDeliveryOffer, cancelDeliveryOffers } from "../lib/delivery-offers";
 import { createAndPushNotification } from "../lib/push-service";
 import { ensureStoreDisplayColumns } from "../lib/store-display";
+import { ensureCategorySurfaceSchema, normalizeCategorySurface } from "../lib/category-surface";
 
 const router = Router();
 
@@ -142,6 +143,7 @@ function categoryPayload(body: Record<string, unknown>, existing?: typeof catego
     imageUrl: String(body.imageUrl ?? existing?.imageUrl ?? "").trim() || null,
     iconEmoji: String(body.iconEmoji ?? existing?.iconEmoji ?? name.charAt(0).toUpperCase()).trim().slice(0, 10) || null,
     colorClass: String(body.colorClass ?? existing?.colorClass ?? "bg-blue-50").trim() || null,
+    surface: normalizeCategorySurface(body.surface ?? existing?.surface),
     parentId: body.parentId !== undefined && body.parentId !== "" ? Number(body.parentId) : existing?.parentId ?? null,
     sortOrder: Number(body.sortOrder ?? existing?.sortOrder ?? 0),
     isActive: body.isActive !== undefined ? Boolean(body.isActive) : existing?.isActive ?? true,
@@ -1704,8 +1706,11 @@ router.get("/stores", async (req: AuthRequest, res) => {
   try {
     await ensureStoreDisplayColumns();
     const result = await db.execute(sql`
-      select stores.*, coalesce(stores.display_order, 0) as "displayOrder", coalesce(stores.is_featured, false) as "isFeatured"
-      from stores order by coalesce(stores.is_featured, false) desc, coalesce(stores.display_order, 0) desc, stores.created_at desc
+      select stores.*, users.role::text as "partnerRole",
+        coalesce(stores.display_order, 0) as "displayOrder", coalesce(stores.is_featured, false) as "isFeatured"
+      from stores
+      inner join users on users.id = stores.user_id
+      order by coalesce(stores.is_featured, false) desc, coalesce(stores.display_order, 0) desc, stores.created_at desc
     `);
     res.json((result as any).rows ?? result);
   } catch (err) {
@@ -2113,6 +2118,7 @@ router.delete("/incentive-rules/:ruleId", async (req: AuthRequest, res) => {
 // GET /api/admin/categories
 router.get("/categories", async (req: AuthRequest, res) => {
   try {
+    await ensureCategorySurfaceSchema();
     const categories = await db.select().from(categoriesTable).orderBy(categoriesTable.sortOrder, categoriesTable.name);
     res.json(categories);
   } catch (err) {
@@ -2124,6 +2130,7 @@ router.get("/categories", async (req: AuthRequest, res) => {
 // POST /api/admin/categories
 router.post("/categories", async (req: AuthRequest, res) => {
   try {
+    await ensureCategorySurfaceSchema();
     const payload = categoryPayload(req.body);
     const [category] = await db.insert(categoriesTable).values(payload).returning();
     res.status(201).json(category);
@@ -2136,6 +2143,7 @@ router.post("/categories", async (req: AuthRequest, res) => {
 // PATCH /api/admin/categories/:categoryId
 router.patch("/categories/:categoryId", async (req: AuthRequest, res) => {
   try {
+    await ensureCategorySurfaceSchema();
     const categoryId = Number(req.params.categoryId);
     if (!Number.isInteger(categoryId) || categoryId <= 0) {
       res.status(400).json({ error: "Invalid category id" });

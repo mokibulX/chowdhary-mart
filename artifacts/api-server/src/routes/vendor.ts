@@ -12,6 +12,7 @@ import { expireOrderIfNeeded, lifecycleMeta } from "../lib/order-lifecycle";
 import { storePublicImage } from "./uploads";
 import { advanceDeliveryOffer, cancelDeliveryOffers } from "../lib/delivery-offers";
 import { ensureFoodOperationColumns } from "../lib/food-operations";
+import { normalizeCategorySurface } from "../lib/category-surface";
 
 const router = Router();
 
@@ -109,6 +110,10 @@ function cleanProductImages(images: unknown) {
 
 function textValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function vendorCategorySurface(role: string) {
+  return role === "food_partner" ? "food" : role === "travel_agency" ? "travel" : "shopping";
 }
 
 function catalogText(value: unknown): string {
@@ -978,9 +983,12 @@ router.post("/products", async (req: AuthRequest, res) => {
     if (!Number.isFinite(normalizedPrice) || normalizedPrice < 0.01) throw new Error("A valid price is required.");
     if (!Number.isFinite(normalizedMrp) || normalizedMrp < 0.01) throw new Error("A valid MRP is required.");
     if (!Number.isInteger(normalizedStock) || normalizedStock < 0) throw new Error("A valid stock quantity is required.");
-    const [category] = await db.select({ id: categoriesTable.id }).from(categoriesTable)
+    const [category] = await db.select({ id: categoriesTable.id, surface: categoriesTable.surface }).from(categoriesTable)
       .where(eq(categoriesTable.id, normalizedCategoryId)).limit(1);
     if (!category) throw new Error("The selected category no longer exists. Please choose another category.");
+    if (normalizeCategorySurface(category.surface) !== vendorCategorySurface(req.user!.role)) {
+      throw new Error("Please choose a category for your own business section.");
+    }
     // A deleted/archived zone can leave an old store reference behind. Products
     // must remain insertable; only attach a zone that still exists.
     const [storeZone] = store.zoneId
@@ -1060,6 +1068,12 @@ router.patch("/products/:productId", async (req: AuthRequest, res) => {
         .where(and(eq(productsTable.id, productId), eq(productsTable.storeId, store.id)))
         .returning();
       res.json(product);
+      return;
+    }
+    const [selectedCategory] = await db.select({ id: categoriesTable.id, surface: categoriesTable.surface }).from(categoriesTable)
+      .where(eq(categoriesTable.id, Number(categoryId))).limit(1);
+    if (!selectedCategory || normalizeCategorySurface(selectedCategory.surface) !== vendorCategorySurface(req.user!.role)) {
+      res.status(400).json({ error: "Please choose a category for your own business section." });
       return;
     }
     const normalizedSku = textValue(sku);

@@ -5,10 +5,12 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 import { sweepExpiredOrders } from "./lib/order-lifecycle";
 import { ensureConfiguredAdmin } from "./lib/bootstrap-admin";
+import { ensureCategorySurfaceSchema } from "./lib/category-surface";
 
 loadEnv();
 validateRuntimeEnv({ requireDatabase: true, requireJwt: true });
 await ensureConfiguredAdmin();
+await ensureCategorySurfaceSchema();
 
 const rawPort = process.env["PORT"];
 
